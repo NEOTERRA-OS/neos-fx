@@ -4,6 +4,7 @@ import { useModelStore, selectComputed } from "../../store/modelStore";
 import { Segmented } from "../primitives/Segmented";
 import { StatusPill } from "../primitives/StatusPill";
 import { t } from "../../lib/i18n";
+import { Circle } from "lucide-react";
 import type { Granularity } from "../../core/types";
 
 /** Global controls, always visible. Scenario switch tints the bar subtly (NO yellow —
@@ -131,7 +132,7 @@ export function TopBar({ theme, onToggleTheme }: { theme: "light" | "dark"; onTo
           className="num text-[11px]"
           style={{ color: pulse ? "var(--nx-success)" : "var(--nx-text-muted)", transition: "color 180ms" }}
         >
-          {pulse ? t("● Neu berechnet") : t("Aktuell")}
+          {pulse ? <span className="inline-flex items-center gap-1"><Circle size={8} fill="currentColor" strokeWidth={0} aria-hidden />{t("Neu berechnet")}</span> : t("Aktuell")}
         </span>
         {!converged && <StatusPill tone="warning" label={t("Nicht konvergiert")} />}
         {balance && (

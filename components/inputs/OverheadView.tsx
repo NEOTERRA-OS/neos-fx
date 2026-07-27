@@ -5,6 +5,7 @@ import { type OverheadItem } from "../../store/model";
 import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 
 /** Overhead / SG&A — indirekte Gemeinkosten der ganzen Company (Corporate + Post-Harvest/
  *  Packhaus, Kühllager, Logistik, Vermarktung, Software/IT …). Gruppen & Positionen frei
@@ -69,7 +70,7 @@ export function OverheadView() {
               </div>
               <div className="flex items-center gap-3">
                 <span className="num text-[10.5px] text-nx-text-muted">{fmtMoney(groupSum)} €/Mon · {fmtMoney(groupSum * 12)} €/J</span>
-                <button className="text-[11px] text-nx-error" title={t("Gruppe entfernen (alle Positionen)")} onClick={() => deleteGroup(group)}>✕ {t("Gruppe")}</button>
+                <button className="inline-flex items-center gap-1 text-[11px] text-nx-error" title={t("Gruppe entfernen (alle Positionen)")} onClick={() => deleteGroup(group)}><X size={12} strokeWidth={2.5} aria-hidden /> {t("Gruppe")}</button>
               </div>
             </div>
             {isLogistik && (
@@ -95,7 +96,7 @@ export function OverheadView() {
                       <td className="px-2 py-1.5"><TextInput value={it.label} width={360} onCommit={(v) => updItem(gi, (o) => { o.label = v; })} /></td>
                       <td className="px-2 py-1.5 text-right"><NumberInput value={it.monthlyCent} moneyCent width={110} onCommit={(nv) => updItem(gi, (o) => { o.monthlyCent = nv; })} /></td>
                       <td className="num px-2 py-1.5 text-right text-nx-text-secondary">{fmtMoney(it.monthlyCent * 12)} €</td>
-                      <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" title={t("Position entfernen")} onClick={() => removeItem(gi)}>✕</button></td>
+                      <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" title={t("Position entfernen")} onClick={() => removeItem(gi)}><X size={13} strokeWidth={2.5} aria-hidden /></button></td>
                     </tr>
                   ))}
                   <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>

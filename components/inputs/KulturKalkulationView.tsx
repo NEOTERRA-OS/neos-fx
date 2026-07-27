@@ -8,6 +8,7 @@ import { NumberInput, TextInput } from "./NumberInput";
 import { ProductPicker } from "./ProductPicker";
 import { cropColor } from "./cropCalc";
 import { t } from "../../lib/i18n";
+import { Link, Search, Ban, TriangleAlert, Check, X } from "lucide-react";
 
 /** BBCH-Annotation aus dem Maßnahmen-Label entfernen (wird bereits in Spalte 1 „BBCH · Timing" gezeigt).
  *  Der gespeicherte Label behält BBCH (Timing-Quelle) — hier nur die Anzeige/Bearbeitung ohne Dopplung. */
@@ -134,7 +135,7 @@ export function KulturKalkulationView() {
               style={{ height: 24, borderColor: linked ? "var(--nx-green)" : "var(--nx-border)", color: linked ? "var(--nx-green)" : "var(--nx-locate)", background: "var(--nx-app-bg)" }}
               title={linked ? t("Produkt ändern") : t("Produkt vorschlagen")}
               onClick={() => setPicker({ opCode: b.opCode, lineIdx: b.lineIdx, label: b.label })}>
-              {linked ? "🔗" : "⌕"}
+              {linked ? <Link size={12} strokeWidth={2.5} aria-hidden /> : <Search size={12} strokeWidth={2.5} aria-hidden />}
             </button>
           )}
           <span className="ml-auto inline-flex shrink-0 items-center gap-1">
@@ -149,14 +150,14 @@ export function KulturKalkulationView() {
             <span className="num w-[52px] text-right text-[11px] text-nx-text-muted">{fmtMoney(b.cent)}</span>
             <span className="w-[30px] text-[9px] text-nx-text-muted">€/ha</span>
             <button className="text-[12px] leading-none text-nx-error hover:opacity-70" title={t("Betriebsmittel entfernen")}
-              onClick={() => removeLine(b.opCode, b.lineIdx)}>✕</button>
+              onClick={() => removeLine(b.opCode, b.lineIdx)}><X size={12} strokeWidth={2.5} aria-hidden /></button>
           </span>
         </div>
         {linked && (
           <div className="mt-0.5 pl-1 text-[10px]" style={{ color: linked.roAuthorized === "no" ? "var(--nx-error)" : "var(--nx-text-muted)" }}>
             {linked.manufacturer}
             {(linked.activeIngredients ?? []).length ? ` · ${linked.activeIngredients!.map((a) => a.name).join(" + ")}` : ""}
-            {linked.roAuthorized === "yes" ? " · RO ✓" : linked.roAuthorized === "no" ? ` · ⚠ ${t("nicht zugel.")}` : " · RO ?"}
+            {linked.roAuthorized === "yes" ? <>{" · RO "}<Check size={11} strokeWidth={2.5} className="inline align-[-1px]" aria-hidden /></> : linked.roAuthorized === "no" ? <>{" · "}<TriangleAlert size={11} strokeWidth={2.5} className="inline align-[-1px]" aria-hidden />{" "}{t("nicht zugel.")}</> : " · RO ?"}
           </div>
         )}
       </div>
@@ -192,7 +193,7 @@ export function KulturKalkulationView() {
               <button key={c} onClick={() => setCrop(c)} className="inline-flex items-center gap-1.5 rounded-control border px-2.5 text-[12px] font-semibold"
                 style={{ height: 32, borderColor: on ? cropColor(c) : "var(--nx-border)", background: on ? cropColor(c) : "var(--nx-surface)", color: on ? "#fff" : "var(--nx-text-secondary)" }}>
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: on ? "#fff" : cropColor(c), display: "inline-block" }} />
-                {(CROP_NAME as Record<string, string>)[c] ?? c}
+                {t((CROP_NAME as Record<string, string>)[c] ?? c)}
               </button>
             );
           })}
@@ -228,7 +229,7 @@ export function KulturKalkulationView() {
                 <div key={i} className="flex items-start gap-2 rounded-tile border px-3 py-2 text-[11.5px]"
                   style={{ borderColor: err ? "var(--nx-error)" : "var(--nx-warn, #C9A227)",
                     background: err ? "color-mix(in srgb, var(--nx-error) 12%, transparent)" : "color-mix(in srgb, var(--nx-warn, #C9A227) 14%, transparent)" }}>
-                  <span className="shrink-0 font-semibold" style={{ color: err ? "var(--nx-error)" : "var(--nx-warn, #C9A227)" }}>{err ? "⛔" : "⚠"}</span>
+                  <span className="shrink-0 font-semibold" style={{ color: err ? "var(--nx-error)" : "var(--nx-warn, #C9A227)" }}>{err ? <Ban size={13} strokeWidth={2.5} aria-hidden /> : <TriangleAlert size={13} strokeWidth={2.5} aria-hidden />}</span>
                   <span>
                     <b style={{ color: err ? "var(--nx-error)" : "var(--nx-warn, #C9A227)" }}>{t(wn.category)}: </b>
                     <span className="text-nx-text-secondary">{wn.message}</span>
@@ -264,7 +265,7 @@ export function KulturKalkulationView() {
                       <span>{r.phase}</span>
                       {(r.kind === "machine" || r.opCode) && (
                         <button className="shrink-0 text-[11px] leading-none text-nx-error hover:opacity-70" title={t("Maßnahme entfernen")}
-                          onClick={() => removeMeasure(r)}>✕</button>
+                          onClick={() => removeMeasure(r)}><X size={12} strokeWidth={2.5} aria-hidden /></button>
                       )}
                     </div>
                     <div className="num text-[9px] text-nx-text-muted" title={t("Stabile Maßnahmen-ID für den FMS-Abgleich")}>#{r.measureId}</div>
@@ -395,7 +396,7 @@ export function KulturKalkulationView() {
         onClose={() => setPicker(null)}
         products={products}
         cropId={crop}
-        cropName={(CROP_NAME as Record<string, string>)[crop] ?? crop}
+        cropName={t((CROP_NAME as Record<string, string>)[crop] ?? crop)}
         opCode={picker?.opCode}
         label={picker?.label}
         currentId={picker ? domain.catalog.find((c) => c.cropId === crop)?.ops.find((o) => o.code === picker.opCode)?.lines[picker.lineIdx]?.productId : undefined}

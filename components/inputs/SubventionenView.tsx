@@ -4,6 +4,7 @@ import { useModelStore } from "../../store/modelStore";
 import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 import type { Subsidy } from "../../core/types";
 
 /** Subventionen — EU-CAP 2023–2027 (RO). Volle Struktur: Säule 1 (Direktzahlungen, inkl.
@@ -127,7 +128,7 @@ export function SubventionenView() {
                         </td>
                         <td className="num px-2 py-1.5 text-right font-semibold">{fmtMoney(annualCent(s))}</td>
                         <td className="px-2 py-1.5 text-right">
-                          <button className="text-[12px] text-nx-error" title={t("Programm entfernen")} onClick={() => patch((d) => { d.subsidies.splice(i, 1); })}>✕</button>
+                          <button className="text-[12px] text-nx-error" title={t("Programm entfernen")} onClick={() => patch((d) => { d.subsidies.splice(i, 1); })}><X size={13} strokeWidth={2.5} aria-hidden /></button>
                         </td>
                       </tr>
                     );

@@ -5,6 +5,7 @@ import { AssumptionField } from "./AssumptionField";
 import { TextInput, NumberInput } from "./NumberInput";
 import { fmtMoney } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 
 /** Holding (Zypern) — gesondert gerechnet, dann konsolidiert. Kostenblöcke, Fee,
  *  Steuersatz, Quellensteuer als sensitivierbare Annahmen. */
@@ -70,7 +71,7 @@ export function HoldingView() {
                 <td className="px-2 py-1.5"><TextInput value={it.label} width={300} onCommit={(v) => updCost(i, (o) => { o.label = v; })} /></td>
                 <td className="px-2 py-1.5 text-right"><NumberInput value={costVal(it)} moneyCent width={110} onCommit={(nv) => updCost(i, (o) => { o.monthlyCent = nv; o.assumptionKey = undefined; })} /></td>
                 <td className="num px-2 py-1.5 text-right text-nx-text-secondary">{fmtMoney(costVal(it) * 12)} €</td>
-                <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" title={t("Position entfernen")} onClick={() => removeCost(i)}>✕</button></td>
+                <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" title={t("Position entfernen")} onClick={() => removeCost(i)}><X size={13} strokeWidth={2.5} aria-hidden /></button></td>
               </tr>
             ))}
             <tr style={{ borderTop: "2px solid var(--nx-border)" }}>

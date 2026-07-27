@@ -8,6 +8,7 @@ import { Segmented } from "../primitives/Segmented";
 import { TramlineEconomics, computeTramline } from "./TramlineEconomics";
 import { ScenarioView, SCENARIO_TABS, type ScenarioTab } from "./ScenarioView";
 import { BodenprobenahmeView } from "./BodenprobenahmeView";
+import { Check } from "lucide-react";
 import { SpritzenView } from "./SpritzenView";
 import { t } from "../../lib/i18n";
 
@@ -187,10 +188,10 @@ export function CapexScenarienView() {
         </div>
         <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
           <button onClick={() => adopt(false)} className="px-3 py-1.5 rounded-md text-[12px] border" style={{ borderColor: border, background: !activeBoom48 ? "color-mix(in srgb, var(--nsb-accent) 22%, transparent)" : "transparent", fontWeight: !activeBoom48 ? 600 : 400 }}>
-            {t("36 m übernehmen")}{!activeBoom48 ? " ✓" : ""}
+            {t("36 m übernehmen")}{!activeBoom48 ? <> <Check size={12} strokeWidth={2.5} className="inline align-[-1px]" aria-hidden /></> : ""}
           </button>
           <button onClick={() => adopt(true)} className="px-3 py-1.5 rounded-md text-[12px] border" style={{ borderColor: border, background: activeBoom48 ? "color-mix(in srgb, var(--nsb-accent) 22%, transparent)" : "transparent", fontWeight: activeBoom48 ? 600 : 400 }}>
-            {t("48 m übernehmen")}{activeBoom48 ? " ✓" : ""}
+            {t("48 m übernehmen")}{activeBoom48 ? <> <Check size={12} strokeWidth={2.5} className="inline align-[-1px]" aria-hidden /></> : ""}
           </button>
           <span className="caption text-[10.5px] text-nx-text-muted ml-auto">{t("Übernahme setzt")} <code>farm.boom48</code> + <code>spray.boom_m</code> {t("im Modell (wirkt auf Dashboard/Bilanz/Cashflow).")}</span>
         </div>

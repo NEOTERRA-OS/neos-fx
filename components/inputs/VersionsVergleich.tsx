@@ -4,6 +4,7 @@ import { useModelStore, computeHeadline, type HeadlineKpis } from "../../store/m
 import { diffDomains, type DiffGroup, type Domain } from "../../store/model";
 import { fmtMoney, fmtPct, fmtFactor } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { Check, ArrowRight } from "lucide-react";
 
 type Src = { kind: "current" } | { kind: "snap"; id: string; label: string } | { kind: "json"; label: string; domain: Domain };
 
@@ -58,7 +59,7 @@ export function VersionsVergleich({ snapshots, loadSnapshotDomain }: {
         {snapshots.map((s) => <option key={s.id} value={`snap:${s.id}`}>{s.label}</option>)}
         <option value="json">{t("JSON-Datei …")}</option>
       </select>
-      {sel === "json" && <><input type="file" accept="application/json,.json" onChange={onFile(setJson)} className="text-[11px]" style={{ maxWidth: 150 }} />{json && <span className="text-[10px]" style={{ color: "var(--nx-green)" }}>✓</span>}</>}
+      {sel === "json" && <><input type="file" accept="application/json,.json" onChange={onFile(setJson)} className="text-[11px]" style={{ maxWidth: 150 }} />{json && <span className="inline-flex text-[10px]" style={{ color: "var(--nx-green)" }}><Check size={12} strokeWidth={2.5} aria-hidden /></span>}</>}
     </div>
   );
 
@@ -73,7 +74,7 @@ export function VersionsVergleich({ snapshots, loadSnapshotDomain }: {
 
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <Picker sel={aSel} setSel={setASel} json={jsonA} setJson={setJsonA} label={t("Version A")} />
-        <span className="text-[12px] text-nx-text-muted">→</span>
+        <span className="inline-flex text-[12px] text-nx-text-muted"><ArrowRight size={14} strokeWidth={2.5} aria-hidden /></span>
         <Picker sel={bSel} setSel={setBSel} json={jsonB} setJson={setJsonB} label={t("Version B")} />
         <button onClick={run} disabled={busy} className="rounded-control px-3 text-[13px] font-bold disabled:opacity-50" style={{ height: 34, background: "var(--nx-locate)", color: "#fff" }}>{busy ? t("…") : t("Vergleichen")}</button>
       </div>

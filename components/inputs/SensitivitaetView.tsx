@@ -5,6 +5,7 @@ import { buildModelState, type Domain } from "../../store/model";
 import { computeModel } from "../../core/engine";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 
 /* ============================================================================
  * Faktor-Bibliothek — welche Treiber in die Sensitivität/Szenarien einfließen.
@@ -170,7 +171,7 @@ export function SensitivitaetView() {
                   <div className="absolute" style={{ left: "50%", width: `${wHigh}%`, height: 14, background: "var(--nx-success)", borderRadius: 2, opacity: 0.9 }} title={`+ : ${fmtMoney(b.high)} €`} />
                 </div>
                 <div className="num w-[135px] shrink-0 text-right text-nx-text-muted">{fmtMoney(b.low)} … {fmtMoney(b.high)}</div>
-                <button className="shrink-0 text-[12px] text-nx-error px-1" title="Entfernen" onClick={() => setRows((r) => r.filter((x) => x.id !== b.id))}>✕</button>
+                <button className="shrink-0 text-[12px] text-nx-error px-1" title="Entfernen" onClick={() => setRows((r) => r.filter((x) => x.id !== b.id))}><X size={13} strokeWidth={2.5} aria-hidden /></button>
               </div>
             );
           })}
@@ -216,7 +217,7 @@ export function SensitivitaetView() {
                     <td className="num px-2 py-1.5 text-right" style={{ color: s.k.minCash < 0 ? "var(--nx-error)" : "var(--nx-text)" }}>{fmtMoney(s.k.minCash)}</td>
                     <td className="num px-2 py-1.5 text-right" style={{ color: dscrCol(s.k.dscrMin) }}>{fmtNumber(s.k.dscrMin, 2)}</td>
                     <td className="num px-2 py-1.5 text-right" style={{ color: levCol(s.k.levMax) }}>{fmtNumber(s.k.levMax, 2)}</td>
-                    <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" onClick={() => setScen((arr) => arr.filter((x) => x.id !== s.id))}>✕</button></td>
+                    <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" onClick={() => setScen((arr) => arr.filter((x) => x.id !== s.id))}><X size={13} strokeWidth={2.5} aria-hidden /></button></td>
                   </tr>
                 );
               })}
@@ -238,7 +239,7 @@ export function SensitivitaetView() {
                     <input type="number" value={Math.round(pct * 100)} onChange={(e) => { const v = Number(e.target.value) / 100; setScen((arr) => arr.map((x) => x.id === s.id ? { ...x, shifts: { ...x.shifts, [fid]: v } } : x)); }}
                       className="num rounded-control border px-1 text-right text-[11px]" style={{ width: 48, height: 24, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-text)" }} />
                     <span className="text-[10px] text-nx-text-muted">%</span>
-                    <button className="text-[11px] text-nx-error" onClick={() => setScen((arr) => arr.map((x) => { if (x.id !== s.id) return x; const sh = { ...x.shifts }; delete sh[fid]; return { ...x, shifts: sh }; }))}>✕</button>
+                    <button className="text-[11px] text-nx-error" onClick={() => setScen((arr) => arr.map((x) => { if (x.id !== s.id) return x; const sh = { ...x.shifts }; delete sh[fid]; return { ...x, shifts: sh }; }))}><X size={12} strokeWidth={2.5} aria-hidden /></button>
                   </div>
                 ))}
                 {!Object.keys(s.shifts).length && <span className="text-[11px] text-nx-text-muted">{t("Noch keine Treiber — rechts hinzufügen.")}</span>}

@@ -5,6 +5,7 @@ import { deriveSprayFleet, spraySizing, SPRAY_WINDOWS } from "../../store/model"
 import { readAssumption } from "../../store/modelStore";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t as tr } from "../../lib/i18n";
+import { TriangleAlert } from "lucide-react";
 
 /** Spritzstrategie & Mischpark (Delta 21.07.). Die Spritzenzahl ist der Mehrkultur-Sommerpeak
  *  (max. gleichzeitiger PSM-Bedarf ALLER Kulturen), nicht pauschal. Fließt in TCO/CAPEX/Bilanz.
@@ -171,7 +172,7 @@ export function SpritzenView() {
       <div className="rounded-tile border px-4 py-3 text-[12px] text-nx-text-secondary" style={border}>
         <b>{tr("Flotte am Mehrkultur-Sommerpeak dimensioniert.")}</b> {fleet.total} {tr("Spritzen (")}{fleet.gz} {tr("gezogen +")} {fleet.sf} {tr("Selbstfahrer) = maximaler gleichzeitiger PSM-Bedarf aller Kulturen im Sommer (")}{weekLabel}{tr("). Wasseraufwand")} {fmtNumber(appl, 0)} {tr("l/ha (Kartoffel-Blight-Label 200–400).")} {fleet.coversPivot
           ? `${tr("Der")} ${fmtNumber(tankGz / 1000, 0)}${tr("k-Tank deckt einen")} ${fmtNumber(pivotHa, 0)}${tr("-ha-Pivot in einer Füllung.")}`
-          : `${tr("⚠️ Der")} ${fmtNumber(tankGz / 1000, 0)}${tr("k-Tank deckt bei")} ${fmtNumber(appl, 0)} ${tr("l/ha keinen")} ${fmtNumber(pivotHa, 0)}${tr("-ha-Pivot.")}`}
+          : <span className="inline-flex items-center gap-1"><TriangleAlert size={12} strokeWidth={2.5} aria-hidden />{`${tr("Der")} ${fmtNumber(tankGz / 1000, 0)}${tr("k-Tank deckt bei")} ${fmtNumber(appl, 0)} ${tr("l/ha keinen")} ${fmtNumber(pivotHa, 0)}${tr("-ha-Pivot.")}`}</span>}
         {" "}{tr("Grün = kleinste Tankgröße mit minimaler Flotte. Preise: gezogen")} {fmtMoney(pGz)} € · {tr("Selbstfahrer")} {fmtMoney(pSf)} €.
         {" "}{tr("Fenster je Kultur (KW):")} {Object.entries(SPRAY_WINDOWS).map(([, w], i) => `${i ? " · " : ""}${w.kwS}–${w.kwE}`).join("")}.
       </div>

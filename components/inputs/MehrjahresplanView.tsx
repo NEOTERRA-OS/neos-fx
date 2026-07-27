@@ -6,6 +6,7 @@ import { fmtMoney, fmtNumber } from "../../design/format";
 import { cropStructure, type CropRow } from "./cropCalc";
 import { effectiveGrowth } from "../../store/model";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 
 const START_YEAR = 2026;
 
@@ -155,7 +156,7 @@ export function MehrjahresplanView() {
                         : <NumberInput value={d.machineValueCent} moneyCent width={88} onCommit={(n) => setDeals((a) => a.map((x, j) => j === i ? { ...x, machineValueCent: Math.max(0, Math.round(n)) } : x))} />}
                     </td>
                     <td className="px-2 py-1.5 text-right"><NumberInput value={(d.debtShare ?? 0) * 100} width={50} suffix="%" onCommit={(n) => setDeals((a) => a.map((x, j) => j === i ? { ...x, debtShare: Math.max(0, Math.min(1, n / 100)) } : x))} /></td>
-                    <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" onClick={() => setDeals((a) => a.filter((_, j) => j !== i))}>✕</button></td>
+                    <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" onClick={() => setDeals((a) => a.filter((_, j) => j !== i))}><X size={13} strokeWidth={2.5} aria-hidden /></button></td>
                   </tr>
                 );
               })}

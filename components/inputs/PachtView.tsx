@@ -5,6 +5,7 @@ import { pachtIndexFactor, annuityPV } from "../../store/model";
 import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { Check, X } from "lucide-react";
 
 const START_YEAR = 2026;
 const N_YEARS = 8;
@@ -136,11 +137,11 @@ export function PachtView() {
                 {["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"].map((mn, mi) => <option key={mi} value={mi + 1}>{t(mn)}</option>)}
               </select>
               <NumberInput value={tr.share * 100} width={54} suffix="%" onCommit={(n) => setP((pp) => { pp.payMonths[i].share = Math.max(0, n / 100); })} />
-              <button className="text-[11px] text-nx-error" onClick={() => setP((pp) => { pp.payMonths = pp.payMonths.filter((_: any, j: number) => j !== i); })}>✕</button>
+              <button className="text-[11px] text-nx-error" onClick={() => setP((pp) => { pp.payMonths = pp.payMonths.filter((_: any, j: number) => j !== i); })}><X size={12} strokeWidth={2.5} aria-hidden /></button>
             </div>
           ))}
           {(() => { const sum = (p.payMonths ?? []).reduce((a, x) => a + x.share, 0); return (
-            <span className="text-[11px]" style={{ color: Math.abs(sum - 1) < 0.005 ? "var(--nx-success)" : "var(--nx-warning)" }}>Σ {t("Anteile")} {fmtNumber(sum * 100, 0)} %{Math.abs(sum - 1) > 0.005 ? t(" (sollte 100 % sein)") : " ✓"}</span>
+            <span className="text-[11px]" style={{ color: Math.abs(sum - 1) < 0.005 ? "var(--nx-success)" : "var(--nx-warning)" }}>Σ {t("Anteile")} {fmtNumber(sum * 100, 0)} %{Math.abs(sum - 1) > 0.005 ? t(" (sollte 100 % sein)") : <> <Check size={11} strokeWidth={2.5} className="inline align-[-1px]" aria-hidden /></>}</span>
           ); })()}
         </div>
         <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
@@ -164,7 +165,7 @@ export function PachtView() {
               <span className="text-[10.5px] text-nx-text-muted">{t("Jahr")}</span>
               <NumberInput value={s.atYear} width={44} onCommit={(n) => setP((pp) => { pp.indexSteps[i].atYear = Math.max(1, Math.round(n)); })} />
               <NumberInput value={s.pct * 100} width={54} suffix="%" onCommit={(n) => setP((pp) => { pp.indexSteps[i].pct = Math.max(0, n / 100); })} />
-              <button className="text-[11px] text-nx-error" onClick={() => setP((pp) => { pp.indexSteps = pp.indexSteps.filter((_: any, j: number) => j !== i); })}>✕</button>
+              <button className="text-[11px] text-nx-error" onClick={() => setP((pp) => { pp.indexSteps = pp.indexSteps.filter((_: any, j: number) => j !== i); })}><X size={12} strokeWidth={2.5} aria-hidden /></button>
             </div>
           ))}
         </div>

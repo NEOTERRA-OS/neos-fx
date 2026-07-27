@@ -1,6 +1,7 @@
 import { readAssumption } from "../../store/modelStore";
 import { CROP_NAME, CROP_COLOR } from "../../store/model";
 import type { Domain } from "../../store/model";
+import { t } from "../../lib/i18n";
 
 /** Rain-fed-Ertragsabschlag ggü. beregnet (Süd-Dolj Trockenrotation, Richtwert).
  *  Bewusst konservativ — Trockenrotation liefert ~60 % des Beregnungsertrags. */
@@ -16,7 +17,7 @@ export function netTonnes(d: Domain, cropId: string, sc: string, ha: number, dry
   return ha * y * (1 - cropLoss(d, cropId, sc));
 }
 
-export const cropName = (cropId: string) => (CROP_NAME as Record<string, string>)[cropId] ?? cropId;
+export const cropName = (cropId: string) => t((CROP_NAME as Record<string, string>)[cropId] ?? cropId);
 export const cropColor = (cropId: string) => (CROP_COLOR as Record<string, string>)[cropId] ?? "#7BB661";
 
 export type CropRow = { cropId: string; name: string; color: string; ha: number; yieldTHa: number; lossPct: number; tonnes: number; dry: boolean };

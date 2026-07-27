@@ -4,6 +4,7 @@ import { useModelStore } from "../../store/modelStore";
 import { MACHINE_LABELS, machineOpCostPerHaCent } from "../../store/model";
 import { fmtMoney } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 
 /** Arbeitsgänge je Kultur — Maschine × Überfahrten (editierbar). Treibt Maschinenstunden,
  *  Maschinen-Betriebskosten (COGS) und die Flottenauslastung. */
@@ -53,7 +54,7 @@ export function ArbeitsgaengeView() {
                         </td>
                         <td className="px-2 py-1.5 text-right">
                           <button className="text-[11px] text-nx-error" title={t("Arbeitsgang entfernen")}
-                            onClick={() => patch((d) => { d.arbeitsgaenge[c.cropId].splice(i, 1); })}>✕</button>
+                            onClick={() => patch((d) => { d.arbeitsgaenge[c.cropId].splice(i, 1); })}><X size={13} strokeWidth={2.5} aria-hidden /></button>
                         </td>
                       </tr>
                     ))}

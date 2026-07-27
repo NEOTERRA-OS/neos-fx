@@ -4,6 +4,7 @@ import { useModelStore, readAssumption } from "../../store/modelStore";
 import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 import { machineCapexAmounts, deriveFinancing } from "../../store/model";
 import { Segmented } from "../primitives/Segmented";
 import type { LeasingContract, ContractKind, PaymentFrequency, RateBasis, RepaymentProfile } from "../../core/types";
@@ -171,7 +172,7 @@ export function FinanzierungView() {
                 <TextInput value={c.name} width={260} onCommit={(v) => updC(c.id, (x) => { x.name = v; })} />
                 <span className="rounded-control px-2 py-0.5 text-[10px] font-semibold" style={{ background: "var(--nx-brand-tint,#f2f7e3)", color: "var(--nx-brand-lift)" }}>{t(KIND_LABEL[c.kind])}</span>
               </div>
-              <button className="text-[12px] text-nx-error" title={t("Vertrag entfernen")} onClick={() => removeC(c.id)}>{t("✕ entfernen")}</button>
+              <button className="inline-flex items-center gap-1 text-[12px] text-nx-error" title={t("Vertrag entfernen")} onClick={() => removeC(c.id)}><X size={13} strokeWidth={2.5} aria-hidden />{t("entfernen")}</button>
             </div>
 
             {/* Identität */}
@@ -196,7 +197,7 @@ export function FinanzierungView() {
                 {f.objects.map((o) => (
                   <span key={o.id} className="inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-[11px]" style={{ background: "var(--nx-app-bg)", border: "1px solid var(--nx-border)" }}>
                     {o.label} <span className="num text-nx-text-muted">{fmtMoney(o.amountCent)} €</span>
-                    <button className="text-nx-error" title={t("aus Paket entfernen")} onClick={() => assign(o.id, null)}>✕</button>
+                    <button className="text-nx-error" title={t("aus Paket entfernen")} onClick={() => assign(o.id, null)}><X size={12} strokeWidth={2.5} aria-hidden /></button>
                   </span>
                 ))}
               </div>

@@ -82,7 +82,7 @@ export function ContributionView() {
                 const margin = rev > 0 ? v / rev : 0;
                 return (
                   <tr key={c.cropId} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-                    <td className="px-2 py-1.5"><span className="inline-flex items-center gap-2"><span style={{ width: 9, height: 9, borderRadius: 3, background: CROP_COLOR[c.cropId] ?? "var(--nx-border)", flex: "0 0 auto" }} />{c.name}</span></td>
+                    <td className="px-2 py-1.5"><span className="inline-flex items-center gap-2"><span style={{ width: 9, height: 9, borderRadius: 3, background: CROP_COLOR[c.cropId] ?? "var(--nx-border)", flex: "0 0 auto" }} />{t(c.name)}</span></td>
                     <td className="px-2 py-1.5 text-[11px]" style={{ color: c.group === "value" ? "var(--nx-success)" : "var(--nx-warning)" }}>{c.group === "value" ? t("Wertkultur") : t("Rotation")}</td>
                     <td className="num px-2 py-1.5 text-right text-nx-text-secondary">{fmtNumber(c.areaHa, 0)}</td>
                     <td className="num px-2 py-1.5 text-right">{fmtMoney(rev)}</td>

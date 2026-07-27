@@ -6,6 +6,7 @@ import { computeModel } from "../../core/engine";
 import { npv, irr } from "../../design/finance";
 import { fmtMoney, fmtNumber, fmtPct } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 
 const MIO = 1e8; // CENT je Mio €
 function Num({ label, value, onChange, step = 1, suffix }: { label: string; value: number; onChange: (n: number) => void; step?: number; suffix?: string }) {
@@ -238,7 +239,7 @@ export function ShareholderView() {
                   <td className="num px-2 py-1.5 text-right font-semibold">{fmtNumber(cap.steps[i].post, 0)}</td>
                   <td className="num px-2 py-1.5 text-right">{fmtNumber(cap.steps[i].newPct * 100, 1)} %</td>
                   <td className="num px-2 py-1.5 text-right text-nx-text-secondary">{fmtNumber(cap.steps[i].foundersAfter * 100, 1)} %</td>
-                  <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" onClick={() => setRounds((a) => a.filter((x) => x.id !== r.id))}>✕</button></td>
+                  <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" onClick={() => setRounds((a) => a.filter((x) => x.id !== r.id))}><X size={13} strokeWidth={2.5} aria-hidden /></button></td>
                 </tr>
               ))}
             </tbody>

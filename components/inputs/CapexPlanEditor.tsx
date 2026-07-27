@@ -4,6 +4,7 @@ import { useModelStore } from "../../store/modelStore";
 import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { TriangleAlert, X } from "lucide-react";
 import type { CapexBlock, CapexDriverMode, AnlagenKlasse, CapexPlanItem } from "../../store/model";
 
 const BLOCKS: { id: CapexBlock; label: string; hint: string; auto?: string }[] = [
@@ -163,7 +164,7 @@ export function CapexPlanEditor({ blocks }: { blocks?: CapexBlock[] } = {}) {
                         <td className="px-2 py-1"><TextInput value={it.einheit} width={64} onCommit={(s) => upd(it.id, { einheit: s })} /></td>
                         <td className="px-2 py-1 text-right">
                           <NumberInput value={it.eurProEinheitCent} moneyCent width={96} onCommit={(n) => upd(it.id, { eurProEinheitCent: Math.max(0, n) })} />
-                          {outOfBench && <div className="caption text-[9px]" style={{ color: "var(--nx-neg, #C62828)" }} title={`${t("Benchmark")} ${fmtMoney(it.benchMinCent!)}–${fmtMoney(it.benchMaxCent!)} €`}>{t("⚠ außerh. Benchmark")}</div>}
+                          {outOfBench && <div className="inline-flex items-center gap-1 caption text-[9px]" style={{ color: "var(--nx-neg, #C62828)" }} title={`${t("Benchmark")} ${fmtMoney(it.benchMinCent!)}–${fmtMoney(it.benchMaxCent!)} €`}><TriangleAlert size={10} strokeWidth={2.5} aria-hidden />{t("außerh. Benchmark")}</div>}
                         </td>
                         <td className="px-2 py-1 text-right"><NumberInput value={it.afaYears} width={52} onCommit={(n) => upd(it.id, { afaYears: Math.max(1, Math.round(n)) })} /></td>
                         <td className="px-2 py-1 text-right"><NumberInput value={it.jahr} width={48} onCommit={(n) => upd(it.id, { jahr: Math.max(0, Math.round(n)) })} /></td>
@@ -174,7 +175,7 @@ export function CapexPlanEditor({ blocks }: { blocks?: CapexBlock[] } = {}) {
                         <td className="px-2 py-1 text-right num font-semibold">{it.bestand ? "–" : fmtMoney(netOf(it))}</td>
                         <td className="px-2 py-1 whitespace-nowrap">
                           <button onClick={() => dup(it.id)} className="text-[13px] px-1 text-nx-text-muted hover:text-nx-text" title={t("Duplizieren")}>⧉</button>
-                          <button onClick={() => del(it.id)} className="text-[13px] px-1" style={{ color: "var(--nx-neg, #C62828)" }} title={t("Löschen")}>✕</button>
+                          <button onClick={() => del(it.id)} className="text-[13px] px-1" style={{ color: "var(--nx-neg, #C62828)" }} title={t("Löschen")}><X size={13} strokeWidth={2.5} aria-hidden /></button>
                         </td>
                       </tr>
                     );

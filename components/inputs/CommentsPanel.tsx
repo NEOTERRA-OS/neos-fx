@@ -3,7 +3,7 @@ import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import type { CommentThread } from "../../store/model";
 import { t, getLang } from "../../lib/i18n";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, X } from "lucide-react";
 
 const rid = () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
@@ -55,7 +55,7 @@ export function CommentsPanel({ target, targetLabel, area, onClose }: {
                 {thread?.resolved ? t("wieder öffnen") : t("erledigt")}
               </button>
             )}
-            <button className="rounded-control border px-2 py-1 text-[13px]" style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)" }} onClick={onClose}>✕</button>
+            <button className="rounded-control border px-2 py-1 text-[13px]" style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)" }} onClick={onClose}><X size={14} strokeWidth={2.5} aria-hidden /></button>
           </div>
         </div>
 
@@ -68,7 +68,7 @@ export function CommentsPanel({ target, targetLabel, area, onClose }: {
                   <span className="text-[11.5px] font-semibold" style={{ color: "var(--nx-locate)" }}>{m.author}</span>
                   <span className="flex items-center gap-2">
                     <span className="num text-[9.5px] text-nx-text-muted">{new Date(m.ts).toLocaleString(locale)}</span>
-                    <button className="text-[11px] text-nx-error hover:opacity-70" title={t("Löschen")} onClick={() => del(m.id)}>✕</button>
+                    <button className="text-[11px] text-nx-error hover:opacity-70" title={t("Löschen")} onClick={() => del(m.id)}><X size={12} strokeWidth={2.5} aria-hidden /></button>
                   </span>
                 </div>
                 <div className="mt-0.5 whitespace-pre-wrap text-[12.5px] text-nx-text-secondary">{m.text}</div>

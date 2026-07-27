@@ -5,6 +5,7 @@ import { machineUnitPriceCent, type MachineType } from "../../store/model";
 import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { X } from "lucide-react";
 
 /** Maschinen-Register — BESTAND & EINZELKOSTEN je Maschine (Stammdaten):
  *  Kategorie · Hersteller · Produkt · Stückpreis (Liste) · Discount · Rücknahme · Bestand · Bestandswert.
@@ -162,7 +163,7 @@ export function MaschinenView() {
                         {/* Bearbeitete Fläche (nur Anbaugeräte mit C_eff) */}
                         <td className="px-2 py-1.5 text-right">{isFleet && (m.ownedUnits ?? 0) > 0 && m.cEff ? <NumberInput value={m.ownedHa ?? 0} width={64} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedHa = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
                         <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: (m.ownedUnits ?? 0) > 0 ? "var(--nx-brand-lift)" : "var(--nx-text-muted)" }} title={(m.ownedUnits ?? 0) > 0 ? `${t("Verschleiß")} ${Math.round(wearFrac(m) * 100)} ${t("% (Alter/Bh/ha, Maximum)")}` : undefined}>{(m.ownedUnits ?? 0) > 0 ? fmtMoney(bestandWert(m)) : "–"}</td>
-                        <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" title={t("Maschine entfernen")} onClick={() => patch((dd) => { const i = idxOf(m.id); if (i >= 0) dd.machineCatalog.splice(i, 1); })}>✕</button></td>
+                        <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" title={t("Maschine entfernen")} onClick={() => patch((dd) => { const i = idxOf(m.id); if (i >= 0) dd.machineCatalog.splice(i, 1); })}><X size={13} strokeWidth={2.5} aria-hidden /></button></td>
                       </tr>
                     );
                   })}

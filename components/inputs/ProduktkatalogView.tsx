@@ -7,6 +7,7 @@ import {
   type CatalogProduct, type ProductCategory, type RoAuth,
 } from "../../store/productCatalog";
 import { t } from "../../lib/i18n";
+import { TriangleAlert, Trash2, Check, X, HelpCircle } from "lucide-react";
 
 const CATS: ProductCategory[] = ["fertilizer", "foliar", "biostimulant", "psm", "seed_treatment", "seed_variety"];
 const RO_OPTS: { v: RoAuth; label: string }[] = [
@@ -71,7 +72,7 @@ export function ProduktkatalogView() {
 
         {/* Disclaimer */}
         <div className="mx-4 mt-3 flex items-start gap-2 rounded-tile border px-3 py-2 text-[11px]" style={{ borderColor: "var(--nx-warn, #C9A227)", background: "color-mix(in srgb, var(--nx-warn, #C9A227) 12%, transparent)" }}>
-          <span className="shrink-0 font-semibold" style={{ color: "var(--nx-warn, #C9A227)" }}>⚠</span>
+          <span className="shrink-0 font-semibold" style={{ color: "var(--nx-warn, #C9A227)" }}><TriangleAlert size={13} strokeWidth={2.5} aria-hidden /></span>
           <span className="text-nx-text-secondary">{t("Zulassungen ändern sich. Vor Einsatz jedes Produkt gegen das aktuelle rumänische Register prüfen — PSM/Beizung: MADR/PMDR (produse omologate); Sorten: ISTIS Catalog oficial. Als verboten/ausgelaufen markierte Produkte (rot) nicht einsetzen.")}</span>
         </div>
 
@@ -116,7 +117,7 @@ export function ProduktkatalogView() {
                     <td className="num px-2 py-1.5 text-right text-nx-text-muted">{p.rateMin != null ? `${p.rateMin}${p.rateMax != null && p.rateMax !== p.rateMin ? "–" + p.rateMax : ""} ${p.rateUnit ?? ""}` : "–"}</td>
                     <td className="px-2 py-1.5 text-right whitespace-nowrap">
                       <button className="text-[12px] text-nx-locate hover:opacity-70" title={t("Bearbeiten")} onClick={() => setEditId(editId === p.id ? null : p.id)}>✎</button>
-                      <button className="ml-2 text-[12px] text-nx-error hover:opacity-70" title={t("Löschen")} onClick={() => del(p.id)}>🗑</button>
+                      <button className="ml-2 text-[12px] text-nx-error hover:opacity-70" title={t("Löschen")} onClick={() => del(p.id)}><Trash2 size={13} strokeWidth={2.5} aria-hidden /></button>
                     </td>
                   </tr>
                   {editId === p.id && (
@@ -149,7 +150,7 @@ function ingredientText(p: CatalogProduct): string {
 
 function RoDot({ ro }: { ro: RoAuth }) {
   const c = ro === "yes" ? "var(--nx-green)" : ro === "no" ? "var(--nx-error)" : "var(--nx-border)";
-  const tx = ro === "yes" ? "✓" : ro === "no" ? "✕" : "?";
+  const tx = ro === "yes" ? <Check size={12} strokeWidth={3} aria-hidden /> : ro === "no" ? <X size={12} strokeWidth={3} aria-hidden /> : <HelpCircle size={12} strokeWidth={2.5} aria-hidden />;
   return <span className="inline-grid place-items-center rounded-control text-[10px] font-bold" style={{ width: 20, height: 18, background: c, color: ro === "unknown" ? "var(--nx-text-secondary)" : "#fff" }}>{tx}</span>;
 }
 

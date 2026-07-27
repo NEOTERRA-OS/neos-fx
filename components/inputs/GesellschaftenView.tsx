@@ -6,6 +6,7 @@ import { TextInput, NumberInput } from "./NumberInput";
 import { lookupCui } from "../../lib/anaf";
 import { KonsolidierungPanel } from "./KonsolidierungPanel";
 import { t } from "../../lib/i18n";
+import { Check, X } from "lucide-react";
 
 const ROLE_LABEL: Record<EntityRole, string> = {
   opco: "OpCo · Betrieb",
@@ -21,7 +22,7 @@ const ROLE_COLOR: Record<EntityRole, string> = {
   service: "var(--nx-text-secondary)",
   other: "var(--nx-text-muted)",
 };
-const COUNTRY_LABEL: Record<string, string> = { RO: "🇷🇴 Rumänien", CY: "🇨🇾 Zypern", DE: "🇩🇪 Deutschland", other: "Anderes" };
+const COUNTRY_LABEL: Record<string, string> = { RO: "Rumänien", CY: "Zypern", DE: "Deutschland", other: "Anderes" };
 
 type LookupState = { loading?: boolean; ok?: boolean; msg?: string };
 
@@ -103,7 +104,7 @@ export function GesellschaftenView() {
               <div className="ml-auto flex items-center gap-3">
                 <span className="caption text-[10.5px] text-nx-text-muted">{t("Beteiligung")}</span>
                 <NumberInput value={e.ownershipPct} width={72} suffix="%" onCommit={(nv) => upd(e.id, (x) => { x.ownershipPct = Math.max(0, Math.min(100, nv)); })} />
-                <button className="text-[12px] text-nx-error" title={t("Gesellschaft entfernen")} onClick={() => remove(e.id)}>✕</button>
+                <button className="text-[12px] text-nx-error" title={t("Gesellschaft entfernen")} onClick={() => remove(e.id)}><X size={13} strokeWidth={2.5} aria-hidden /></button>
               </div>
             </div>
 
@@ -127,8 +128,8 @@ export function GesellschaftenView() {
                 </span>
               )}
               {st.msg && (
-                <span className="caption text-[10.5px]" style={{ color: st.ok ? "var(--nx-brand-lift)" : "var(--nx-error)" }}>
-                  {st.ok ? "✓ " : "✕ "}{st.msg}
+                <span className="inline-flex items-center gap-1 caption text-[10.5px]" style={{ color: st.ok ? "var(--nx-brand-lift)" : "var(--nx-error)" }}>
+                  {st.ok ? <Check size={12} strokeWidth={2.5} aria-hidden /> : <X size={12} strokeWidth={2.5} aria-hidden />}{st.msg}
                 </span>
               )}
             </div>

@@ -5,6 +5,7 @@ import { fmtMoney, fmtNumber } from "../../design/format";
 import { cropName } from "./cropCalc";
 import { scoreAnbau, type AdviceItem } from "../../store/anbauAdvisor";
 import { t } from "../../lib/i18n";
+import { Check } from "lucide-react";
 
 /** What-if — bewertet die aktuelle Planänderung gegen einen Baseline-Snapshot: Flächen-Diff,
  *  ΔDeckungsbeitrag, ΔRisiko (Advisor), ΔWasserbedarf + neu entstandene / behobene Hinweise. */
@@ -108,7 +109,7 @@ export function AnbauWhatIfPanel() {
               ) : <span className="text-[11.5px] text-nx-text-muted">{t("— keine —")}</span>}
             </div>
             <div>
-              <div className="caption text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: pos }}>{t("✓ Behobene Hinweise")} ({cmp.resolved.length})</div>
+              <div className="inline-flex items-center gap-1 caption text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: pos }}><Check size={11} strokeWidth={2.5} aria-hidden />{t("Behobene Hinweise")} ({cmp.resolved.length})</div>
               {cmp.resolved.length ? (
                 <ul className="space-y-1">{cmp.resolved.map((i) => <li key={i.id} className="text-[11.5px]"><b>{i.title}</b></li>)}</ul>
               ) : <span className="text-[11.5px] text-nx-text-muted">{t("— keine —")}</span>}

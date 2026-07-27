@@ -6,6 +6,7 @@ import { deriveTransportDecision, type TransportConfig } from "../../store/model
 import { Segmented } from "../primitives/Segmented";
 import { NumberInput } from "./NumberInput";
 import { t as tr } from "../../lib/i18n";
+import { Check } from "lucide-react";
 
 /** Kompaktes Eingabefeld: Label oben, editierbarer Wert (de-DE), Einheit. */
 function In({ label, value, onCommit, unit, w = 92, moneyCent }: { label: string; value: number; onCommit: (n: number) => void; unit?: string; w?: number; moneyCent?: boolean }) {
@@ -118,7 +119,7 @@ function Result({ rows, winner, diff }: { rows: [string, string, string][]; winn
         </tbody>
       </table>
       <div className="mt-2 flex items-center gap-2 rounded-control px-3 py-2 text-[12.5px]" style={{ background: "var(--nx-success-bg, #E7F0E8)", color: "var(--nx-success)" }}>
-        <span aria-hidden>✓</span><b>{tr("Wirtschaftlicher:")} {winner}</b><span className="text-nx-text-muted">{tr("· Differenz")} {diff}{tr("/Jahr")}</span>
+        <Check size={13} strokeWidth={2.5} aria-hidden /><b>{tr("Wirtschaftlicher:")} {winner}</b><span className="text-nx-text-muted">{tr("· Differenz")} {diff}{tr("/Jahr")}</span>
       </div>
     </div>
   );

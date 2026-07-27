@@ -6,6 +6,7 @@ import { computeModel } from "../../core/engine";
 import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { Circle, Minus } from "lucide-react";
 
 const LABEL: Record<string, string> = {
   weizen: "Winterweizen", gerste_zw: "Wintergerste", winterraps: "Winterraps", soja_luzerne: "Soja / Luzerne",
@@ -194,7 +195,7 @@ export function AnbaustrategieView() {
                 const isValueMach = /Tomaten|ROPA|Kartoffel/.test(m.cat + m.crops.join());
                 const isCerealMach = /Mähdrescher/.test(m.cat);
                 const need = (scen: "a" | "b" | "c") => scen === "a" ? (isValueMach || !isCerealMach) : scen === "b" ? !isValueMach : true;
-                const cell = (on: boolean) => <td className="px-2 py-1.5 text-center" style={{ color: on ? "var(--nx-success)" : "var(--nx-text-muted)" }}>{on ? "●" : "–"}</td>;
+                const cell = (on: boolean) => <td className="px-2 py-1.5 text-center" style={{ color: on ? "var(--nx-success)" : "var(--nx-text-muted)" }}>{on ? <Circle size={9} fill="currentColor" strokeWidth={0} className="inline-block align-middle" aria-hidden /> : <Minus size={12} strokeWidth={2.5} className="inline-block align-middle" aria-hidden />}</td>;
                 return (
                   <tr key={m.cat} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
                     <td className="px-2 py-1.5">{t(m.cat)}</td>

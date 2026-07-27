@@ -7,6 +7,7 @@ import { fmtNumber } from "../../design/format";
 import { TextInput } from "./NumberInput";
 import { CommentsPanel, threadOf } from "./CommentsPanel";
 import { t, getLang } from "../../lib/i18n";
+import { MessageSquare } from "lucide-react";
 
 /** Annahmen-Register — Team-Review-Blatt aller Modell-Treiber: Wert (je Szenario) editierbar,
  *  plus Quelle · Owner · Konfidenz · Status (Ampel) · Notiz und eine Änderungs-Historie
@@ -191,10 +192,10 @@ export function AnnahmenRegisterView() {
                               <span className="font-medium">{r.label}</span>
                               {(() => { const th = threadOf(domain.comments, `assumption:${r.key}`); const n = th?.messages.length ?? 0;
                                 return (
-                                  <button className="shrink-0 rounded-control border px-1 text-[10px] leading-none hover:opacity-80"
+                                  <button className="inline-flex shrink-0 items-center gap-0.5 rounded-control border px-1 text-[10px] leading-none hover:opacity-80"
                                     style={{ height: 18, borderColor: n ? (th?.resolved ? "var(--nx-green)" : "var(--nx-locate)") : "var(--nx-border)", color: n ? (th?.resolved ? "var(--nx-green)" : "var(--nx-locate)") : "var(--nx-text-muted)", background: "var(--nx-app-bg)" }}
                                     title={t("Kommentare")} onClick={() => setCmt({ target: `assumption:${r.key}`, label: r.label, area: r.category })}>
-                                    💬{n ? ` ${n}` : ""}
+                                    <MessageSquare size={11} strokeWidth={2.5} aria-hidden />{n ? <span className="num">{n}</span> : null}
                                   </button>
                                 ); })()}
                             </div>

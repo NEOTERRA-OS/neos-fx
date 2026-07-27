@@ -9,7 +9,7 @@ import { AnbauWhatIfPanel } from "./AnbauWhatIfPanel";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
 import { deriveCropAreasMY, effectiveGrowth, scopedDomain, type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
-import { Droplets, Sun } from "lucide-react";
+import { Droplets, Sun, X } from "lucide-react";
 import { Segmented } from "../primitives/Segmented";
 
 /** Feldkosten €/ha einer Kultur = Σ opLine (Menge/ha × Stücksatz), aus dem KATALOG gezogen. */
@@ -129,7 +129,7 @@ export function AnbauplanView() {
             {plan.map((e, i) => {
               const entry = planDomain.catalog.find((c) => c.cropId === e.cropId);
               const perHa = entry ? fieldCostPerHaCent(planDomain, entry, sc) : 0;
-              const cropLabel = entry?.name ?? cropName(e.cropId);
+              const cropLabel = entry ? t(entry.name) : cropName(e.cropId);
               return (
                 <tr key={e.id} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
                   <td className="px-2 py-2">
@@ -139,7 +139,7 @@ export function AnbauplanView() {
                       <select className="rounded-control border px-2 text-[12.5px]" style={{ height: 34, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)", fontWeight: 600 }}
                         value={e.cropId}
                         onChange={(ev) => patch((d) => { d.anbauplan[i].cropId = ev.target.value; })}>
-                        {domain.catalog.map((c) => <option key={c.cropId} value={c.cropId}>{c.name}</option>)}
+                        {domain.catalog.map((c) => <option key={c.cropId} value={c.cropId}>{t(c.name)}</option>)}
                       </select>
                     )}
                   </td>
@@ -160,7 +160,7 @@ export function AnbauplanView() {
                   <td className="px-2 py-2 text-right">
                     {!stageCashOnly && (
                       <button className="text-[11px] text-nx-error" title={t("Zeile entfernen")}
-                        onClick={() => patch((d) => { d.anbauplan.splice(i, 1); })}>✕</button>
+                        onClick={() => patch((d) => { d.anbauplan.splice(i, 1); })}><X size={13} strokeWidth={2.5} aria-hidden /></button>
                     )}
                   </td>
                 </tr>
@@ -168,7 +168,7 @@ export function AnbauplanView() {
             })}
             {showDry && dryRows.map((r) => (
               <tr key={`dry-${r.cropId}`} style={{ borderTop: "1px solid var(--nx-border-divider)", background: "color-mix(in srgb, var(--nx-warn, #C9A227) 5%, transparent)" }}>
-                <td className="px-2 py-2 font-semibold" style={{ color: "var(--nx-text-secondary)" }}>{r.name}</td>
+                <td className="px-2 py-2 font-semibold" style={{ color: "var(--nx-text-secondary)" }}>{t(r.name)}</td>
                 <td className="px-2 py-2"><BeregBadge kind="trocken" /></td>
                 <td className="num px-2 py-2 text-right">{fmtNumber(r.ha, 0)} ha</td>
                 <td className="num px-2 py-2 text-right text-nx-text-secondary">{r.plant ?? "—"}</td>
@@ -368,7 +368,7 @@ function ProduktionsTabelle() {
                 <td className="px-2 py-2">
                   <span className="inline-flex items-center gap-2">
                     <span style={{ width: 9, height: 9, borderRadius: 2, background: cropColor(r.cropId), display: "inline-block" }} />
-                    {r.name}
+                    {t(r.name)}
                   </span>
                 </td>
                 <td className="px-2 py-2"><BeregBadge kind="beregnet" /></td>
@@ -384,7 +384,7 @@ function ProduktionsTabelle() {
                 <td className="px-2 py-2">
                   <span className="inline-flex items-center gap-2">
                     <span style={{ width: 9, height: 9, borderRadius: 2, background: cropColor(r.cropId), display: "inline-block", opacity: 0.6 }} />
-                    {r.name}
+                    {t(r.name)}
                   </span>
                 </td>
                 <td className="px-2 py-2"><BeregBadge kind="trocken" /></td>

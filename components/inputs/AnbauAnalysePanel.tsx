@@ -5,9 +5,10 @@ import { NumberInput } from "./NumberInput";
 import { deriveAnbauAdvice, adviceSummary, type AdviceItem, type AdviceSeverity, type AdviceCategory } from "../../store/anbauAdvisor";
 import type { StandortProfil } from "../../store/model";
 import { t } from "../../lib/i18n";
+import { Check } from "lucide-react";
 
-const TONE: Record<AdviceSeverity, { c: string; bg: string; icon: string; label: string }> = {
-  info:    { c: "var(--nx-success)", bg: "var(--nx-success-bg)", icon: "✓", label: "Begründung" },
+const TONE: Record<AdviceSeverity, { c: string; bg: string; icon: React.ReactNode; label: string }> = {
+  info:    { c: "var(--nx-success)", bg: "var(--nx-success-bg)", icon: <Check size={12} strokeWidth={2.5} aria-hidden />, label: "Begründung" },
   advice:  { c: "var(--nx-locate)", bg: "color-mix(in srgb, var(--nx-locate) 16%, transparent)", icon: "→", label: "Empfehlung" },
   warning: { c: "var(--nx-warning)", bg: "var(--nx-warning-bg)", icon: "!", label: "Hinweis" },
   risk:    { c: "var(--nx-error)", bg: "var(--nx-error-bg)", icon: "▲", label: "Risiko" },

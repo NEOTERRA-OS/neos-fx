@@ -4,6 +4,7 @@ import { useModelStore, readAssumption } from "../../store/modelStore";
 import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { Check } from "lucide-react";
 import type { OpeningBalance } from "../../core/types";
 import { parseRomanianBalance, machineUnitPriceCent, type OBField, type MachineType } from "../../store/model";
 
@@ -166,12 +167,12 @@ export function EroeffnungsbilanzView() {
                 <div className="rounded-tile border flex flex-col" style={{ borderColor: "var(--nx-border)" }}>
                   <div className="px-3 py-2 border-b caption text-[10px] text-nx-text-muted" style={{ borderColor: "var(--nx-border-divider)" }}>{t("Nicht zugeordnete Konten")}</div>
                   <div className="flex-1 overflow-auto px-3 py-1.5 text-[11.5px]" style={{ maxHeight: 160 }}>
-                    {parsed.unmapped.length === 0 ? <span className="text-nx-text-muted">{t("Alle Konten zugeordnet ✓")}</span> :
+                    {parsed.unmapped.length === 0 ? <span className="inline-flex items-center gap-1 text-nx-text-muted">{t("Alle Konten zugeordnet")}<Check size={11} strokeWidth={2.5} aria-hidden /></span> :
                       parsed.unmapped.map((r, i) => <div key={i} className="flex justify-between gap-2 py-0.5"><span className="num text-nx-text-muted">{r.account}</span><span className="flex-1 truncate">{r.label}</span><span className="num text-nx-text-muted">{fmtMoney(r.debit - r.credit)}</span></div>)}
                   </div>
                   <div className="flex items-center justify-between gap-2 border-t px-3 py-2" style={{ borderColor: "var(--nx-border-divider)" }}>
                     <span className="num text-[11.5px] font-semibold" style={{ color: Math.abs(impDiff) < 100 ? "var(--nx-success)" : "var(--nx-warning)" }}>
-                      {Math.abs(impDiff) < 100 ? t("✓ ausgeglichen") : `Δ ${fmtMoney(impDiff)} €`}
+                      {Math.abs(impDiff) < 100 ? <span className="inline-flex items-center gap-1"><Check size={11} strokeWidth={2.5} aria-hidden />{t("ausgeglichen")}</span> : `Δ ${fmtMoney(impDiff)} €`}
                     </span>
                     <button className="rounded-control border px-3 text-[12px] font-semibold" style={{ height: 32, borderColor: "var(--nx-brand-lift)", color: "var(--nx-brand-lift)", background: "var(--nx-surface)" }} onClick={applyImport}>
                       {t("In Eröffnungsbilanz übernehmen")}
@@ -189,7 +190,7 @@ export function EroeffnungsbilanzView() {
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
           <h2 className="text-[14px] font-semibold">{t("Eröffnungsbilanz (Modellstart)")}</h2>
           <span className="num text-[12px] font-semibold" style={{ color: diff === 0 ? "var(--nx-success)" : "var(--nx-error)" }}>
-            {diff === 0 ? t("✓ ausgeglichen") : `Δ ${fmtMoney(diff)} €`}
+            {diff === 0 ? <span className="inline-flex items-center gap-1"><Check size={11} strokeWidth={2.5} aria-hidden />{t("ausgeglichen")}</span> : `Δ ${fmtMoney(diff)} €`}
           </span>
         </div>
         <div className="flex flex-col gap-6 px-4 py-3 md:flex-row">

@@ -11,6 +11,7 @@ import B6 from "./i18n_b6";
 import B7 from "./i18n_b7";
 import B8 from "./i18n_b8";
 import B9 from "./i18n_b9";
+import B10 from "./i18n_b10";
 
 export type Lang = "de" | "en";
 
@@ -121,7 +122,7 @@ const SHELL: Record<string, string> = {
 };
 
 /** Gesamtwörterbuch: Shell + alle View-Blöcke (Spread-Merge, spätere gewinnen bei Kollision). */
-const EN: Record<string, string> = { ...SHELL, ...B1, ...B2, ...B3, ...B4, ...B5, ...B6, ...B7, ...B8, ...B9 };
+const EN: Record<string, string> = { ...SHELL, ...B1, ...B2, ...B3, ...B4, ...B5, ...B6, ...B7, ...B8, ...B9, ...B10 };
 
 export function t(de: string): string {
   if (LANG === "de") return de;

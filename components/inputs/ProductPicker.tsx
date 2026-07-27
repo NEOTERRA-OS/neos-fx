@@ -5,6 +5,7 @@ import {
   suggestProducts, categoriesForOp,
 } from "../../store/productCatalog";
 import { t } from "../../lib/i18n";
+import { Check, X } from "lucide-react";
 
 /** Produkt-Auswahl-Overlay: schlägt je Maßnahme passende Produkte aus dem Katalog vor
  *  (RO-zugelassen zuerst) und übernimmt die Auswahl in die Betriebsmittel-Zeile. */
@@ -45,7 +46,7 @@ export function ProductPicker({
               {cropName ?? cropId}{label ? ` · ${label}` : ""}{cats.length ? ` · ${cats.map((c) => t(PRODUCT_CATEGORY_LABEL[c])).join(" / ")}` : ""}
             </div>
           </div>
-          <button className="rounded-control border px-2 py-1 text-[13px]" style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)" }} onClick={onClose}>✕</button>
+          <button className="rounded-control border px-2 py-1 text-[13px]" style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)" }} onClick={onClose}><X size={14} strokeWidth={2.5} aria-hidden /></button>
         </div>
 
         {/* Controls */}
@@ -76,9 +77,9 @@ export function ProductPicker({
 }
 
 function RoBadge({ ro }: { ro: CatalogProduct["roAuthorized"] }) {
-  const cfg = ro === "yes" ? { bg: "var(--nx-green)", c: "#fff", tx: "RO ✓" }
-    : ro === "no" ? { bg: "var(--nx-error)", c: "#fff", tx: t("nicht zugel.") }
-    : { bg: "var(--nx-border)", c: "var(--nx-text-secondary)", tx: "RO ?" };
+  const cfg = ro === "yes" ? { bg: "var(--nx-green)", c: "#fff", tx: <span className="inline-flex items-center gap-0.5">RO <Check size={10} strokeWidth={3} aria-hidden /></span> }
+    : ro === "no" ? { bg: "var(--nx-error)", c: "#fff", tx: t("nicht zugel.") as React.ReactNode }
+    : { bg: "var(--nx-border)", c: "var(--nx-text-secondary)", tx: "RO ?" as React.ReactNode };
   return <span className="rounded-control px-1.5 py-0.5 text-[9.5px] font-semibold" style={{ background: cfg.bg, color: cfg.c }}>{cfg.tx}</span>;
 }
 
