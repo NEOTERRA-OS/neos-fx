@@ -852,7 +852,10 @@ type CropId =
   | "suesskartoffel" | "knoblauch" | "knollensellerie"
   // Rain-fed (Trockenrotation) — eigene Kulturvarianten, gleiche Maschinen wie die Cash-Crops,
   //  reduzierte Direktkosten, keine Beregnung. DB = Ergebnis der Bottom-up-Kalkulation.
-  | "weizen_dry" | "gerste_dry" | "raps_dry";
+  | "weizen_dry" | "gerste_dry" | "raps_dry"
+  // Sonnenblume (rain-fed Break Crop, Süd-Dolj): trockentolerant, tiefwurzelnd, niedriger N-Bedarf.
+  //  Eigene lange Anbaupause (Sclerotinia/Phomopsis/Orobanche) → Kandidat der Trockenrotation.
+  | "sonnenblume";
 
 /** Kultur-Kalender (Monatsindex 0 = Jan). WINTERUNGEN saisonal korrekt: Aussaat im HERBST
  *  (Saatgut-/Herbstkosten Sep/Okt — konsistent mit SOW_MONTH des Maßnahmenkatalogs), Düngung/
@@ -874,6 +877,7 @@ const CROP_CAL: Record<CropId, { plant: number; harvest: number[]; dueng?: numbe
   weizen_dry:        { plant: 9, harvest: [6], dueng: 1, psm: 3 },  // rain-fed, keine Beregnung
   gerste_dry:        { plant: 9, harvest: [6], dueng: 1, psm: 3 },
   raps_dry:          { plant: 8, harvest: [6], dueng: 1, psm: 2 },
+  sonnenblume:       { plant: 3, harvest: [8], dueng: 3, psm: 4 },  // Sommerung: Saat Apr · Ernte Sep, rain-fed
 };
 
 export const CROP_NAME: Record<CropId, string> = {
@@ -892,6 +896,7 @@ export const CROP_NAME: Record<CropId, string> = {
   weizen_dry: "Winterweizen (trocken)",
   gerste_dry: "Wintergerste (trocken)",
   raps_dry: "Winterraps (trocken)",
+  sonnenblume: "Sonnenblume (trocken)",
 };
 
 /**
@@ -914,6 +919,7 @@ const AGRO_COSTS: Record<CropId, [number, number, number, number, number, number
   weizen_dry:        [ 80, 150, 110,   0,   0,  40], // Σ 380 rain-fed (weniger N/PSM, keine Beregnung)
   gerste_dry:        [ 72, 130,  95,   0,   0,  35], // Σ 332
   raps_dry:          [ 60, 150, 120,   0,   0,  25], // Σ 355
+  sonnenblume:       [100, 130, 120,   0,   0,  25], // Σ 375 rain-fed (Hybridsaat, niedriger N, ClearField+Sclerotinia)
 };
 
 /** Fixkosten je ha (Referenz A): Pacht (alle) + Overhead/Versich./Zins je Kultur. */
@@ -922,7 +928,7 @@ const OVERHEAD_PER_HA: Record<CropId, number> = {
   weizen: 150, gerste_zw: 140, soja_luzerne: 130, winterraps: 140, mais: 150, tomate: 680,
   kartoffel_pommes: 410, kartoffel_chips: 470, zwiebel_moehre: 300,
   suesskartoffel: 380, knoblauch: 350, knollensellerie: 320,
-  weizen_dry: 150, gerste_dry: 140, raps_dry: 140,
+  weizen_dry: 150, gerste_dry: 140, raps_dry: 140, sonnenblume: 140,
 };
 /** Beregnung-Pivot AfA/Wartung je ha (Referenz A, §3-Fixblock) — nur für die analytische
  *  Vollkosten-Sicht (deriveContribution). Im 3-Statement steckt die Beregnung in der CAPEX-AfA. */
@@ -930,7 +936,7 @@ const BEREGNUNG_PIVOT_PER_HA: Record<CropId, number> = {
   weizen: 250, gerste_zw: 250, soja_luzerne: 250, winterraps: 250, mais: 300, tomate: 600,
   kartoffel_pommes: 450, kartoffel_chips: 450, zwiebel_moehre: 300,
   suesskartoffel: 400, knoblauch: 250, knollensellerie: 350,
-  weizen_dry: 0, gerste_dry: 0, raps_dry: 0,
+  weizen_dry: 0, gerste_dry: 0, raps_dry: 0, sonnenblume: 0,
 };
 /** Personal (Maschinenbetrieb) €/ha je Kultur (Referenz A / §3). Nur für die Vollkosten-Sicht;
  *  im 3-Statement ist Personal über das FTE-Modell (computePersonnel) abgebildet. CENT/ha. */
@@ -938,7 +944,7 @@ const PERSONNEL_MASCH_PER_HA_CENT: Record<CropId, number> = {
   weizen: 1220, gerste_zw: 1281, soja_luzerne: 1022, winterraps: 1150, mais: 1300, tomate: 13471,
   kartoffel_pommes: 6719, kartoffel_chips: 6719, zwiebel_moehre: 11026,
   suesskartoffel: 8500, knoblauch: 9500, knollensellerie: 9800,
-  weizen_dry: 1220, gerste_dry: 1281, raps_dry: 1150,
+  weizen_dry: 1220, gerste_dry: 1281, raps_dry: 1150, sonnenblume: 1150,
 };
 
 /**
@@ -1022,6 +1028,11 @@ const ARBEITSGAENGE: Record<CropId, Arbeitsgang[]> = {
   raps_dry: [
     { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "einzelkorn", passes: 1 },
     { m: "streuer", passes: 2 }, { m: "spritze14", passes: 2 }, { m: "maehdr", passes: 1 }, { m: "transport", passes: 1 },
+  ],
+  // Sonnenblume: Einzelkornsaat (Präzision wie Mais/Raps), wenige Überfahrten, Mähdrusch mit SB-Vorsatz.
+  sonnenblume: [
+    { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "einzelkorn", passes: 1 },
+    { m: "streuer", passes: 1 }, { m: "spritze14", passes: 3 }, { m: "maehdr", passes: 1 }, { m: "transport", passes: 1 },
   ],
 };
 
@@ -1130,6 +1141,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("seed.weizen_dry", "seed.weizen_dry", "Saatgut Winterweizen (trocken) €/kg", "money", 55),
   A("seed.gerste_dry", "seed.gerste_dry", "Saatgut Wintergerste (trocken) €/kg", "money", 53),
   A("seed.raps_dry", "seed.raps_dry", "Saatgut Winterraps (trocken) €/Einheit", "money", 12000),
+  A("seed.sonnenblume", "seed.sonnenblume", "Saatgut Sonnenblume-Hybrid €/Einheit", "money", 20000),
   A("seed.tomate", "seed.tomate", "Tomate F1-Jungpflanzen €/1000 Pfl.", "money", 3600),
   A("seed.kartoffel_pommes", "seed.kartoffel_pommes", "Pflanzkartoffeln (Pommes) €/t", "money", 39000),
   A("seed.kartoffel_chips", "seed.kartoffel_chips", "Pflanzkartoffeln (Chips) €/t", "money", 41000),
@@ -1192,6 +1204,11 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("qual.weizen_dry", "qual.weizen_dry", "Qualitätserfüllung Winterweizen (trocken)", "rate", 0.98, 1.00, 0.92),
   A("qual.gerste_dry", "qual.gerste_dry", "Qualitätserfüllung Wintergerste (trocken)", "rate", 0.98, 1.00, 0.92),
   A("qual.raps_dry", "qual.raps_dry", "Qualitätserfüllung Winterraps (trocken)", "rate", 0.98, 1.00, 0.92),
+  // Sonnenblume (rain-fed Break Crop) — Ertrag Oltenien ~3,0 t/ha, Ölsaatpreis knapp unter Raps.
+  A("yield.sonnenblume", "yield.sonnenblume", "Ertrag Sonnenblume (trocken/rain-fed)", "tonne_per_ha", 3.0, 3.5, 2.2),
+  A("price.sonnenblume", "price.sonnenblume", "Preis Sonnenblume (Ölsaat)", "money_per_tonne", 46000, 52000, 40000),
+  A("loss.sonnenblume", "loss.sonnenblume", "Verlust Sonnenblume (Ernte/Trocknung)", "rate", 0.05),
+  A("qual.sonnenblume", "qual.sonnenblume", "Qualitätserfüllung Sonnenblume (Ölgehalt)", "rate", 0.98, 1.00, 0.92),
 
   // --- Kontrakt-Qualitätserfüllung (0..1): realisierter Preis nach Qualitäts-Bonus/Malus ×
   //     akzeptierte Menge. 1 = 100 % Kontrakterfüllung. Best/Worst = Qualitäts-Upside/-Downside.
@@ -1372,6 +1389,7 @@ const DUENGUNG_PROGRAM: Record<CropId, Gabe[]> = {
   weizen_dry:       [{ label: "Grund P/K (BBCH 00, Streuer)", p: 50, k: 60 }, { label: "N1 Andüngung + S (BBCH 25–30)", n: 45, s: 20 }, { label: "N2 Schossen (BBCH 31–32)", n: 40 }],
   gerste_dry:       [{ label: "Grund P/K (Streuer)", p: 45, k: 55 }, { label: "N1 + S (BBCH 25–30)", n: 45, s: 15 }, { label: "N2 (BBCH 31–32)", n: 35 }],
   raps_dry:         [{ label: "Grund P/K (Streuer)", p: 40, k: 70 }, { label: "N Herbst (BBCH 12–16)", n: 25 }, { label: "N1 Frühjahr + S (BBCH 30)", n: 45, s: 35 }],
+  sonnenblume:      [{ label: "Grund P/K + N (BBCH 00, Streuer)", n: 40, p: 40, k: 80 }, { label: "N Andüngung (BBCH 14–16)", n: 30 }],
 };
 /** PSM-Programm je Kultur — Überfahrten/Blöcke mit Mittelkosten €/ha (BBCH im Label).
  *  passes = Spritz-Überfahrten des Blocks (Default 1; 0 = Tankmischung mit vorherigem Block
@@ -1393,6 +1411,7 @@ const PSM_PROGRAM: Record<CropId, { label: string; eurHa: number; passes?: numbe
   weizen_dry:       [{ label: "H Herbst (BBCH 11–13)", eurHa: 45 }, { label: "WR + H (BBCH 30–31)", eurHa: 45 }, { label: "F Fahnenblatt (BBCH 37–39)", eurHa: 45 }],
   gerste_dry:       [{ label: "H Herbst (BBCH 12–13)", eurHa: 45 }, { label: "T1 GS 30–32 Fungizid (Netzflecken/Rhynchosporium)", eurHa: 50 }, { label: "T2 GS 45–49 Fungizid (Ramularia)", eurHa: 40 }],
   raps_dry:         [{ label: "H Nachauflauf (BBCH 12–14, Metazachlor+Quinmerac)", eurHa: 45 }, { label: "I Rapsglanzkäfer (BBCH 50–59, Acetamiprid)", eurHa: 30 }, { label: "F Sclerotinia (BBCH 63–65, Prothioconazol+Fluopyram)", eurHa: 50 }],
+  sonnenblume:      [{ label: "H Vorauflauf (BBCH 00–09)", eurHa: 50 }, { label: "H Nachauflauf (BBCH 12–16, Imazamox/ClearField)", eurHa: 45 }, { label: "F Sclerotinia/Phomopsis (BBCH 51–59, Boscalid)", eurHa: 45 }],
 };
 
 /* --- SSOT-VERZAHNUNG Maßnahmen → Arbeitsgänge ------------------------------------
@@ -1541,13 +1560,14 @@ const SEED_PROGRAM: Record<CropId, { qty: number; unit: string }> = {
   // Sellerie: 45–50 T Pfl./ha (50×40 cm) — Standard Frischmarkt-Kaliber 500–1.000 g.
   suesskartoffel: { qty: 30, unit: "×1000 Slips" }, knoblauch: { qty: 900, unit: "kg" }, knollensellerie: { qty: 50, unit: "×1000 Pfl." },
   weizen_dry: { qty: 200, unit: "kg" }, gerste_dry: { qty: 170, unit: "kg" }, raps_dry: { qty: 1.8, unit: "Einh." },
+  sonnenblume: { qty: 0.5, unit: "Einh." },
 };
 /** Phase 5 — Bewässerungsnorm mm/ha je Kultur (Süd-Oltenien; Weizen/Mais belegt, übrige abgeleitet). */
 const BEWAESSERUNG_MM: Record<CropId, number> = {
   weizen: 175, gerste_zw: 110, soja_luzerne: 150, winterraps: 130, mais: 200,
   tomate: 550, kartoffel_pommes: 380, kartoffel_chips: 380, zwiebel_moehre: 330,
   suesskartoffel: 300, knoblauch: 150, knollensellerie: 350,
-  weizen_dry: 0, gerste_dry: 0, raps_dry: 0,
+  weizen_dry: 0, gerste_dry: 0, raps_dry: 0, sonnenblume: 0,
 };
 
 function buildCropOps(cropId: CropId): OpSeed[] {
@@ -1586,12 +1606,12 @@ const CROP_IDS: CropId[] = [
   "weizen", "gerste_zw", "soja_luzerne", "winterraps", "mais", "tomate",
   "kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre",
   "suesskartoffel", "knoblauch", "knollensellerie",
-  "weizen_dry", "gerste_dry", "raps_dry",
+  "weizen_dry", "gerste_dry", "raps_dry", "sonnenblume",
 ];
 
 /** Wertkulturen (Beregnung/Gemüse, hoher DB) vs. Break Crops (Getreide/Ölsaat der Rotation). */
 export const VALUE_CROP_IDS: string[] = ["tomate", "kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre", "suesskartoffel", "knoblauch", "knollensellerie"];
-export const BREAK_CROP_IDS: string[] = ["weizen", "gerste_zw", "soja_luzerne", "winterraps", "mais", "weizen_dry", "gerste_dry", "raps_dry"];
+export const BREAK_CROP_IDS: string[] = ["weizen", "gerste_zw", "soja_luzerne", "winterraps", "mais", "weizen_dry", "gerste_dry", "raps_dry", "sonnenblume"];
 /** Lagerpflichtige Kulturen (Packhaus/Kühl-/CA-Lager). Industrietomate → direkt zum Verarbeiter
  *  (keine Einlagerung); Getreide → Silo/Direktverkauf. Nur Kartoffel + Zwiebel/Möhre. */
 export const STORAGE_CROP_IDS: string[] = ["kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre", "suesskartoffel", "knoblauch", "knollensellerie"];
@@ -1945,26 +1965,31 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
  *  Nach dem nächsten Autosave heilt sich der Cloud-Stand dauerhaft. */
 export function migrateDomain(d: Domain): Domain {
   if (!d || !Array.isArray(d.anbauplan) || !Array.isArray(d.catalog)) return d;
+  // Kandidaten mit Kultur-Stammdaten (Katalog/Arbeitsgänge/Assumptions), die aus SEED nachgezogen
+  //  werden — inkl. Sonnenblume als Rotations-Kandidat (der Optimierer braucht ihre Kalkulation).
+  const CANDIDATE_IDS: CropId[] = ["weizen_dry", "gerste_dry", "raps_dry", "sonnenblume"];
+  // Nur diese werden bei fehlendem Dryland aktiv in den Anbauplan aufgenommen (Sonnenblume NICHT —
+  //  sie ist Kandidat, kein Default-Rotationsglied; der Optimierer/Nutzer platziert sie bewusst).
   const DRY_IDS: CropId[] = ["weizen_dry", "gerste_dry", "raps_dry"];
   const hasDryland = d.anbauplan.some((a) => a.pool === "dryland");
-  const hasAllDryCatalog = DRY_IDS.every((id) => d.catalog.some((c) => c.cropId === id));
-  if (hasDryland && hasAllDryCatalog) return d; // bereits migriert
+  const hasAllCandidateData = CANDIDATE_IDS.every((id) => d.catalog.some((c) => c.cropId === id));
+  if (hasDryland && hasAllCandidateData) return d; // bereits migriert
 
-  // (1) Katalog: fehlende Trockenkultur-Einträge aus SEED.
+  // (1) Katalog: fehlende Kandidaten-Einträge aus SEED.
   const catalog = [...d.catalog];
-  for (const id of DRY_IDS) {
+  for (const id of CANDIDATE_IDS) {
     if (!catalog.some((c) => c.cropId === id)) {
       const seedCat = SEED.catalog.find((c) => c.cropId === id);
       if (seedCat) catalog.push(seedCat);
     }
   }
-  // (2) Arbeitsgänge: fehlende Trockenkultur-Programme aus SEED.
+  // (2) Arbeitsgänge: fehlende Kandidaten-Programme aus SEED.
   const arbeitsgaenge: Record<string, Arbeitsgang[]> = { ...(d.arbeitsgaenge ?? {}) };
-  for (const id of DRY_IDS) if (!arbeitsgaenge[id] && SEED.arbeitsgaenge[id]) arbeitsgaenge[id] = SEED.arbeitsgaenge[id];
-  // (3) Assumptions: fehlende Trockenkultur-Schlüssel (yield./price./loss./qual./seed.<dry>) aus SEED.
+  for (const id of CANDIDATE_IDS) if (!arbeitsgaenge[id] && SEED.arbeitsgaenge[id]) arbeitsgaenge[id] = SEED.arbeitsgaenge[id];
+  // (3) Assumptions: fehlende Kandidaten-Schlüssel (yield./price./loss./qual./seed.<id>) aus SEED.
   const assumptions: Record<string, Assumption> = { ...(d.assumptions ?? {}) };
   for (const [k, v] of Object.entries(SEED.assumptions)) {
-    if (!assumptions[k] && DRY_IDS.some((id) => k.endsWith("." + id))) assumptions[k] = v;
+    if (!assumptions[k] && CANDIDATE_IDS.some((id) => k.endsWith("." + id))) assumptions[k] = v;
   }
   // (4) Anbauplan: native Trockeneinträge anhängen, falls keine vorhanden.
   let anbauplan = d.anbauplan;
@@ -3536,6 +3561,7 @@ export const CROP_COLOR: Record<string, string> = {
   // Kanonisch getauscht (Beschluss 07/26): Knollensellerie ↔ Erbsen — gilt überall.
   knollensellerie: "#95C11F",  // Sellerie · war #026634, getauscht → hell-limone (Erbsen-Ton)
   erbsen: "#026634",           // Erbsen · war #95C11F, getauscht → flaschengrün (Sellerie-Ton)
+  sonnenblume: "#F5A623",      // Sonnenblume · sonnen-amber (distinkt zu Raps-Gelb/Weizen-Ocker)
 };
 const EN_CROP_COLOR = CROP_COLOR;
 

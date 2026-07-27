@@ -58,6 +58,12 @@ export const AGRO: Record<string, AgroProfile> = {
   weizen:           { irrigated: false, hostGroup: "getreide", maxShare: 0.50, breakYears: 1, waterMm: [450, 550], nKg: 200, market: "commodity", peak: ["sommer"] },
   gerste_zw:        { irrigated: false, hostGroup: "getreide", maxShare: 0.40, breakYears: 1, waterMm: [400, 500], nKg: 170, market: "commodity", peak: ["sommer"] },
   winterraps:       { irrigated: false, hostGroup: "raps", maxShare: 0.25, breakYears: 4, waterMm: [400, 500], nKg: 200, market: "commodity", peak: ["sommer"] },
+  // Trockenrotation (rain-fed) — eigene Pool-Kandidaten. Getreide teilt sich die Anbaupause;
+  //  Raps & Sonnenblume sind beide Sclerotinia-Wirte → je ≤ 25 %, lange Pause (4 J.).
+  weizen_dry:       { irrigated: false, hostGroup: "getreide", maxShare: 0.50, breakYears: 1, waterMm: [400, 500], nKg: 130, market: "commodity", peak: ["sommer"] },
+  gerste_dry:       { irrigated: false, hostGroup: "getreide", maxShare: 0.40, breakYears: 1, waterMm: [350, 450], nKg: 110, market: "commodity", peak: ["sommer"] },
+  raps_dry:         { irrigated: false, hostGroup: "raps", maxShare: 0.25, breakYears: 4, waterMm: [350, 450], nKg: 130, market: "commodity", peak: ["sommer"] },
+  sonnenblume:      { irrigated: false, hostGroup: "sonnenblume", maxShare: 0.25, breakYears: 4, waterMm: [400, 500], nKg: 60, market: "commodity", peak: ["herbst"] },
 };
 
 const pct = (x: number) => `${Math.round(x * 1000) / 10} %`;
