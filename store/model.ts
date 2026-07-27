@@ -379,7 +379,7 @@ export const DOLDEN_CAP_DEFAULT = 0.20;
 export function deriveCropAreasMY(domain: Domain): { years: number; irrHa: number[]; areas: Record<string, number[]> } {
   const years = Math.max(1, domain.growth?.years ?? 1);
   const gEff = effectiveGrowth(domain.growth);
-  const baseArea = domain.anbauplan.reduce((s, a) => s + a.areaHa, 0) || 1;
+  const baseArea = domain.anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0) || 1;
   const irrHa = Array.from({ length: years }, (_, y) => {
     const a = gEff?.areaByYear?.[y];
     return a && a > 0 ? a : baseArea;
@@ -4068,12 +4068,16 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // nutzen (z. B. Mähdrescher, Getreidedrille), aus der Flotte nehmen. Alle Downstream-Rechnungen
   // (Fläche, Flotte/CAPEX, opex.fix, Beregnung/Lager, P&L) laufen dann auf `domain`.
   const scope = domainIn.scope ?? "full";
-  const fullArea = domainIn.anbauplan.reduce((s, a) => s + a.areaHa, 0);
+  // Zwei-Pool: der Beregnungs-Ramp (scale/usedArea) bezieht sich NUR auf die beregneten Kulturen.
+  //  Dryland-Einträge (pool:"dryland") skalieren separat (totalByYear − areaByYear) und dürfen den
+  //  Beregnungs-scale nicht verwässern. Solange kein Dryland im Plan steht, ist der Filter ein No-Op.
+  const isIrr = (a: AnbauEntry) => a.pool !== "dryland";
+  const fullArea = domainIn.anbauplan.filter(isIrr).reduce((s, a) => s + a.areaHa, 0);
   // Stufe 1a (nur Ackerbau) hat Vorrang vor dem Scope: reine Cash-Crop-Rotation, kein Gemüse.
   const cashOnly = domainIn.growth?.stage === "s1a";
   const domain: Domain = cashOnly ? scopeToCashOnly(domainIn)
     : scope === "valueOnly" ? scopeToValueOnly(domainIn) : domainIn;
-  const usedArea = domain.anbauplan.reduce((s, a) => s + a.areaHa, 0);
+  const usedArea = domain.anbauplan.filter(isIrr).reduce((s, a) => s + a.areaHa, 0);
   // Personal skaliert mit der genutzten Fläche (bevorzugt); die verbleibende Flotte bleibt
   // je Typ konservativ voll (Spitzenmonat-Sizing skaliert nicht linear) — nur Break-only-
   // Maschinen entfallen. areaFactor = genutzte/volle Fläche.
