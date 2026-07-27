@@ -140,6 +140,7 @@ export type MachineDriver =
   | { kind: "crop"; cropId: string }
   | { kind: "valueCrops" }
   | { kind: "crops"; ids: string[] }
+  | { kind: "irrigated" }   // nur beregnete Fläche (pool !== "dryland") — z. B. Beregnung/Pivot-CAPEX
   | { kind: "total" };
 export type MachineType = {
   id: string;
@@ -1878,7 +1879,7 @@ const MACHINE_CATALOG: MachineType[] = [
   //  nicht mehr als Katalog-Maschine — Kategorie/AfA/Jahr dort frei planbar.
   { id: "irrig", label: "Bewässerung/Pivot", unitPriceKey: "mprice.irrig_perha",
     category: "Bewässerung", manufacturer: "Valley / Reinke / Bauer", productName: "Pivot-Bewässerung",
-    mode: "perHa", driver: { kind: "total" }, assetClass: "irrigation",
+    mode: "perHa", driver: { kind: "irrigated" }, assetClass: "irrigation",
     afaFiscalYears: 14, afaCommercialYears: 15, insurancePct: 0.008 },
   { id: "store", label: "Lager/Packhaus", unitPriceKey: "mprice.store_pert",
     category: "Gebäude & Infrastruktur", manufacturer: "—", productName: "Lager / Packhaus",
@@ -3070,6 +3071,7 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
     for (const a of domain.anbauplan) {
       if (drv.kind === "crops" && !drv.ids.includes(a.cropId)) continue;
       if (drv.kind === "valueCrops" && !VALUE_CROP_IDS.includes(a.cropId)) continue;
+      if (drv.kind === "irrigated" && a.pool === "dryland") continue;
       if (drv.kind === "crop" && a.cropId !== drv.cropId) continue;
       const yk = yieldKeyOf(a.cropId);
       if (yk) t += a.areaHa * resolveScalar(domain, yk, scenarioId) * (drv.kind === "crops" ? storeShare(a.cropId) : 1);
@@ -3081,6 +3083,7 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
     for (const a of domain.anbauplan) {
       if (drv.kind === "crops" && !drv.ids.includes(a.cropId)) continue;
       if (drv.kind === "valueCrops" && !VALUE_CROP_IDS.includes(a.cropId)) continue;
+      if (drv.kind === "irrigated" && a.pool === "dryland") continue;
       if (drv.kind === "crop" && a.cropId !== drv.cropId) continue;
       ha += a.areaHa;
     }
@@ -3901,8 +3904,12 @@ const VALUE_ONLY_MACHINE_IDS = new Set([
  *  Benchmark „Betrieb ohne Wertkulturen" für die Gesellschafter-Analyse (Hebel des Gemüsebaus).
  * ------------------------------------------------------------------------ */
 function scopeToCashOnly(domain: Domain): Domain {
-  const totalHa = domain.anbauplan.reduce((s, a) => s + a.areaHa, 0);
-  // Irrigierte Cash-Crop-Rotation über die volle beregnete Fläche (Wasser bevorzugt Mais/Soja).
+  // NUR der beregnete Block wird zur Cash-Crop-Rotation umgebaut (Wasser bevorzugt Mais/Soja).
+  //  Die Trockenrotation (pool:"dryland") ist bereits reine Getreide-/Raps-Cash-Crop und bleibt
+  //  UNVERÄNDERT erhalten — sonst rollt sie in die beregnete Fläche und der Ramp-scale (areaByYear ÷
+  //  Basisfläche) zieht sie ab Jahr 1 wieder heraus (Y0-Spike + Kollaps auf die beregnete Fläche).
+  const dry = domain.anbauplan.filter((a) => a.pool === "dryland");
+  const irrHa = domain.anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0);
   const rot: { cropId: CropId; share: number }[] = [
     { cropId: "mais", share: 0.25 },
     { cropId: "soja_luzerne", share: 0.20 },
@@ -3910,13 +3917,14 @@ function scopeToCashOnly(domain: Domain): Domain {
     { cropId: "winterraps", share: 0.15 },
     { cropId: "gerste_zw", share: 0.15 },
   ];
-  const anbauplan: AnbauEntry[] = rot.map((r) => ({
+  const irrPlan: AnbauEntry[] = rot.map((r) => ({
     id: `ab-cash-${r.cropId}`,
     cropId: r.cropId,
-    areaHa: Math.round(totalHa * r.share),
+    areaHa: Math.round(irrHa * r.share),
     plantingPeriod: CROP_CAL[r.cropId].plant,
     harvestPeriods: CROP_CAL[r.cropId].harvest.slice(),
   }));
+  const anbauplan: AnbauEntry[] = [...irrPlan, ...dry];
   const machineCatalog = domain.machineCatalog.filter((m) => !VALUE_ONLY_MACHINE_IDS.has(m.id));
   // Kultur-Politik (Kartoffel-Ramp/Markt-Caps) greift ohne Wertkulturen nicht — leeren.
   return { ...domain, anbauplan, machineCatalog, cropPolicy: {} };
