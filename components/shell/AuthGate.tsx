@@ -121,7 +121,7 @@ function LoginScreen() {
             <div className="nfx-tag">{t("Finanz-Cockpit — planen, prüfen, entscheiden.")}</div>
           </div>
           <div className="nfx-foot">
-            <span>© 2026 Neoterra Tools · powered by</span>
+            <span>© 2026 NEOS FX · powered by</span>
             <NeoterraLogo height={12} style={{ color: "rgba(245,243,240,.7)" }} />
           </div>
         </div>
