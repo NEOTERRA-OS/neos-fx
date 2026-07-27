@@ -224,3 +224,153 @@ export function scoreAnbau(domain: Domain, scenarioId: string) {
   };
 }
 export type AnbauScore = ReturnType<typeof scoreAnbau>;
+
+/* ==========================================================================
+ * ROTATIONS-OPTIMIERER — deterministische DB-maximale Flächenallokation je Pool
+ *  (beregnet + trocken) unter agronomischen Nebenbedingungen (Anbaupausen als
+ *  Einzel- und Gruppen-Caps). Investor-grade: reproduzierbar, erklärbar, offline.
+ *  Fokus-Hebel ist die Trockenrotation (dort entscheidet sich Sonnenblume vs. Raps/
+ *  Getreide); der beregnete Pool ist kontrakt-/absatzgetrieben und bleibt so, wie ihn
+ *  die Kultur-Politik plant (Tomate fix, Kartoffel-Ramp unter Anbaupause).
+ * ======================================================================== */
+
+/** Trockenrotations-Kandidaten (Pool „dryland"). */
+const DRYLAND_CANDIDATES = ["weizen_dry", "gerste_dry", "raps_dry", "sonnenblume"];
+/** Break-Gruppen der Trockenrotation mit kombinierter Obergrenze (Anteil am Trockenpool).
+ *  Getreide (Weizen+Gerste) ≤ 2/3 (Halmfrucht-Krankheiten/Take-all); Ölsaaten (Raps+Sonnenblume,
+ *  beide Sclerotinia-Wirte) ≤ 1/3 als EIN Ölsaat-Slot mit 4-Jahres-Pause. Summe = 1,0. */
+const DRYLAND_GROUPS: { group: string; label: string; members: string[]; cap: number }[] = [
+  { group: "getreide", label: "Getreide (Weizen/Gerste)", members: ["weizen_dry", "gerste_dry"], cap: 0.66 },
+  { group: "oelsaat", label: "Ölsaaten (Raps/Sonnenblume)", members: ["raps_dry", "sonnenblume"], cap: 0.34 },
+];
+
+export type RotAlloc = { cropId: string; name: string; ha: number; sharePct: number; dbPerHaCent: number };
+export type RotPool = {
+  pool: "irrigated" | "dryland";
+  areaHa: number;
+  current: RotAlloc[];
+  recommended: RotAlloc[];
+  currentDbCent: number;
+  recommendedDbCent: number;
+  upliftCent: number;         // ΔDB/Jahr (recommended − current)
+  binding: string[];          // welche Nebenbedingungen die Lösung begrenzen (Rationale)
+  optimized: boolean;         // false = markt-/kontraktgetrieben, nur ausgewiesen
+};
+export type SunflowerVerdict = {
+  available: boolean;
+  dbPerHaCent: number;        // Sonnenblume DB/ha
+  bestAlternativeId: string;  // bester Trocken-Alternativkandidat
+  bestAlternativeDbCent: number;
+  deltaPerHaCent: number;     // Vorsprung Sonnenblume ggü. bester Alternative
+  recommendedHa: number;      // vom Optimierer vorgeschlagene Sonnenblumen-Fläche
+  attractive: boolean;
+  note: string;
+};
+export type OptimalRotation = {
+  pools: RotPool[];
+  totalUpliftCent: number;
+  sunflower: SunflowerVerdict;
+};
+
+/** DB/ha (Direktkosten-Deckungsbeitrag) je Kandidat — über eine Probe-Domäne, die ALLE Kandidaten
+ *  enthält (DB/ha ist flächeninvariant, daher Nominalflächen). */
+function dbPerHaMap(domain: Domain, scenarioId: string): Map<string, { db: number; be: number; name: string }> {
+  const ids = new Set<string>([...DRYLAND_CANDIDATES, ...domain.anbauplan.map((a) => a.cropId)]);
+  const probe: Domain = {
+    ...domain,
+    anbauplan: Array.from(ids).map((cropId) => ({
+      id: `probe-${cropId}`, cropId, areaHa: 100, plantingPeriod: 0, harvestPeriods: [8],
+      pool: DRYLAND_CANDIDATES.includes(cropId) ? ("dryland" as const) : ("irrigated" as const),
+    })),
+  };
+  const m = new Map<string, { db: number; be: number; name: string }>();
+  try {
+    for (const c of deriveContribution(probe, scenarioId).crops) m.set(c.cropId, { db: c.contribPerHaCent, be: c.bePerHaCent, name: c.name });
+  } catch { /* leer → Fallback 0 */ }
+  return m;
+}
+
+/** Greedy-Allokation (DB-optimal für Einzel- + Gruppen-Obergrenzen mit Σ = Fläche): höchster DB/ha
+ *  zuerst, gefüllt bis min(Einzel-Cap, Gruppen-Restbudget, Pool-Rest). */
+function allocateDryland(
+  areaHa: number,
+  db: Map<string, { db: number; be: number; name: string }>,
+): { alloc: RotAlloc[]; binding: string[] } {
+  const groupOf = (id: string) => DRYLAND_GROUPS.find((g) => g.members.includes(id));
+  const cands = DRYLAND_CANDIDATES
+    .map((id) => ({ id, name: db.get(id)?.name ?? id, dbc: db.get(id)?.db ?? 0, maxShare: AGRO[id]?.maxShare ?? 1 }))
+    .sort((a, b) => b.dbc - a.dbc);
+  const groupUsed = new Map<string, number>();
+  const binding = new Set<string>();
+  let remaining = areaHa;
+  const alloc: RotAlloc[] = [];
+  for (const c of cands) {
+    if (remaining <= 0) break;
+    const g = groupOf(c.id);
+    const groupBudget = g ? g.cap * areaHa - (groupUsed.get(g.group) ?? 0) : Infinity;
+    const own = c.maxShare * areaHa;
+    const ha = Math.max(0, Math.min(own, groupBudget, remaining));
+    if (ha <= 0) continue;
+    // Welche Schranke bindet?
+    if (ha === own && own < groupBudget && own < remaining) binding.add(`${c.name}: Einzel-Anbaupause ${pct(c.maxShare)}`);
+    if (g && ha === groupBudget && groupBudget < own) binding.add(`${g.label}: Gruppen-Anbaupause ≤ ${pct(g.cap)}`);
+    alloc.push({ cropId: c.id, name: c.name, ha: Math.round(ha), sharePct: ha / areaHa, dbPerHaCent: c.dbc });
+    if (g) groupUsed.set(g.group, (groupUsed.get(g.group) ?? 0) + ha);
+    remaining -= ha;
+  }
+  return { alloc, binding: Array.from(binding) };
+}
+
+/** Hauptfunktion: optimale Rotation je Pool + Sonnenblume-Verdikt + ΔDB. */
+export function deriveOptimalRotation(domain: Domain, scenarioId: string): OptimalRotation {
+  const db = dbPerHaMap(domain, scenarioId);
+  const plan = domain.anbauplan ?? [];
+  const dbcOf = (id: string) => db.get(id)?.db ?? 0;
+  const nameOfC = (id: string) => db.get(id)?.name ?? nameOf(id);
+  const mkCurrent = (rows: typeof plan, area: number): RotAlloc[] =>
+    rows.map((e) => ({ cropId: e.cropId, name: nameOfC(e.cropId), ha: Math.round(e.areaHa), sharePct: area > 0 ? e.areaHa / area : 0, dbPerHaCent: dbcOf(e.cropId) }));
+  const sumDb = (rows: { ha: number; dbPerHaCent: number }[]) => Math.round(rows.reduce((s, r) => s + r.ha * r.dbPerHaCent, 0));
+
+  const pools: RotPool[] = [];
+
+  // — Trockenpool: voll optimieren —
+  const dryRows = plan.filter((e) => e.pool === "dryland");
+  const dryArea = dryRows.reduce((s, e) => s + e.areaHa, 0);
+  if (dryArea > 0) {
+    const cur = mkCurrent(dryRows, dryArea);
+    const { alloc, binding } = allocateDryland(dryArea, db);
+    const curDb = sumDb(cur), recDb = sumDb(alloc);
+    pools.push({ pool: "dryland", areaHa: Math.round(dryArea), current: cur, recommended: alloc,
+      currentDbCent: curDb, recommendedDbCent: recDb, upliftCent: recDb - curDb, binding, optimized: true });
+  }
+
+  // — Beregneter Pool: markt-/kontraktgetrieben, nur ausgewiesen (keine Re-Optimierung) —
+  const irrRows = plan.filter((e) => e.pool !== "dryland");
+  const irrArea = irrRows.reduce((s, e) => s + e.areaHa, 0);
+  if (irrArea > 0) {
+    const cur = mkCurrent(irrRows, irrArea);
+    pools.push({ pool: "irrigated", areaHa: Math.round(irrArea), current: cur, recommended: cur,
+      currentDbCent: sumDb(cur), recommendedDbCent: sumDb(cur), upliftCent: 0,
+      binding: ["Wertkulturen sind kontrakt-/absatzbegrenzt (Werkskapazität, Anbaupause) — die Kultur-Politik plant den beregneten Pool bereits an der Kapazitätsgrenze."],
+      optimized: false });
+  }
+
+  // — Sonnenblume-Verdikt —
+  const sbDb = dbcOf("sonnenblume");
+  const alts = DRYLAND_CANDIDATES.filter((id) => id !== "sonnenblume").map((id) => ({ id, name: nameOfC(id), dbc: dbcOf(id) })).sort((a, b) => b.dbc - a.dbc);
+  const best = alts[0] ?? { id: "raps_dry", name: nameOfC("raps_dry"), dbc: 0 };
+  const dryPool = pools.find((p) => p.pool === "dryland");
+  const recSbHa = dryPool?.recommended.find((r) => r.cropId === "sonnenblume")?.ha ?? 0;
+  const delta = sbDb - best.dbc;
+  const attractive = sbDb > best.dbc;
+  const sunflower: SunflowerVerdict = {
+    available: db.has("sonnenblume"),
+    dbPerHaCent: sbDb, bestAlternativeId: best.id, bestAlternativeDbCent: best.dbc,
+    deltaPerHaCent: delta, recommendedHa: recSbHa, attractive,
+    note: attractive
+      ? `Sonnenblume liefert ${Math.round(delta / 100)} €/ha mehr DB als die beste Alternative (${best.name}) — als trockentolerante Ölsaat mit niedrigem N-Bedarf der stärkste Trocken-Kandidat. Empfohlen bis zur Ölsaat-Anbaupausengrenze.`
+      : `Sonnenblume liegt beim DB nicht vor ${best.name} — an diesem Standort/Preis kein Vorteil.`,
+  };
+
+  return { pools, totalUpliftCent: pools.reduce((s, p) => s + p.upliftCent, 0), sunflower };
+}
