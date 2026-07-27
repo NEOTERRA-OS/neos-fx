@@ -238,6 +238,9 @@ export type AnbauEntry = {
   areaHa: number;
   plantingPeriod: number;
   harvestPeriods: number[];
+  /** Wasserregime des Eintrags: beregnet (Default) vs. unberegnete Trockenrotation.
+   *  Steuert die Zwei-Pool-Flächenskalierung (irrigated → areaByYear, dryland → total − areaByYear). */
+  pool?: "irrigated" | "dryland";
 };
 export type DerivedCapex = {
   machineId: string;
@@ -834,7 +837,10 @@ type CropId =
   | "kartoffel_pommes" | "kartoffel_chips" | "zwiebel_moehre"
   // NEU (Marktanalyse 24.07.2026): Import-Substitution mit belegtem Marktpotenzial —
   //  Süßkartoffel (Dăbuleni-erprobt), Knoblauch (~19 % der HS-0703-Importe), Knollensellerie (HS-070690-Pool ~23 kt).
-  | "suesskartoffel" | "knoblauch" | "knollensellerie";
+  | "suesskartoffel" | "knoblauch" | "knollensellerie"
+  // Rain-fed (Trockenrotation) — eigene Kulturvarianten, gleiche Maschinen wie die Cash-Crops,
+  //  reduzierte Direktkosten, keine Beregnung. DB = Ergebnis der Bottom-up-Kalkulation.
+  | "weizen_dry" | "gerste_dry" | "raps_dry";
 
 /** Kultur-Kalender (Monatsindex 0 = Jan). WINTERUNGEN saisonal korrekt: Aussaat im HERBST
  *  (Saatgut-/Herbstkosten Sep/Okt — konsistent mit SOW_MONTH des Maßnahmenkatalogs), Düngung/
@@ -853,6 +859,9 @@ const CROP_CAL: Record<CropId, { plant: number; harvest: number[]; dueng?: numbe
   suesskartoffel:    { plant: 4, harvest: [9], dueng: 4, psm: 5, bereg: 6 },  // Slips Mai · Ernte Okt (Dăbuleni-erprobt)
   knoblauch:         { plant: 9, harvest: [6], dueng: 2, psm: 3, bereg: 4 },  // Winterknoblauch: Stecken Okt · Ernte Jul
   knollensellerie:   { plant: 3, harvest: [9], dueng: 4, psm: 5, bereg: 6 },  // Pflanzung Apr · Ernte Okt (Lager)
+  weizen_dry:        { plant: 9, harvest: [6], dueng: 1, psm: 3 },  // rain-fed, keine Beregnung
+  gerste_dry:        { plant: 9, harvest: [6], dueng: 1, psm: 3 },
+  raps_dry:          { plant: 8, harvest: [6], dueng: 1, psm: 2 },
 };
 
 export const CROP_NAME: Record<CropId, string> = {
@@ -868,6 +877,9 @@ export const CROP_NAME: Record<CropId, string> = {
   suesskartoffel: "Süßkartoffel",
   knoblauch: "Knoblauch",
   knollensellerie: "Knollensellerie",
+  weizen_dry: "Winterweizen (trocken)",
+  gerste_dry: "Wintergerste (trocken)",
+  raps_dry: "Winterraps (trocken)",
 };
 
 /**
@@ -887,6 +899,9 @@ const AGRO_COSTS: Record<CropId, [number, number, number, number, number, number
   suesskartoffel:    [3600, 450, 350, 480, 250, 900], // Σ 6030 (Slips teuer, Handernte-Anteil)
   knoblauch:         [2700, 420, 400, 240, 200, 900], // Σ 4860 (Pflanzknoblauch ~900 kg/ha)
   knollensellerie:   [3000, 520, 500, 560, 150, 400], // Σ 5130 (Jungpflanzen ~60k/ha)
+  weizen_dry:        [ 80, 150, 110,   0,   0,  40], // Σ 380 rain-fed (weniger N/PSM, keine Beregnung)
+  gerste_dry:        [ 72, 130,  95,   0,   0,  35], // Σ 332
+  raps_dry:          [ 60, 150, 120,   0,   0,  25], // Σ 355
 };
 
 /** Fixkosten je ha (Referenz A): Pacht (alle) + Overhead/Versich./Zins je Kultur. */
@@ -895,6 +910,7 @@ const OVERHEAD_PER_HA: Record<CropId, number> = {
   weizen: 150, gerste_zw: 140, soja_luzerne: 130, winterraps: 140, mais: 150, tomate: 680,
   kartoffel_pommes: 410, kartoffel_chips: 470, zwiebel_moehre: 300,
   suesskartoffel: 380, knoblauch: 350, knollensellerie: 320,
+  weizen_dry: 150, gerste_dry: 140, raps_dry: 140,
 };
 /** Beregnung-Pivot AfA/Wartung je ha (Referenz A, §3-Fixblock) — nur für die analytische
  *  Vollkosten-Sicht (deriveContribution). Im 3-Statement steckt die Beregnung in der CAPEX-AfA. */
@@ -902,6 +918,7 @@ const BEREGNUNG_PIVOT_PER_HA: Record<CropId, number> = {
   weizen: 250, gerste_zw: 250, soja_luzerne: 250, winterraps: 250, mais: 300, tomate: 600,
   kartoffel_pommes: 450, kartoffel_chips: 450, zwiebel_moehre: 300,
   suesskartoffel: 400, knoblauch: 250, knollensellerie: 350,
+  weizen_dry: 0, gerste_dry: 0, raps_dry: 0,
 };
 /** Personal (Maschinenbetrieb) €/ha je Kultur (Referenz A / §3). Nur für die Vollkosten-Sicht;
  *  im 3-Statement ist Personal über das FTE-Modell (computePersonnel) abgebildet. CENT/ha. */
@@ -909,6 +926,7 @@ const PERSONNEL_MASCH_PER_HA_CENT: Record<CropId, number> = {
   weizen: 1220, gerste_zw: 1281, soja_luzerne: 1022, winterraps: 1150, mais: 1300, tomate: 13471,
   kartoffel_pommes: 6719, kartoffel_chips: 6719, zwiebel_moehre: 11026,
   suesskartoffel: 8500, knoblauch: 9500, knollensellerie: 9800,
+  weizen_dry: 1220, gerste_dry: 1281, raps_dry: 1150,
 };
 
 /**
@@ -979,6 +997,19 @@ const ARBEITSGAENGE: Record<CropId, Arbeitsgang[]> = {
     { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "tompflanz", passes: 1 },
     { m: "streuer", passes: 1 }, { m: "spritze14", passes: 5 },
     { m: "gem_moehre", passes: 1 }, { m: "transport", passes: 1 },
+  ],
+  // Rain-fed: gleiche Ackerbaupark-Maschinen wie beregnet, aber weniger Streuer-/Spritz-Überfahrten.
+  weizen_dry: [
+    { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "drille", passes: 1 },
+    { m: "streuer", passes: 2 }, { m: "spritze14", passes: 3 }, { m: "maehdr", passes: 1 }, { m: "transport", passes: 1 },
+  ],
+  gerste_dry: [
+    { m: "pflug", passes: 1 }, { m: "drille", passes: 1 }, { m: "streuer", passes: 2 },
+    { m: "spritze14", passes: 3 }, { m: "maehdr", passes: 1 }, { m: "transport", passes: 1 },
+  ],
+  raps_dry: [
+    { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "einzelkorn", passes: 1 },
+    { m: "streuer", passes: 2 }, { m: "spritze14", passes: 2 }, { m: "maehdr", passes: 1 }, { m: "transport", passes: 1 },
   ],
 };
 
@@ -1133,6 +1164,19 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("yield.knollensellerie", "yield.knollensellerie", "Ertrag Knollensellerie (bewässert; Upside 48–50 t Süd-Standort)", "tonne_per_ha", 38, 48, 31),
   A("price.knollensellerie", "price.knollensellerie", "Preis Knollensellerie (Erzeuger; Importparität ~0,74 USD/kg)", "money_per_tonne", 48000, 55200, 40800),
   A("loss.knollensellerie", "loss.knollensellerie", "Verlust Knollensellerie (Putzen/Lager)", "rate", 0.07),
+  // Rain-fed (Trockenrotation) — eigene, niedrigere Erträge; Preise = beregnet.
+  A("yield.weizen_dry", "yield.weizen_dry", "Ertrag Winterweizen (trocken/rain-fed)", "tonne_per_ha", 5.5, 6.2, 4.2),
+  A("price.weizen_dry", "price.weizen_dry", "Preis Winterweizen (trocken)", "money_per_tonne", 17000, 19000, 15000),
+  A("loss.weizen_dry", "loss.weizen_dry", "Verlust Winterweizen (trocken)", "rate", 0.05),
+  A("yield.gerste_dry", "yield.gerste_dry", "Ertrag Wintergerste (trocken/rain-fed)", "tonne_per_ha", 4.8, 5.4, 3.8),
+  A("price.gerste_dry", "price.gerste_dry", "Preis Wintergerste (trocken)", "money_per_tonne", 18000, 20000, 16000),
+  A("loss.gerste_dry", "loss.gerste_dry", "Verlust Wintergerste (trocken)", "rate", 0.05),
+  A("yield.raps_dry", "yield.raps_dry", "Ertrag Winterraps (trocken/rain-fed)", "tonne_per_ha", 2.8, 3.3, 2.2),
+  A("price.raps_dry", "price.raps_dry", "Preis Winterraps (trocken)", "money_per_tonne", 47000, 52000, 41000),
+  A("loss.raps_dry", "loss.raps_dry", "Verlust Winterraps (trocken)", "rate", 0.05),
+  A("qual.weizen_dry", "qual.weizen_dry", "Qualitätserfüllung Winterweizen (trocken)", "rate", 0.98, 1.00, 0.92),
+  A("qual.gerste_dry", "qual.gerste_dry", "Qualitätserfüllung Wintergerste (trocken)", "rate", 0.98, 1.00, 0.92),
+  A("qual.raps_dry", "qual.raps_dry", "Qualitätserfüllung Winterraps (trocken)", "rate", 0.98, 1.00, 0.92),
 
   // --- Kontrakt-Qualitätserfüllung (0..1): realisierter Preis nach Qualitäts-Bonus/Malus ×
   //     akzeptierte Menge. 1 = 100 % Kontrakterfüllung. Best/Worst = Qualitäts-Upside/-Downside.
@@ -1310,6 +1354,9 @@ const DUENGUNG_PROGRAM: Record<CropId, Gabe[]> = {
   suesskartoffel:   [{ label: "Grund P/K (vor Pflanzung, Streuer)", p: 60, k: 180 }, { label: "N moderat (BBCH 20–60, Fertigation — zu viel N → Kraut statt Knolle)", n: 70, fert: true }],
   knoblauch:        [{ label: "Grund P/K (Herbst, Streuer)", p: 60, k: 120 }, { label: "N1 Frühjahr + S (BBCH 13–15)", n: 60, s: 25 }, { label: "N2 (BBCH 15–41)", n: 40 }],
   knollensellerie:  [{ label: "Grund P/K + Bor (vor Pflanzung, Streuer)", p: 90, k: 260 }, { label: "N+K laufend (BBCH 15–45, Fertigation)", n: 150, k: 100, fert: true }],
+  weizen_dry:       [{ label: "Grund P/K (BBCH 00, Streuer)", p: 50, k: 60 }, { label: "N1 Andüngung + S (BBCH 25–30)", n: 45, s: 20 }, { label: "N2 Schossen (BBCH 31–32)", n: 40 }],
+  gerste_dry:       [{ label: "Grund P/K (Streuer)", p: 45, k: 55 }, { label: "N1 + S (BBCH 25–30)", n: 45, s: 15 }, { label: "N2 (BBCH 31–32)", n: 35 }],
+  raps_dry:         [{ label: "Grund P/K (Streuer)", p: 40, k: 70 }, { label: "N Herbst (BBCH 12–16)", n: 25 }, { label: "N1 Frühjahr + S (BBCH 30)", n: 45, s: 35 }],
 };
 /** PSM-Programm je Kultur — Überfahrten/Blöcke mit Mittelkosten €/ha (BBCH im Label).
  *  passes = Spritz-Überfahrten des Blocks (Default 1; 0 = Tankmischung mit vorherigem Block
@@ -1328,6 +1375,9 @@ const PSM_PROGRAM: Record<CropId, { label: string; eurHa: number; passes?: numbe
   knoblauch:        [{ label: "H Nachauflauf Herbst (BBCH 11–13)", eurHa: 50 }, { label: "F Rost/Peronospora 2× (BBCH 15–45)", eurHa: 130, passes: 2 }, { label: "I Thrips/Lauchmotte (BBCH 15–41)", eurHa: 40 }],
   // Sellerie: hoher Septoria-Druck unter Beregnung (LEH-Makellosigkeit!) → volles Fungizid-Programm.
   knollensellerie:  [{ label: "H Nachpflanzung (BBCH 12–14)", eurHa: 70 }, { label: "F Septoria/Alternaria 5× (BBCH 15–48, Mankozeb-frei: Difenoconazol/Azoxystrobin-Rotation)", eurHa: 380, passes: 5 }, { label: "I Möhrenfliege/Blattläuse 2× (BBCH 14–41)", eurHa: 90, passes: 2 }],
+  weizen_dry:       [{ label: "H Herbst (BBCH 11–13)", eurHa: 45 }, { label: "WR + H (BBCH 30–31)", eurHa: 45 }, { label: "F Fahnenblatt (BBCH 37–39)", eurHa: 45 }],
+  gerste_dry:       [{ label: "H Herbst (BBCH 12–13)", eurHa: 45 }, { label: "T1 GS 30–32 Fungizid (Netzflecken/Rhynchosporium)", eurHa: 50 }, { label: "T2 GS 45–49 Fungizid (Ramularia)", eurHa: 40 }],
+  raps_dry:         [{ label: "H Nachauflauf (BBCH 12–14, Metazachlor+Quinmerac)", eurHa: 45 }, { label: "I Rapsglanzkäfer (BBCH 50–59, Acetamiprid)", eurHa: 30 }, { label: "F Sclerotinia (BBCH 63–65, Prothioconazol+Fluopyram)", eurHa: 50 }],
 };
 
 /* --- SSOT-VERZAHNUNG Maßnahmen → Arbeitsgänge ------------------------------------
@@ -1475,12 +1525,14 @@ const SEED_PROGRAM: Record<CropId, { qty: number; unit: string }> = {
   kartoffel_pommes: { qty: 2.8, unit: "t" }, kartoffel_chips: { qty: 3.0, unit: "t" }, zwiebel_moehre: { qty: 1, unit: "ha-Satz" },
   // Sellerie: 45–50 T Pfl./ha (50×40 cm) — Standard Frischmarkt-Kaliber 500–1.000 g.
   suesskartoffel: { qty: 30, unit: "×1000 Slips" }, knoblauch: { qty: 900, unit: "kg" }, knollensellerie: { qty: 50, unit: "×1000 Pfl." },
+  weizen_dry: { qty: 200, unit: "kg" }, gerste_dry: { qty: 170, unit: "kg" }, raps_dry: { qty: 1.8, unit: "Einh." },
 };
 /** Phase 5 — Bewässerungsnorm mm/ha je Kultur (Süd-Oltenien; Weizen/Mais belegt, übrige abgeleitet). */
 const BEWAESSERUNG_MM: Record<CropId, number> = {
   weizen: 175, gerste_zw: 110, soja_luzerne: 150, winterraps: 130, mais: 200,
   tomate: 550, kartoffel_pommes: 380, kartoffel_chips: 380, zwiebel_moehre: 330,
   suesskartoffel: 300, knoblauch: 150, knollensellerie: 350,
+  weizen_dry: 0, gerste_dry: 0, raps_dry: 0,
 };
 
 function buildCropOps(cropId: CropId): OpSeed[] {
@@ -1523,7 +1575,7 @@ const CROP_IDS: CropId[] = [
 
 /** Wertkulturen (Beregnung/Gemüse, hoher DB) vs. Break Crops (Getreide/Ölsaat der Rotation). */
 export const VALUE_CROP_IDS: string[] = ["tomate", "kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre", "suesskartoffel", "knoblauch", "knollensellerie"];
-export const BREAK_CROP_IDS: string[] = ["weizen", "gerste_zw", "soja_luzerne", "winterraps", "mais"];
+export const BREAK_CROP_IDS: string[] = ["weizen", "gerste_zw", "soja_luzerne", "winterraps", "mais", "weizen_dry", "gerste_dry", "raps_dry"];
 /** Lagerpflichtige Kulturen (Packhaus/Kühl-/CA-Lager). Industrietomate → direkt zum Verarbeiter
  *  (keine Einlagerung); Getreide → Silo/Direktverkauf. Nur Kartoffel + Zwiebel/Möhre. */
 export const STORAGE_CROP_IDS: string[] = ["kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre", "suesskartoffel", "knoblauch", "knollensellerie"];
