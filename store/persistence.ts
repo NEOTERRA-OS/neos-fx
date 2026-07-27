@@ -1,5 +1,5 @@
 import { getSupabase, supabaseConfigured } from "../lib/supabaseClient";
-import type { Domain } from "./model";
+import { migrateDomain, type Domain } from "./model";
 
 /** Persistenz: Domäne als JSONB in Supabase (models/model_snapshots/audit_log, RLS),
  *  plus JSON-Export/Import als immer-verfügbarer Offline-Fallback. */
@@ -52,7 +52,7 @@ export async function saveModel(domain: Domain, id?: string): Promise<string> {
 export async function loadModel(id: string): Promise<{ name: string; domain: Domain }> {
   const { data, error } = await client().from("neos_fx_models").select("name,domain").eq("id", id).single();
   if (error) throw error;
-  return { name: data.name, domain: data.domain as Domain };
+  return { name: data.name, domain: migrateDomain(data.domain as Domain) };
 }
 
 export async function createSnapshot(modelId: string, label: string, domain: Domain): Promise<void> {
@@ -78,7 +78,7 @@ export async function restoreSnapshot(snapshotId: string): Promise<Domain> {
   const { data, error } = await client().from("neos_fx_snapshots").select("domain,model_id").eq("id", snapshotId).single();
   if (error) throw error;
   await logAudit(data.model_id, "restore", { snapshotId });
-  return data.domain as Domain;
+  return migrateDomain(data.domain as Domain);
 }
 
 export async function listAudit(modelId: string): Promise<AuditRow[]> {
@@ -108,7 +108,7 @@ export async function autoLoadLatest(): Promise<Domain | null> {
   if (error || !data?.length) return null;
   _autoId = data[0].id as string;
   const d = data[0].domain as Domain;
-  return d && (d as any).catalog && (d as any).anbauplan ? d : null;
+  return d && (d as any).catalog && (d as any).anbauplan ? migrateDomain(d) : null;
 }
 
 export async function autoSave(domain: Domain): Promise<void> {
@@ -132,7 +132,7 @@ export function domainToJson(domain: Domain): string {
 export function jsonToDomain(text: string): Domain {
   const d = JSON.parse(text);
   if (!d || !d.catalog || !d.anbauplan || !d.assumptions) throw new Error("Kein gültiges NEOS-FX-Modell (Domain).");
-  return d as Domain;
+  return migrateDomain(d as Domain);
 }
 export function downloadDomain(domain: Domain) {
   const blob = new Blob([domainToJson(domain)], { type: "application/json" });

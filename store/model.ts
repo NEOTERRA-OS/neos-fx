@@ -1937,6 +1937,50 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
   ];
 }
 
+/** Forward-Migration gespeicherter Domänen (Cloud-AUTOSAVE / JSON-Import), die VOR der
+ *  Trockenrotations-Vollintegration gespeichert wurden. Ergänzt die nativen Rain-fed-Kulturen
+ *  (weizen_dry/gerste_dry/raps_dry) ADDITIV: Katalog, Arbeitsgänge, Assumptions und Anbauplan-
+ *  Einträge (~1,5× beregnete Fläche, 40/35/25 %). Idempotent & nicht-destruktiv — bestehende
+ *  (evtl. editierte) Nutzerdaten werden NIE überschrieben, nur Fehlendes aus SEED nachgezogen.
+ *  Nach dem nächsten Autosave heilt sich der Cloud-Stand dauerhaft. */
+export function migrateDomain(d: Domain): Domain {
+  if (!d || !Array.isArray(d.anbauplan) || !Array.isArray(d.catalog)) return d;
+  const DRY_IDS: CropId[] = ["weizen_dry", "gerste_dry", "raps_dry"];
+  const hasDryland = d.anbauplan.some((a) => a.pool === "dryland");
+  const hasAllDryCatalog = DRY_IDS.every((id) => d.catalog.some((c) => c.cropId === id));
+  if (hasDryland && hasAllDryCatalog) return d; // bereits migriert
+
+  // (1) Katalog: fehlende Trockenkultur-Einträge aus SEED.
+  const catalog = [...d.catalog];
+  for (const id of DRY_IDS) {
+    if (!catalog.some((c) => c.cropId === id)) {
+      const seedCat = SEED.catalog.find((c) => c.cropId === id);
+      if (seedCat) catalog.push(seedCat);
+    }
+  }
+  // (2) Arbeitsgänge: fehlende Trockenkultur-Programme aus SEED.
+  const arbeitsgaenge: Record<string, Arbeitsgang[]> = { ...(d.arbeitsgaenge ?? {}) };
+  for (const id of DRY_IDS) if (!arbeitsgaenge[id] && SEED.arbeitsgaenge[id]) arbeitsgaenge[id] = SEED.arbeitsgaenge[id];
+  // (3) Assumptions: fehlende Trockenkultur-Schlüssel (yield./price./loss./qual./seed.<dry>) aus SEED.
+  const assumptions: Record<string, Assumption> = { ...(d.assumptions ?? {}) };
+  for (const [k, v] of Object.entries(SEED.assumptions)) {
+    if (!assumptions[k] && DRY_IDS.some((id) => k.endsWith("." + id))) assumptions[k] = v;
+  }
+  // (4) Anbauplan: native Trockeneinträge anhängen, falls keine vorhanden.
+  let anbauplan = d.anbauplan;
+  if (!hasDryland) {
+    const irrHa = d.anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0);
+    const dryBase = Math.round(irrHa * 1.5);
+    const wDry = Math.round(dryBase * 0.40), gDry = Math.round(dryBase * 0.35), rDry = dryBase - wDry - gDry;
+    const mkDry = (cropId: CropId, area: number): AnbauEntry => ({
+      id: `ab-${cropId}`, cropId, areaHa: area,
+      plantingPeriod: CROP_CAL[cropId].plant, harvestPeriods: CROP_CAL[cropId].harvest.slice(), pool: "dryland",
+    });
+    anbauplan = [...d.anbauplan, mkDry("weizen_dry", wDry), mkDry("gerste_dry", gDry), mkDry("raps_dry", rDry)];
+  }
+  return { ...d, catalog, arbeitsgaenge, assumptions, anbauplan };
+}
+
 /* --------------------------------------------------------------------------
  * FINANZIERUNG / REVOLVER / WC / STEUER / SUBVENTION.
  * ------------------------------------------------------------------------ */
