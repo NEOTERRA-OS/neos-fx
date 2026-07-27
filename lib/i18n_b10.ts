@@ -61,5 +61,24 @@ const B10: Record<string, string> = {
   // Logo / Nav
   "Zum Dashboard": "To dashboard",
   "Neu berechnet": "Recalculated",
+
+  // Rotations-Optimierer
+  "Rotations-Optimierer (Trockenrotation)": "Rotation optimizer (dryland)",
+  "DB-maximal unter Anbaupausen · deterministisch": "Margin-maximal under rotation breaks · deterministic",
+  "Sonnenblume": "Sunflower",
+  "wirtschaftlich attraktiv": "economically attractive",
+  "kein Vorteil": "no advantage",
+  "vs.": "vs.",
+  "Ist-Rotation": "Current rotation",
+  "Optimierte Rotation": "Optimized rotation",
+  "Σ Deckungsbeitrag": "Σ contribution margin",
+  "Mehr-Deckungsbeitrag": "Additional contribution margin",
+  "In Anbauplan übernehmen": "Apply to cropping plan",
+  "Übernimmt die optimierte Trockenrotation in den Anbauplan": "Applies the optimized dryland rotation to the cropping plan",
+  "Betrachter-Modus: Änderungen gesperrt": "Viewer mode: editing locked",
+  "Die aktuelle Trockenrotation ist bereits DB-optimal.": "The current dryland rotation is already margin-optimal.",
+  "Bindende Anbaupausen:": "Binding rotation breaks:",
+  "Die Ölsaaten (Raps + Sonnenblume) teilen sich als Sclerotinia-Wirte einen Break-Slot; Getreide ist auf 2/3 der Trockenfläche begrenzt.": "Oilseeds (rapeseed + sunflower), both Sclerotinia hosts, share one break slot; cereals are capped at 2/3 of the dryland area.",
+  "Keine Trockenrotation im aktuellen Anbauplan — der Optimierer greift auf der unberegneten Fläche.": "No dryland rotation in the current plan — the optimizer operates on the rain-fed area.",
 };
 export default B10;

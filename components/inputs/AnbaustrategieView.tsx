@@ -2,11 +2,12 @@
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import { deriveContribution, deriveCapex, buildModelState, CROP_COLOR, VALUE_CROP_IDS } from "../../store/model";
+import { deriveOptimalRotation } from "../../store/anbauAdvisor";
 import { computeModel } from "../../core/engine";
 import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
-import { Circle, Minus } from "lucide-react";
+import { Circle, Minus, Sparkles, ArrowRight, Check, TriangleAlert, Sun } from "lucide-react";
 
 const LABEL: Record<string, string> = {
   weizen: "Winterweizen", gerste_zw: "Wintergerste", winterraps: "Winterraps", soja_luzerne: "Soja / Luzerne",
@@ -120,6 +121,9 @@ export function AnbaustrategieView() {
         </div>
       </section>
 
+      {/* Rotations-Optimierer (deterministisch, DB-maximal je Pool) */}
+      <RotationsOptimizerPanel />
+
       {/* Szenario-Vergleich */}
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}><h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Ergebnis-Vergleich (Deckungsbeitrag p.a.)")}</h3></div>
@@ -214,6 +218,148 @@ export function AnbaustrategieView() {
     </div>
   );
 }
+
+/** Rotations-Optimierer — DB-maximale Trockenrotation unter Anbaupausen; Sonnenblume-Verdikt;
+ *  Ist↔Empfohlen mit ΔDB und „Übernehmen" (schreibt die Trockeneinträge des Anbauplans). */
+function RotationsOptimizerPanel() {
+  const domain = useModelStore((s) => s.domain);
+  const sc = useModelStore((s) => s.view.scenarioId);
+  const tick = useModelStore((s) => s.recalcTick);
+  const patch = useModelStore((s) => s.patch);
+  const readOnly = useModelStore((s) => s.readOnly);
+  const opt = React.useMemo(() => deriveOptimalRotation(domain, sc), [domain, sc, tick]);
+  const dry = opt.pools.find((p) => p.pool === "dryland");
+  const sf = opt.sunflower;
+
+  const applyDryland = () => {
+    if (!dry || readOnly) return;
+    patch((d) => {
+      d.anbauplan = d.anbauplan.filter((a) => a.pool !== "dryland");
+      for (const r of dry.recommended) {
+        if (r.ha <= 0) continue;
+        const cat = d.catalog.find((c) => c.cropId === r.cropId);
+        d.anbauplan.push({
+          id: `ab-${r.cropId}`, cropId: r.cropId, areaHa: r.ha,
+          plantingPeriod: cat?.plantingPeriod ?? 3, harvestPeriods: (cat?.harvestPeriods ?? [8]).slice(),
+          pool: "dryland",
+        });
+      }
+    });
+  };
+
+  const border = "var(--nx-border)";
+  const uplift = dry?.upliftCent ?? 0;
+  const alreadyOptimal = !dry || uplift <= dry.currentDbCent * 0.001; // < 0,1 % Rest → praktisch optimal
+
+  return (
+    <section className="rounded-tile border" style={{ borderColor: border, background: "var(--nx-surface)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: border }}>
+        <h2 className="text-[14px] font-semibold inline-flex items-center gap-2">
+          <Sparkles size={15} className="inline-block" style={{ color: "var(--nx-brand-lift)" }} aria-hidden />
+          {t("Rotations-Optimierer (Trockenrotation)")}
+        </h2>
+        <span className="caption text-[10.5px] text-nx-text-muted">{t("DB-maximal unter Anbaupausen · deterministisch")}</span>
+      </div>
+
+      {/* Sonnenblume-Verdikt */}
+      {sf.available && (
+        <div className="px-4 py-3 border-b flex flex-wrap items-center gap-x-4 gap-y-1.5" style={{ borderColor: "var(--nx-border-divider)" }}>
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold" style={{ color: sf.attractive ? "var(--nx-success)" : "var(--nx-text)" }}>
+            {sf.attractive ? <Check size={14} aria-hidden /> : <TriangleAlert size={14} aria-hidden />}
+            <Sun size={13} aria-hidden /> {t("Sonnenblume")}: {sf.attractive ? t("wirtschaftlich attraktiv") : t("kein Vorteil")}
+          </span>
+          <span className="num text-[12px] text-nx-text-secondary">{t("DB")} <b>{fmtMoney(sf.dbPerHaCent)} €/ha</b></span>
+          {sf.attractive && <span className="num text-[12px]" style={{ color: "var(--nx-success)" }}>+{fmtMoney(sf.deltaPerHaCent)} €/ha {t("vs.")} {(SHORT2[sf.bestAlternativeId] ?? sf.bestAlternativeId)}</span>}
+          <span className="text-[11px] text-nx-text-muted flex-1 min-w-[240px]">{t(sf.note)}</span>
+        </div>
+      )}
+
+      {dry && (
+        <>
+          {/* Ist ↔ Empfohlen */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+            <RotColumn title={t("Ist-Rotation")} rows={dry.current} area={dry.areaHa} totalCent={dry.currentDbCent} muted />
+            <div className="border-t md:border-t-0 md:border-l" style={{ borderColor: "var(--nx-border-divider)" }}>
+              <RotColumn title={t("Optimierte Rotation")} rows={dry.recommended} area={dry.areaHa} totalCent={dry.recommendedDbCent} highlight />
+            </div>
+          </div>
+
+          {/* ΔDB + Übernehmen */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t" style={{ borderColor: border }}>
+            <div className="text-[12px]">
+              {alreadyOptimal ? (
+                <span className="inline-flex items-center gap-1.5" style={{ color: "var(--nx-success)" }}><Check size={14} aria-hidden /> {t("Die aktuelle Trockenrotation ist bereits DB-optimal.")}</span>
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <ArrowRight size={14} style={{ color: "var(--nx-brand-lift)" }} aria-hidden />
+                  {t("Mehr-Deckungsbeitrag")} <b className="num text-[13px]" style={{ color: "var(--nx-success)" }}>+{fmtMoney(uplift)} € / Jahr</b>
+                  <span className="text-nx-text-muted">({fmtMoney(dry.currentDbCent)} → {fmtMoney(dry.recommendedDbCent)} €)</span>
+                </span>
+              )}
+            </div>
+            <button
+              onClick={applyDryland}
+              disabled={readOnly || alreadyOptimal}
+              className="rounded-control px-3 py-1.5 text-[12px] font-semibold transition-opacity"
+              style={{ background: readOnly || alreadyOptimal ? "var(--nx-surface-sunken)" : "var(--nx-brand-lift)", color: readOnly || alreadyOptimal ? "var(--nx-text-muted)" : "#fff", cursor: readOnly || alreadyOptimal ? "default" : "pointer", opacity: readOnly || alreadyOptimal ? 0.6 : 1 }}
+              title={readOnly ? t("Betrachter-Modus: Änderungen gesperrt") : t("Übernimmt die optimierte Trockenrotation in den Anbauplan")}
+            >
+              {t("In Anbauplan übernehmen")}
+            </button>
+          </div>
+
+          {/* Bindende Schranken */}
+          {dry.binding.length > 0 && (
+            <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: border }}>
+              <b>{t("Bindende Anbaupausen:")}</b> {dry.binding.join(" · ")}. {t("Die Ölsaaten (Raps + Sonnenblume) teilen sich als Sclerotinia-Wirte einen Break-Slot; Getreide ist auf 2/3 der Trockenfläche begrenzt.")}
+            </div>
+          )}
+        </>
+      )}
+      {!dry && (
+        <div className="px-4 py-3 text-[12px] text-nx-text-muted">{t("Keine Trockenrotation im aktuellen Anbauplan — der Optimierer greift auf der unberegneten Fläche.")}</div>
+      )}
+    </section>
+  );
+}
+
+/** Eine Rotations-Spalte (Ist oder Empfohlen) mit Balken je Kultur und Summe. */
+function RotColumn({ title, rows, area, totalCent, muted, highlight }: {
+  title: string; rows: { cropId: string; name: string; ha: number; sharePct: number; dbPerHaCent: number }[];
+  area: number; totalCent: number; muted?: boolean; highlight?: boolean;
+}) {
+  const maxShare = Math.max(0.01, ...rows.map((r) => r.sharePct));
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-[12.5px] font-semibold" style={{ color: highlight ? "var(--nx-brand-lift)" : "var(--nx-text-secondary)" }}>{title}</h3>
+        <span className="num text-[11px] text-nx-text-muted">{fmtNumber(area, 0)} ha</span>
+      </div>
+      <div className="space-y-1.5">
+        {rows.map((r) => (
+          <div key={r.cropId} className="flex items-center gap-2 text-[12px]">
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: CROP_COLOR[r.cropId] ?? "var(--nx-border)", flex: "0 0 auto", opacity: muted ? 0.7 : 1 }} />
+            <span className="w-[150px] shrink-0 truncate">{t(r.name)}</span>
+            <div className="relative h-4 flex-1 rounded-sm overflow-hidden" style={{ background: "var(--nx-surface-sunken)" }}>
+              <div className="absolute inset-y-0 left-0 rounded-sm" style={{ width: `${(r.sharePct / maxShare) * 100}%`, background: highlight ? "var(--nx-success)" : "var(--nx-series)", opacity: muted ? 0.55 : 0.9 }} />
+            </div>
+            <span className="num w-[40px] shrink-0 text-right text-nx-text-muted">{fmtNumber(r.sharePct * 100, 0)}%</span>
+            <span className="num w-[62px] shrink-0 text-right">{fmtNumber(r.ha, 0)} ha</span>
+            <span className="num w-[64px] shrink-0 text-right text-[11px] text-nx-text-muted">{fmtMoney(r.dbPerHaCent)}/ha</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 pt-2 border-t flex items-center justify-between text-[12px]" style={{ borderColor: "var(--nx-border-divider)" }}>
+        <span className="font-semibold">{t("Σ Deckungsbeitrag")}</span>
+        <span className="num font-semibold" style={{ color: highlight ? "var(--nx-success)" : "var(--nx-text)" }}>{fmtMoney(totalCent)} €</span>
+      </div>
+    </div>
+  );
+}
+
+const SHORT2: Record<string, string> = {
+  weizen_dry: "Weizen (tr.)", gerste_dry: "Gerste (tr.)", raps_dry: "Raps (tr.)", sonnenblume: "Sonnenblume",
+};
 
 const SHORT: Record<string, string> = {
   weizen: "Weizen", gerste_zw: "Gerste", winterraps: "Raps", soja_luzerne: "Soja", mais: "Mais",
