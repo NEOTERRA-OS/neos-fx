@@ -1,0 +1,162 @@
+/* ============================================================================
+   NEOS Sidebar — Design System (eigenständig, framework-neutral)
+   Extrahiert aus NEOS Snap / NEOS Index. Eine Sidebar, pixelgenau gleich über
+   alle NEOS-Apps. Chrome ist immer dunkelgrün (Light) bzw. Near-Black (Dark),
+   unabhängig vom App-Theme. Aktivierung Dark: <html data-neos-theme="dark">.
+
+   Einbinden:  <link rel="stylesheet" href="neos-sidebar.css">
+   Markup:     siehe neos-sidebar.html / NeosSidebar.jsx
+   ========================================================================== */
+
+/* ---- Sidebar-eigene Tokens (nur hier gescopt; kollidieren nicht mit App) ---- */
+:root {
+  --nsb-w: 236px;                       /* Breite */
+  --nsb-pad: 16px 12px;                 /* Innenabstand */
+  --nsb-gap: 3px;                       /* vertikaler Abstand der Elemente */
+  --nsb-radius: 12px;                   /* Nav-/Item-Radius */
+
+  --nsb-bg: #2C3C2B;                    /* Chrome-Fläche (Light = Flaschengrün) */
+  --nsb-fg: rgba(239, 241, 233, .80);  /* Nav-Text */
+  --nsb-fg-strong: #ffffff;            /* Hover/aktiver Text */
+  --nsb-fg-sub: rgba(239, 241, 233, .72);
+  --nsb-fg-icon: rgba(239, 241, 233, .62);
+  --nsb-fg-label: rgba(239, 241, 233, .42); /* Sektions-Überschrift */
+  --nsb-brand: #ffffff;                /* „NEOS" */
+  --nsb-brand-sub: #9FB096;            /* Produkt-Suffix */
+  --nsb-hover: rgba(255, 255, 255, .08);
+  --nsb-user-bg: rgba(255, 255, 255, .06);
+  --nsb-hairline: rgba(255, 255, 255, .14);
+
+  --nsb-accent: #FAD201;               /* Aktiv-Kachel / Badge (flaches Gelb) */
+  --nsb-accent-ink: #2C3C2B;           /* Text/Icon auf Gelb (theme-fest) */
+}
+
+/* Dark: Sidebar wird Near-Black (dunkler als der Content). Marke NICHT invertiert. */
+[data-neos-theme="dark"], .neos-dark, [data-theme="dark"] {
+  --nsb-bg: #080C08;
+}
+
+/* ---- Gerüst ---- */
+.nsb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nsb-gap);
+  width: var(--nsb-w);
+  flex: 0 0 var(--nsb-w);
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--nsb-pad);
+  background: var(--nsb-bg);
+  border-right: 0;
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Marke (Logo-Kachel 28px + Wortmarke) ---- */
+.nsb-brand {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 4px 10px 12px;   /* Zeilenhöhe 44px → erste Sektion bei 63px */
+  background: none; border: 0; cursor: pointer; text-align: left;
+  font-family: inherit; font-size: 16px; font-weight: 400;
+  color: var(--nsb-fg);
+}
+.nsb-brand:hover { opacity: .85; }
+.nsb-brand .nsb-logo { width: 28px; height: 28px; flex: 0 0 auto; }
+.nsb-brand b { font-weight: 700; color: var(--nsb-brand); }
+.nsb-brand .sub { font-weight: 400; color: var(--nsb-brand-sub); }
+
+/* ---- Sektions-Überschrift ---- */
+.nsb-grp {
+  font-size: 11px; font-weight: 600; letter-spacing: .6px;
+  text-transform: uppercase; line-height: 1;   /* entscheidend: sonst laufen Items auseinander */
+  color: var(--nsb-fg-label);
+  padding: 14px 12px 6px;
+}
+
+/* ---- Nav-Eintrag ---- */
+.nsb-item {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 11px 12px; border-radius: var(--nsb-radius);
+  background: none; border: 0; cursor: pointer; text-align: left;
+  font-family: inherit; font-size: 14.5px; font-weight: 500;
+  color: var(--nsb-fg);
+}
+.nsb-item .nsb-ic { color: var(--nsb-fg-icon); flex: 0 0 auto; display: inline-flex; }
+.nsb-item:hover { background: var(--nsb-hover); color: var(--nsb-fg-strong); }
+.nsb-item.is-active { background: var(--nsb-accent); color: var(--nsb-accent-ink); font-weight: 700; }
+.nsb-item.is-active .nsb-ic { color: var(--nsb-accent-ink); }
+
+/* Zähler-Badge am Nav-Eintrag */
+.nsb-badge {
+  margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px; background: var(--nsb-accent); color: var(--nsb-accent-ink);
+  font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+.nsb-item.is-active .nsb-badge { background: var(--nsb-accent-ink); color: var(--nsb-accent); }
+
+/* ---- Sekundär-Eintrag (kleiner, z. B. Unterpunkte) ---- */
+.nsb-sub {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 12px; border-radius: var(--nsb-radius);
+  background: none; border: 0; cursor: pointer; text-align: left;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  color: var(--nsb-fg-sub);
+}
+.nsb-sub .nsb-ic { color: var(--nsb-fg-icon); }
+.nsb-sub:hover { background: var(--nsb-hover); color: var(--nsb-fg-strong); }
+
+.nsb-spacer { flex: 1 1 auto; }
+
+/* ---- Fuß: Nutzer-Karte ---- */
+.nsb-user {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--nsb-radius);
+  background: var(--nsb-user-bg);
+}
+.nsb-av {
+  width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+  background: var(--nsb-accent); color: var(--nsb-accent-ink);
+}
+.nsb-id { min-width: 0; flex: 1; }
+.nsb-id .nm { font-size: 13px; font-weight: 600; color: var(--nsb-brand); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nsb-id .ml { font-size: 11px; color: var(--nsb-brand-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Icon-Buttons im Fuß (Glocke, Theme) */
+.nsb-iconbtn {
+  width: 32px; height: 32px; border-radius: 8px; flex: 0 0 auto;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--nsb-hover); border: 1px solid var(--nsb-hairline); color: var(--nsb-fg);
+}
+.nsb-iconbtn:hover { border-color: var(--nsb-accent); color: var(--nsb-fg-strong); }
+.nsb-iconbtn.is-bare { background: transparent; border: 0; color: var(--nsb-fg); }
+.nsb-iconbtn.is-bare:hover { background: var(--nsb-hover); color: var(--nsb-fg-strong); }
+.nsb-dot {
+  position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--nsb-accent); color: var(--nsb-accent-ink);
+  font-size: 10px; font-weight: 800; line-height: 1; display: grid; place-items: center;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Fuß-Zeile (Abmelden + Sprach-Toggle o. ä.) */
+.nsb-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding: 0 2px; }
+.nsb-link {
+  display: flex; align-items: center; gap: 7px;
+  background: none; border: 0; cursor: pointer; font-family: inherit;
+  font-size: 12.5px; font-weight: 500; color: var(--nsb-fg-icon); padding: 6px 8px;
+}
+.nsb-link:hover { color: var(--nsb-fg-strong); }
+
+/* Segment-Toggle (z. B. Sprache) */
+.nsb-seg { display: inline-flex; border: 1px solid var(--nsb-hairline); border-radius: 999px; overflow: hidden; }
+.nsb-seg button {
+  background: transparent; border: 0; cursor: pointer; font-family: inherit;
+  font-size: 11px; font-weight: 700; padding: 5px 9px; color: var(--nsb-fg-icon);
+}
+.nsb-seg button.is-active { background: var(--nsb-accent); color: var(--nsb-accent-ink); }
+
+/* ---- Aktiv-Kachel im DARK identisch (Marke nicht invertiert) ---- */
+[data-neos-theme="dark"] .nsb-item.is-active,
+.neos-dark .nsb-item.is-active,
+[data-theme="dark"] .nsb-item.is-active { background: var(--nsb-accent); color: var(--nsb-accent-ink); }

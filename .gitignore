@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+dist/
+.vercel/
+.env*
+*.log
+_shot*.cjs
+/tmp/
+.DS_Store

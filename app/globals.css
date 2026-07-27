@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400..700&display=swap');
+@import "../design/fonts.css";
+@import "../design/tokens.css";
+@import "../design/neos-sidebar.css";
+@import "../design/sidebar-compact.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { height: 100%; }
+body {
+  background: var(--nx-app-bg);
+  color: var(--nx-text);
+  font-family: "Google Sans Flex", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+/* All figures: JetBrains Mono + tabular-nums (NEOS rule — bündige Ziffern). */
+.num { font-family: "JetBrains Mono", ui-monospace, "SF Mono", monospace; font-variant-numeric: tabular-nums; }
+.caption { text-transform: uppercase; letter-spacing: 0.06em; }
+/* Datenserie-Balken (nie Flaschengrün): grüner Verlauf. */
+.nx-series-bar { background: var(--nx-series); }
+
+/* Zahlen-Eingabefelder OHNE Hoch/Runter-Spinner — Werte werden absolut getippt (gesamtes Modell). */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none !important; appearance: none !important; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+/* Editierbare Zahlen einheitlich blau (wie das Standard-NumberInput). */
+input[type="number"] { color: var(--nx-locate) !important; font-weight: 600; }

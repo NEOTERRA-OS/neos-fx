@@ -1,0 +1,130 @@
+/* NEOS Design System — one token set, two themes. Only semantic colour tokens flip.
+   Brand (#2C3C2B / #FAD201) is NOT inverted. Dark = chosen state (no auto-flip).
+   Values 1:1 from the NEOS Design System reference (§2/§4/§8). */
+
+:root {
+  /* Marke */
+  --nx-green: #2C3C2B;            /* Flaschengrün — Kopf/Marke/Primär */
+  --nx-green-map: #243121;        /* Map-dunkel */
+  --nx-green-soft: #EEF0E9;       /* dezent grün (aktive Sub-Nav) */
+  --nx-brand-lift: #2C3C2B;       /* Grün-Text — hebt auf Dunkel zu #95C11F */
+  --nx-brand-tint: #F2F7E3;       /* Brand-Pillen-Hintergrund (hell) */
+  --nx-green-ink: #2C3C2B;        /* Aktiv-Beschriftung (Segmented/Toggle) — Dark: Soft-Grün #9FC796 */
+  --nx-yellow: #FAD201;           /* Akzent-Gelb — DIE eine Aktion */
+  --nx-yellow-split: #EFC700;     /* Split-CTA-Hälfte */
+
+  /* Flächen */
+  --nx-app-bg: #F6F7F2;
+  --nx-surface: #FFFFFF;
+  --nx-surface-alt: #FBFCF8;      /* Zebra/Hover */
+  --nx-surface-sunken: #EDEFE8;   /* Segmented-Track / gefüllte Leiste */
+  --nx-elevated: #FFFFFF;         /* Popover/Peek/Drawer-Fläche */
+
+  /* Rahmen */
+  --nx-border: #E4E7DE;
+  --nx-border-btn: #DCE0D3;
+  --nx-border-divider: #EDEFE8;
+  --nx-border-card: #E7E9E1;      /* KPI-/Stat-Kachel-Rahmen */
+
+  /* Text */
+  --nx-text: #1B211A;
+  --nx-text-secondary: #5E665B;
+  --nx-text-muted: #8C937F;
+
+  /* Semantik (Zahl-Farben) */
+  --nx-success: #2C7A43;          /* Erfolg/Quote/Marge */
+  --nx-success-strong: #2C3C2B;   /* Erfolg-Pille dunkelgrün */
+  --nx-success-bg: #E7F0E8;
+  --nx-warning: #C2700C;          /* Warnung/offen */
+  --nx-warning-amber: #E0B100;    /* Ampel-Bernstein */
+  --nx-warning-bg: #FCF0C4;
+  --nx-warning-text: #8A6D00;
+  --nx-error: #C0392B;            /* Fehler/kritisch/Risiko/negativ */
+  --nx-error-strong: #B42318;
+  --nx-error-bg: #FDE8E4;
+  --nx-locate: #2D6FBE;           /* Standort (GPS) */
+  --nx-pos: #2E7D32;              /* positiver Delta-Wert (Vorteil/Ersparnis) */
+  --nx-neg: #C62828;              /* negativer Delta-Wert */
+
+  /* Chrome */
+  --nx-sidebar: #2C3C2B;
+
+  /* Datenserien-Verlauf (Balken/Säulen) — Flaschengrün erscheint NIE in Datenserien.
+     Emerald: horizontal 90° (Balken/Progress/Ranglisten), vertikal 180° (Säulen/Wasserfall),
+     muted = Peers/Sekundär (rgba 0.38). Markenstabil über Light & Dark. */
+  --nx-series-a: #026634;
+  --nx-series-b: #009A17;
+  --nx-series: linear-gradient(90deg, #026634, #009A17);
+  --nx-series-v: linear-gradient(180deg, #009A17, #026634);
+  --nx-series-muted: rgba(2, 102, 52, .38);
+
+  /* Maße & Radien (§4) */
+  --nx-r-control: 10px;           /* Buttons/Eingaben/Chips/Segmented-Track */
+  --nx-r-segment: 7px;            /* aktives Segment */
+  --nx-r-tile: 12px;              /* KPI-/Stat-Kachel */
+  --nx-r-pop: 14px;               /* Popover/Peek/Drawer */
+  --nx-r-badge: 6px;              /* Zähler-Pille/Code-Badge */
+  --nx-h-control: 38px;           /* Header-Controls / Primär-CTA / Eingaben */
+  --nx-h-trigger: 34px;           /* Filter-Trigger */
+  --nx-h-header: 58px;            /* Command-Header */
+  --nx-h-segment: 26px;
+
+  /* Elevation (sparsam) */
+  --nx-el-card: 0 1px 3px rgba(27,33,26,.05);
+  --nx-el-segment: 0 1px 2px rgba(27,33,26,.10);
+  --nx-el-pop: 0 16px 40px rgba(27,33,26,.16);
+  --nx-el-drawer: -16px 0 48px rgba(27,33,26,.28);
+  --nx-el-modal: 0 24px 60px rgba(27,33,26,.36);
+}
+
+/* Dark — „Deep Forest Refined" (3a: Content = dunkle Ebene, Chrome = hellere Kappe).
+   Marke nicht invertiert; Flaschengrün-Text hebt auf #95C11F. */
+[data-neos-theme="dark"] {
+  --nx-green-soft: #1F251D;       /* dezent grün getönte Akzent-/Dominanzleiste */
+  --nx-brand-lift: #95C11F;       /* Grün-Text auf Dunkel */
+  --nx-brand-tint: #1F251D;       /* Brand-Pillen-Hintergrund (dunkel = Green-Soft, invertiert) */
+  --nx-green-ink: #9FC796;        /* Aktiv-Beschriftung Soft-Grün (Segmented/Toggle) */
+
+  --nx-app-bg: #111312;           /* Canvas hinter allem */
+  --nx-surface: #1B1D1C;          /* Karten/Panels/Header/Suchleiste */
+  --nx-surface-alt: #212422;      /* Zebra/Hover */
+  --nx-surface-sunken: #272A28;   /* Segmented-Tracks (Toggle-Hintergrund) */
+  --nx-elevated: #243026;
+
+  --nx-border: #313431;
+  --nx-border-btn: #313431;
+  --nx-border-divider: #272A28;
+  --nx-border-card: #353833;
+
+  --nx-text: #EAF0E6;
+  --nx-text-secondary: #A7B0A2;
+  --nx-text-muted: #7C8676;
+
+  --nx-success: #4FBF67;
+  --nx-success-strong: #4FBF67;
+  --nx-success-bg: #18271B;
+  --nx-warning: #E0B100;
+  --nx-warning-amber: #E0B100;
+  --nx-warning-bg: #2A2410;
+  --nx-warning-text: #E0B100;
+  --nx-error: #E5645C;
+  --nx-error-strong: #E5645C;
+  --nx-error-bg: #2A1A19;
+  --nx-locate: #6BA6E8;
+  --nx-pos: #4FBF67;              /* positive Deltas hell genug für dunkle Flächen */
+  --nx-neg: #E5645C;
+
+  --nx-sidebar: #080C08;          /* Near-Black */
+
+  /* Datenserien im Dark Mode ANGEHOBEN: das kanonische Emerald (#026634→#009A17) hat ein zu
+     dunkles Ende, das auf den dunklen Tiles „absäuft" (oliv/matt). Auf Dunkel lifted (luminanz-
+     angehoben, hue-treu emerald), damit die Charts genauso vibrant lesen wie im DS auf Weiß. */
+  --nx-series-a: #0E9A4A;
+  --nx-series-b: #34C75A;
+  --nx-series: linear-gradient(90deg, #0E9A4A, #34C75A);
+  --nx-series-v: linear-gradient(180deg, #34C75A, #0E9A4A);
+  --nx-series-muted: rgba(52, 199, 90, .32);
+
+  --nx-el-card: 0 1px 0 rgba(0,0,0,.30);
+  --nx-el-segment: 0 1px 2px rgba(0,0,0,.35);
+}

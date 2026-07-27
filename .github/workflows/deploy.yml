@@ -1,0 +1,29 @@
+name: Build & Deploy (Vercel)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  VERCEL_ORG_ID: team_WodWtMudaRujeQIsN1b3K7UK
+  VERCEL_PROJECT_ID: prj_S9KOMuf5gJFPV7ti9IJAO0GVlCpX
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+      - name: Build single-file HTML
+        run: node build-single.mjs
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+      - name: Deploy to Vercel (production)
+        run: vercel deploy dist --prod --yes --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

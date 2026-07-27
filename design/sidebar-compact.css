@@ -1,0 +1,16 @@
+/* NEOS Sidebar — kompakte Dichte (app-spezifischer Override für das große FX-Modell).
+   Kanonische neos-sidebar.css bleibt unverändert; hier nur die Vertikaldichte gestrafft,
+   damit ~24 Einträge + 7 Sektionen ohne Scrollen überschaubar bleiben. Marke/Farben/Radius
+   unangetastet — nur Padding, Schriftgröße, Icon-Größe, Zeilenabstände. */
+.nsb { gap: 1px; padding: 10px 10px; }
+.nsb-brand { padding: 2px 8px 8px; font-size: 15px; }
+.nsb-brand .nsb-logo { width: 26px; height: 26px; }
+.nsb-grp { padding: 8px 10px 3px; font-size: 10px; letter-spacing: .5px; }
+.nsb-item { padding: 6.5px 10px; font-size: 13px; gap: 10px; border-radius: 9px; }
+.nsb-item .nsb-ic svg { width: 16px; height: 16px; }
+.nsb-sub { padding: 5px 10px; font-size: 12px; }
+.nsb-user { padding: 6px 8px; gap: 8px; }
+.nsb-av { width: 30px; height: 30px; font-size: 11px; }
+.nsb-id .nm { font-size: 12px; }
+.nsb-id .ml { font-size: 10.5px; }
+.nsb-iconbtn { width: 28px; height: 28px; }

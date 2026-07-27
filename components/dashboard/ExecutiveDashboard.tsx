@@ -1,0 +1,543 @@
+"use client";
+import React from "react";
+import { useModelStore, selectComputedAnnual, selectComputedMonthly } from "../../store/modelStore";
+import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, scopedDomain } from "../../store/model";
+import { useModelStore as useStore, readAssumption } from "../../store/modelStore";
+import { cropStructure, cropName, cropColor, cropYield, cropLoss, DRY_YIELD_FACTOR } from "../inputs/cropCalc";
+import { CheckPanel } from "../statements/CheckPanel";
+import { ContributionView } from "../inputs/ContributionView";
+import { fmtMoney, fmtNumber, fmtPct, fmtFactor } from "../../design/format";
+import type { ComputedModel } from "../../core/types";
+import { t } from "../../lib/i18n";
+
+/** Executive Dashboard — visuelle Essenz für CFO/Investor: Ergebnis-Band, P&L-Wasserfall,
+ *  Saison-Kurve (EBITDA + Liquidität), Umsatz/Deckungsbeitrag nach Kultur, Covenant-Ampel.
+ *  Rechnet auf der Jahres-Aggregation (headline) + Monatsraster (Saison), horizont-agnostisch. */
+
+const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+const BRAND = "var(--nx-brand-lift)";
+const MUTED = "var(--nx-text-muted)";
+const ERR = "var(--nx-error)";
+// NEOS Design System — Datenserien-Verlauf (Balken/Säulen). Flaschengrün nie flach in Serien.
+const GRAD = "var(--nx-series)";                 // linear-gradient(90deg,#026634,#009A17)
+const LOCATE = "var(--nx-locate)";               // Sekundär-Linie (Revolver)
+const SERIES_A = "#026634", SERIES_B = "#009A17";
+
+/** SVG-Gradient-Defs (horizontal + vertikal) für Chart-Serien nach DS. */
+function SeriesDefs() {
+  return (
+    <defs>
+      <linearGradient id="nxSeriesH" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stopColor="var(--nx-series-a)" /><stop offset="1" stopColor="var(--nx-series-b)" />
+      </linearGradient>
+      <linearGradient id="nxSeriesV" x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0" stopColor="var(--nx-series-a)" /><stop offset="1" stopColor="var(--nx-series-b)" />
+      </linearGradient>
+    </defs>
+  );
+}
+
+const lastNonZero = (v: number[]) => { for (let i = v.length - 1; i >= 0; i--) if (v[i] !== 0) return v[i]; return v[v.length - 1] ?? 0; };
+const sum = (v: number[]) => v.reduce((s, x) => s + x, 0);
+
+export function ExecutiveDashboard() {
+  const annual = useModelStore(selectComputedAnnual);
+  const monthly = useModelStore(selectComputedMonthly);
+  const domain = useModelStore((s) => s.domain);
+  const scenarioId = useModelStore((s) => s.view.scenarioId);
+  const currency = useModelStore((s) => s.view.currency);
+  // Kultur-Karten laufen auf der EFFEKTIVEN Domäne (Stufe 1 = nur Ackerbau, sonst Scope) —
+  //  damit Anbaustruktur/Contribution/Stufen-Board konsistent zur GuV sind (Dashboard „bei 1" komplett angepasst).
+  const sdomain = React.useMemo(() => scopedDomain(domain), [domain]);
+  const contrib = React.useMemo(() => deriveContribution(sdomain, scenarioId), [sdomain, scenarioId]);
+
+  const p = annual.pnl, k = annual.kpis, b = annual.balanceSheet;
+  const i = annual.timeline.periodCount - 1; // jüngstes Jahr
+  const V = (li: { values: number[] }) => li.values[i] ?? 0;
+  const yearLabel = annual.timeline.periods[i]?.label ?? "";
+
+  return (
+    <div className="space-y-4">
+      {/* Stufen-Board — der Ramp greifbar: Meilensteine nebeneinander statt nur Zieljahr */}
+      <StufenBoard domain={sdomain} annual={annual} scenarioId={scenarioId} />
+
+      {/* Financial Evolution — alle Jahre, nicht nur das Zieljahr */}
+      <FinancialEvolution annual={annual} />
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Waterfall annual={annual} idx={i} yearLabel={yearLabel} />
+        <Covenants k={k} idx={i} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <SeasonCurve monthly={monthly} />
+        <CropMix contrib={contrib} />
+      </div>
+
+      <CropStructureProd domain={sdomain} scenarioId={scenarioId} yearIndex={i} yearLabel={yearLabel} />
+
+      {/* Ergebnisbeitrag je Kultur (DB/Vollkosten-Toggle) — direkt unter der Anbaustruktur */}
+      <ContributionView />
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
+        <FundingBox annual={annual} monthly={monthly} idx={i} />
+        <CheckPanel checks={[...annual.checks, ...deriveMassnahmenChecks(domain)]} />
+      </div>
+    </div>
+  );
+}
+
+function Tile({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)", boxShadow: "var(--nx-el-card)" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: "var(--nx-border)" }}>
+        <h3 className="text-[13px] font-semibold">{title}</h3>
+        {hint && <span className="caption text-[10px] text-nx-text-muted">{hint}</span>}
+      </div>
+      <div className="px-4 py-3">{children}</div>
+    </section>
+  );
+}
+
+/** Financial Evolution — Umsatz/EBITDA/Jahresüberschuss über ALLE Jahre (gruppierte Säulen)
+ *  + FCF als Linie. Pixel-Koordinaten (feste Höhe, kein Riesen-Scaling) + Hover-Tooltip je Balken/Punkt. */
+function FinancialEvolution({ annual }: { annual: ComputedModel }) {
+  const n = annual.timeline.periodCount;
+  const years = annual.timeline.periods.map((p) => p.label);
+  const v = (li: { values: number[] }, i: number) => li.values[i] ?? 0;
+  const rev = (i: number) => v(annual.pnl.revenue, i) + v(annual.pnl.subsidies, i);
+  const ebitda = (i: number) => v(annual.pnl.ebitda, i);
+  const ni = (i: number) => v(annual.pnl.netIncome, i);
+  const fcf = (i: number) => annual.kpis.fcf.values[i] ?? 0;
+  // Farblich klar getrennt: Umsatz = Emerald-Verlauf · EBITDA = Blau (Locate) ·
+  //  Jahresüberschuss = Brand-Lift. FCF-Linie dadurch NEUTRAL (gestrichelt), damit Blau eindeutig EBITDA ist.
+  const series = [
+    { key: t("Umsatz"), col: "url(#nxSeriesV)", leg: "var(--nx-series)", get: rev },
+    { key: "EBITDA", col: "var(--nx-locate)", leg: "var(--nx-locate)", get: ebitda },
+    { key: t("Jahresüberschuss"), col: "var(--nx-brand-lift)", leg: "var(--nx-brand-lift)", get: ni },
+  ];
+  const FCF_COL = "var(--nx-text-secondary)";
+  const [tip, setTip] = React.useState<{ x: number; y: number; text: string } | null>(null);
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  const M = (c: number) => `${fmtNumber(c / 1e8, 1)} M€`;
+  const show = (e: React.MouseEvent, text: string) => {
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setTip({ x: e.clientX - r.left, y: e.clientY - r.top, text });
+  };
+
+  // Pixel-Geometrie: feste Höhe, Breite responsiv via viewBox-Breite 1000.
+  const W = 1000, H = 190, padX = 10, padB = 8, padT = 8;
+  const maxV = Math.max(1, ...Array.from({ length: n }, (_, i) => rev(i)));
+  const minV = Math.min(0, ...Array.from({ length: n }, (_, i) => Math.min(ni(i), fcf(i))));
+  const span = maxV - minV || 1;
+  const yOf = (val: number) => padT + (1 - (val - minV) / span) * (H - padT - padB);
+  const zeroY = yOf(0);
+  const groupW = (W - padX * 2) / n;
+  const barW = Math.min(26, (groupW - 18) / series.length);
+  const fcfPts = Array.from({ length: n }, (_, i) => `${padX + groupW * (i + 0.5)},${yOf(fcf(i))}`).join(" ");
+
+  return (
+    <Tile title="Financial Evolution" hint={t("Umsatz · EBITDA · Jahresüberschuss (Säulen) + Free Cash Flow (Linie) — alle Jahre")}>
+      <div ref={boxRef} className="relative" onMouseLeave={() => setTip(null)}>
+        {/* preserveAspectRatio="none" + feste Höhe: Balken spannen IMMER die volle Breite →
+             Jahreslabels (HTML-Flex darunter) bleiben auf jeder Bildschirmbreite bündig. */}
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" height={H + 10} preserveAspectRatio="none" style={{ display: "block" }}>
+          <SeriesDefs />
+          <line x1={padX} x2={W - padX} y1={zeroY} y2={zeroY} stroke="var(--nx-border)" strokeWidth={1} />
+          {Array.from({ length: n }, (_, i) => (
+            <g key={i}>
+              {series.map((s, si) => {
+                const val = s.get(i);
+                const y0 = Math.min(yOf(val), zeroY), h = Math.max(2, Math.abs(yOf(val) - zeroY));
+                const x = padX + groupW * i + (groupW - series.length * barW) / 2 + si * barW;
+                return (
+                  <rect key={s.key} x={x} y={y0} width={barW - 3} height={h} rx={3}
+                    fill={val < 0 ? "var(--nx-error)" : s.col}
+                    style={{ cursor: "pointer" }}
+                    onMouseMove={(e) => show(e, `${years[i]} · ${s.key}: ${M(val)}`)}
+                    onMouseLeave={() => setTip(null)} />
+                );
+              })}
+            </g>
+          ))}
+          <polyline points={fcfPts} fill="none" stroke={FCF_COL} strokeWidth={2.5} strokeDasharray="6 4" opacity={0.95} style={{ pointerEvents: "none" }} />
+          {Array.from({ length: n }, (_, i) => (
+            <circle key={i} cx={padX + groupW * (i + 0.5)} cy={yOf(fcf(i))} r={4.5} fill={FCF_COL}
+              style={{ cursor: "pointer" }} opacity={0.9}
+              onMouseMove={(e) => show(e, `${years[i]} · FCF: ${M(fcf(i))}`)}
+              onMouseLeave={() => setTip(null)} />
+          ))}
+        </svg>
+        {/* Jahreslabels als HTML (feste Schriftgröße — skaliert nicht mit dem SVG) */}
+        <div className="flex" style={{ padding: `0 ${padX / W * 100}%` }}>
+          {years.map((y) => <span key={y} className="num flex-1 text-center text-[10.5px] text-nx-text-muted">{y}</span>)}
+        </div>
+        {tip && (
+          <div className="pointer-events-none absolute z-10 rounded-md border px-2.5 py-1.5 num text-[11.5px] font-semibold"
+            style={{ left: Math.min(tip.x + 12, (boxRef.current?.clientWidth ?? 300) - 150), top: Math.max(0, tip.y - 34),
+              background: "var(--nx-elevated)", borderColor: "var(--nx-border)", color: "var(--nx-text)", boxShadow: "var(--nx-el-pop)" }}>
+            {tip.text}
+          </div>
+        )}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-4 caption text-[10px] text-nx-text-muted">
+        {series.map((s) => <span key={s.key} className="inline-flex items-center gap-1"><span style={{ width: 10, height: 6, background: s.leg, display: "inline-block", borderRadius: 1 }} /> {s.key}</span>)}
+        <span className="inline-flex items-center gap-1"><span style={{ width: 12, height: 0, borderTop: `2px dashed ${FCF_COL}`, display: "inline-block" }} /> FCF</span>
+      </div>
+      <div className="overflow-x-auto mt-2">
+        <table className="w-full text-[11px]">
+          <thead><tr>
+            <th className="caption text-[9px] text-nx-text-muted text-left px-1 py-0.5">€</th>
+            {years.map((y) => <th key={y} className="caption text-[9px] text-nx-text-muted text-right px-1 py-0.5">{y}</th>)}
+          </tr></thead>
+          <tbody>
+            {([[t("Umsatz"), rev], ["EBITDA", ebitda], [t("JÜ"), ni], ["FCF", fcf]] as [string, (i: number) => number][]).map(([label, fn]) => (
+              <tr key={label} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                <td className="px-1 py-0.5 text-nx-text-secondary">{label}</td>
+                {years.map((_, i) => { const val = fn(i); return (
+                  <td key={i} className="num px-1 py-0.5 text-right" style={{ color: val < 0 ? "var(--nx-error)" : "var(--nx-text)" }}>{fmtNumber(val / 1e8, 1)} M</td>
+                ); })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Tile>
+  );
+}
+
+/** Stufen-Board — Meilensteine des Ramps nebeneinander (Stufe 1 · Stufe 2 · Stufe 3b):
+ *  Flächen, Kartoffel-/Tomaten-Mengen (Kultur-Politik!), Umsatz, EBITDA, Jahresüberschuss. */
+function StufenBoard({ domain, annual, scenarioId }: { domain: any; annual: ComputedModel; scenarioId: string }) {
+  const my = deriveCropAreasMY(domain);
+  const gEff = effectiveGrowth(domain.growth);
+  const START_YEAR = 2026;
+  // Meilensteine STUFENBEWUSST (aktiver Wachstumspfad, nicht immer der 3b-Endausbau):
+  //  s1  → Start + Status quo (flach, letztes Jahr)
+  //  s2  → Start + Erreichungsjahr der Vollberegnung (≈2029) + Zieljahr (falls später)
+  //  s3b → Start + Stufe 2 (≥10.000 ha beregnet) + Stufe 3b (≥20.000 ha bzw. letztes Jahr)
+  const stage: string = domain.growth?.stage ?? "s1";
+  const first = (min: number) => my.irrHa.findIndex((v) => v >= min - 1);
+  const last = my.years - 1;
+  const startTot = gEff?.totalByYear?.[0] ?? my.irrHa[0];
+  // Stufen-Semantik: 1 (Ackerbau) · 1a (+Wertkulturen) · 2b (+Vollberegnung) · 3c (+Fläche&Beregnung).
+  const cand: { y: number; label: string }[] = [{ y: 0, label: stage === "s1a" ? t("1 · Ackerbau") : t("1a · Start") }];
+  if (stage === "s1a") {
+    cand.push({ y: last, label: t("Status quo (Ackerbau)") });
+  } else if (stage === "s1") {
+    cand.push({ y: last, label: t("1a · Wertkulturen") });
+  } else if (stage === "s2") {
+    const y2 = first(startTot); if (y2 > 0) cand.push({ y: y2, label: t("2b · Vollberegnung") });
+    cand.push({ y: last, label: t("Zieljahr") });
+  } else {
+    const y2 = first(Math.min(startTot, 10000)); if (y2 > 0) cand.push({ y: y2, label: t("2b · Beregnung") });
+    const y3 = first(20000); cand.push({ y: y3 >= 0 ? y3 : last, label: t("3c · Ziel") });
+  }
+  const miles = cand.filter((m, i, a) => a.findIndex((x) => x.y === m.y) === i);
+
+  const pv = (li: { values: number[] }, y: number) => li.values[Math.min(y, li.values.length - 1)] ?? 0;
+  const yieldOf = (id: string) => readAssumption(domain, `yield.${id}`, scenarioId) ?? 0;
+  const kartHa = (y: number) => (my.areas["kartoffel_pommes"]?.[y] ?? 0) + (my.areas["kartoffel_chips"]?.[y] ?? 0);
+  const kartT = (y: number) => (my.areas["kartoffel_pommes"]?.[y] ?? 0) * yieldOf("kartoffel_pommes") + (my.areas["kartoffel_chips"]?.[y] ?? 0) * yieldOf("kartoffel_chips");
+  const tomT = (y: number) => (my.areas["tomate"]?.[y] ?? 0) * yieldOf("tomate");
+  const f0 = (v: number) => fmtNumber(v, 0);
+
+  const totOf = (y: number) => gEff?.totalByYear?.[y] ?? my.irrHa[y];
+  const cashOnly = stage === "s1a"; // Stufe 1 = nur Ackerbau → keine Wertkultur-Zeilen.
+  const rows: ({ label: string; val: (y: number) => string | React.ReactNode } | null)[] = [
+    { label: t("Beregnete Fläche"), val: (y) => `${f0(my.irrHa[y])} ha` },
+    { label: t("Trockenrotation"), val: (y) => `${f0(Math.max(0, totOf(y) - my.irrHa[y]))} ha` },
+    { label: t("Gesamtfläche"), val: (y) => `${f0(totOf(y))} ha` },
+    // Beregnungsgrad in BLAU (Wasser) — der eigentliche Wachstumsmotor der Stufen.
+    { label: t("Beregnungsgrad"), val: (y) => <b style={{ color: "var(--nx-locate)" }}>{f0(totOf(y) > 0 ? my.irrHa[y] / totOf(y) * 100 : 0)} %</b> },
+    cashOnly ? { label: t("Kulturmix"), val: () => t("reine Cash-Crop-Rotation (kein Gemüse)") } : { label: t("Kartoffel (PRIO 1)"), val: (y) => `${f0(kartHa(y))} ha · ${f0(kartT(y))} t` },
+    cashOnly ? null : { label: t("Industrietomate (fix)"), val: (y) => `${f0(my.areas["tomate"]?.[y] ?? 0)} ha · ${f0(tomT(y))} t` },
+    { label: t("Umsatz p.a."), val: (y) => fmtMoney(pv(annual.pnl.revenue, y) + pv(annual.pnl.subsidies, y)) + " €" },
+    { label: "EBITDA", val: (y) => fmtMoney(pv(annual.pnl.ebitda, y)) + " €" },
+    { label: t("Jahresüberschuss"), val: (y) => fmtMoney(pv(annual.pnl.netIncome, y)) + " €" },
+  ];
+  const shownRows = rows.filter((r): r is { label: string; val: (y: number) => string | React.ReactNode } => r != null);
+
+  return (
+    <Tile title={t("Stufen-Board — der Weg zum Zielbild")} hint={cashOnly ? t("Stufe 1 · reiner Ackerbau (Benchmark, kein Gemüse)") : t("Kultur-Politik: Kartoffel-Ramp ≤ 25 % Rotation · Tomate fix (Werkskapazität)")}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead><tr>
+            <th className="caption text-[9.5px] text-nx-text-muted text-left px-2 py-1">{t("Kennzahl")}</th>
+            {miles.map((m) => (
+              <th key={m.y} className="caption text-[9.5px] text-right px-2 py-1" style={{ color: "var(--nx-green-ink)" }}>{m.label} · {START_YEAR + m.y}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {shownRows.map((r) => (
+              <tr key={r.label} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                <td className="px-2 py-1.5 text-nx-text-secondary">{r.label}</td>
+                {miles.map((m) => <td key={m.y} className="num px-2 py-1.5 text-right font-semibold">{r.val(m.y)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Tile>
+  );
+}
+
+/** Anbaustruktur & Produktion — Fläche (ha), Anteil, Ertrag (t/ha) und Netto-Produktion (t) je Kultur
+ *  für das angezeigte Jahr (beregneter Block + Trockenrotation). */
+function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domain: any; scenarioId: string; yearIndex: number; yearLabel: string }) {
+  const gEff = effectiveGrowth(domain.growth);
+  const my = deriveCropAreasMY(domain);
+  const yi = Math.min(yearIndex, my.years - 1);
+  const irrHa = my.irrHa[yi];
+  const dryHa = Math.max(0, (gEff?.totalByYear?.[yi] ?? irrHa) - irrHa);
+  // Beregneter Block aus der Kultur-Politik (Kartoffel-Ramp/Tomaten-Fix!), Trockenrotation wie gehabt.
+  const irrRows = Object.entries(my.areas).map(([cropId, curve]) => {
+    const ha = curve[yi] ?? 0;
+    return { cropId, name: cropName(cropId), color: cropColor(cropId), ha,
+      yieldTHa: cropYield(domain, cropId, scenarioId), lossPct: cropLoss(domain, cropId, scenarioId),
+      tonnes: ha * cropYield(domain, cropId, scenarioId) * (1 - cropLoss(domain, cropId, scenarioId)), dry: false };
+  });
+  const rows = [...irrRows, ...cropStructure(domain, scenarioId, 0, dryHa).filter((r) => r.dry)]
+    .filter((r) => r.ha > 0.5).sort((a, b) => b.ha - a.ha);
+  const totHa = rows.reduce((s, r) => s + r.ha, 0) || 1;
+  const totT = rows.reduce((s, r) => s + r.tonnes, 0);
+  const maxHa = Math.max(1, ...rows.map((r) => r.ha));
+  const f0 = (v: number) => fmtNumber(v, 0);
+  return (
+    <Tile title={t("Anbaustruktur & Produktion")} hint={`${t("Jahr")} ${yearLabel} · ${f0(totHa)} ha · ${f0(totT)} t ${t("netto")}`}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead><tr>
+            <th className="caption text-[9.5px] text-nx-text-muted text-left px-1 py-1">{t("Kultur")}</th>
+            <th className="caption text-[9.5px] text-nx-text-muted text-right px-1 py-1">{t("Fläche")}</th>
+            <th className="caption text-[9.5px] text-nx-text-muted text-right px-1 py-1">{t("Anteil")}</th>
+            <th className="caption text-[9.5px] text-nx-text-muted text-right px-1 py-1">{t("Ertrag")}</th>
+            <th className="caption text-[9.5px] text-nx-text-muted text-right px-1 py-1">{t("Produktion")}</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, idx) => (
+              <tr key={r.cropId + idx} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                <td className="px-1 py-1">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: r.color, display: "inline-block" }} />
+                    {r.name}{r.dry
+                      ? <span className="caption text-[9px] text-nx-text-muted">{" · "}{t("trocken")}</span>
+                      : <span className="caption text-[9px]" style={{ color: "var(--nx-locate)" }}>{" · "}{t("bewässert")}</span>}
+                  </span>
+                </td>
+                <td className="num px-1 py-1 text-right">{f0(r.ha)} ha</td>
+                <td className="num px-1 py-1 text-right">
+                  <span className="inline-flex items-center gap-1 justify-end">
+                    <span style={{ width: 34, height: 5, borderRadius: 3, background: "var(--nx-surface-sunken)", position: "relative", display: "inline-block" }}>
+                      <span style={{ position: "absolute", left: 0, top: 0, height: 5, borderRadius: 3, width: `${r.ha / maxHa * 100}%`, background: r.color }} />
+                    </span>
+                    {fmtNumber(r.ha / totHa * 100, 0)} %
+                  </span>
+                </td>
+                <td className="num px-1 py-1 text-right text-nx-text-muted">{fmtNumber(r.yieldTHa, 1)} t/ha</td>
+                <td className="num px-1 py-1 text-right font-semibold">{f0(r.tonnes)} t</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
+              <td className="px-1 py-1.5 font-semibold">Σ {t("Gesamt")}</td>
+              <td className="num px-1 py-1.5 text-right font-semibold">{f0(totHa)} ha</td>
+              <td className="num px-1 py-1.5 text-right">100 %</td>
+              <td />
+              <td className="num px-1 py-1.5 text-right font-semibold">{f0(totT)} t</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </Tile>
+  );
+}
+
+/** P&L-Wasserfall: Umsatz → −COGS → Rohertrag → −OpEx → EBITDA → −AfA → EBIT → −Zins → −Steuer → JÜ. */
+function Waterfall({ annual, idx, yearLabel }: { annual: ComputedModel; idx: number; yearLabel: string }) {
+  const p = annual.pnl;
+  const v = (li: { values: number[] }) => li.values[idx] ?? 0;
+  const rev = v(p.revenue) + v(p.subsidies);
+  const steps: { label: string; delta: number; kind: "start" | "up" | "down" | "total" }[] = [
+    { label: t("Umsatz"), delta: rev, kind: "start" },
+    { label: "− COGS", delta: -v(p.cogs), kind: "down" },
+    { label: t("Rohertrag"), delta: 0, kind: "total" },
+    { label: "− OpEx/SG&A", delta: -v(p.opex), kind: "down" },
+    { label: "EBITDA", delta: 0, kind: "total" },
+    { label: t("− Abschreibung"), delta: -v(p.depreciation), kind: "down" },
+    { label: "EBIT", delta: 0, kind: "total" },
+    { label: t("− Zins"), delta: -v(p.interest), kind: "down" },
+    { label: t("− Steuer"), delta: -v(p.tax), kind: "down" },
+    { label: t("Jahresüberschuss"), delta: 0, kind: "total" },
+  ];
+  // laufender Saldo
+  let run = 0; const bars = steps.map((s) => {
+    if (s.kind === "start") { run = s.delta; return { ...s, from: 0, to: run }; }
+    if (s.kind === "total") { return { ...s, from: run, to: run }; }
+    const from = run; run += s.delta; return { ...s, from, to: run };
+  });
+  const maxV = Math.max(1, ...bars.map((b) => Math.max(b.from, b.to)));
+  const W = 100; // %
+  return (
+    <Tile title={t("P&L-Wasserfall")} hint={`${t("Jahr")} ${yearLabel} · € ${t("netto")}`}>
+      <div className="space-y-1.5">
+        {bars.map((bar, j) => {
+          const isTotal = bar.kind === "total" || bar.kind === "start";
+          const lo = Math.min(bar.from, bar.to), hi = Math.max(bar.from, bar.to);
+          const left = (lo / maxV) * W, width = Math.max(0.6, ((hi - lo) / maxV) * W);
+          const col = bar.kind === "down" ? ERR : GRAD;
+          return (
+            <div key={j} className="flex items-center gap-2">
+              <div className="w-[120px] shrink-0 text-[11px]" style={{ fontWeight: isTotal ? 700 : 400, color: "var(--nx-text-secondary)" }}>{bar.label}</div>
+              <div className="relative h-[18px] flex-1 rounded-sm" style={{ background: "var(--nx-app-bg)" }}>
+                <div className="absolute top-0 h-full rounded-sm" style={{ left: `${left}%`, width: `${width}%`, background: col, opacity: isTotal ? 1 : 0.82 }} />
+              </div>
+              <div className="num w-[92px] shrink-0 text-right text-[11px]" style={{ fontWeight: isTotal ? 700 : 400, color: bar.to < 0 ? ERR : "var(--nx-text)" }}>
+                {fmtMoney(bar.kind === "total" || bar.kind === "start" ? bar.to : bar.delta)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Tile>
+  );
+}
+
+/** Covenant-Ampel: DSCR ≥1,25 · Net Debt/EBITDA ≤3,5 · ICR ≥2,0. */
+function Covenants({ k, idx }: { k: ComputedModel["kpis"]; idx: number }) {
+  const rows = [
+    { label: t("DSCR (Kapitaldienstdeckung)"), val: k.dscr.values[idx] ?? 0, thr: 1.25, dir: "min" as const, fmt: fmtFactor, u: "x" },
+    { label: "Net Debt / EBITDA", val: k.netDebtToEbitda.values[idx] ?? 0, thr: 3.5, dir: "max" as const, fmt: fmtFactor, u: "x" },
+    { label: t("Zinsdeckung (ICR)"), val: k.icr.values[idx] ?? 0, thr: 2.0, dir: "min" as const, fmt: fmtFactor, u: "x" },
+  ];
+  return (
+    <Tile title={t("Covenant-Ampel")} hint={t("Kreditauflagen (jüngstes Jahr)")}>
+      <div className="space-y-3">
+        {rows.map((r) => {
+          const ok = r.dir === "min" ? r.val >= r.thr : r.val <= r.thr;
+          const col = ok ? BRAND : ERR;
+          const barBg = ok ? GRAD : ERR;
+          const ratio = r.dir === "min" ? Math.min(1.5, r.val / r.thr) : Math.min(1.5, r.thr / Math.max(0.01, r.val));
+          return (
+            <div key={r.label}>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[11.5px] text-nx-text-secondary">{r.label}</span>
+                <span className="num text-[13px] font-bold" style={{ color: col }}>
+                  {r.fmt(r.val)}{r.u} <span className="text-[10px] font-normal text-nx-text-muted">{r.dir === "min" ? "≥" : "≤"} {r.fmt(r.thr)}{r.u}</span>
+                </span>
+              </div>
+              <div className="relative h-[8px] w-full rounded-full" style={{ background: "var(--nx-app-bg)" }}>
+                <div className="absolute top-0 h-full rounded-full" style={{ width: `${Math.min(100, (ratio / 1.5) * 100)}%`, background: barBg, opacity: 0.9 }} />
+                <div className="absolute top-[-2px] h-[12px] w-[2px]" style={{ left: `${(1 / 1.5) * 100}%`, background: "var(--nx-text-muted)" }} title={t("Schwelle")} />
+              </div>
+            </div>
+          );
+        })}
+        <div className="caption text-[10px] text-nx-text-muted">{t("Balken ggü. Schwelle (Marker). Grün = eingehalten, rot = verletzt.")}</div>
+      </div>
+    </Tile>
+  );
+}
+
+/** Saison-Kurve: monatliches EBITDA (Balken) + Revolver-Inanspruchnahme (Linie/Fläche). */
+function SeasonCurve({ monthly }: { monthly: ComputedModel }) {
+  const eb = monthly.pnl.ebitda.values;
+  const rev = monthly.balanceSheet.revolver?.values ?? [];
+  const n = eb.length;
+  const maxE = Math.max(1, ...eb.map(Math.abs));
+  const maxR = Math.max(1, ...rev);
+  const W = 560, H = 150, pad = 4, bw = (W - pad * 2) / n;
+  const zeroY = H / 2;
+  const ebY = (v: number) => zeroY - (v / maxE) * (H / 2 - 8);
+  const revPts = rev.map((v, j) => `${pad + bw * (j + 0.5)},${H - (v / maxR) * (H - 16) - 4}`).join(" ");
+  return (
+    <Tile title={t("Saison-Kurve")} hint={t("EBITDA (Balken) · Revolver (Linie) — Monatsraster")}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none">
+        <SeriesDefs />
+        <line x1={pad} y1={zeroY} x2={W - pad} y2={zeroY} stroke="var(--nx-border)" strokeWidth={1} />
+        {eb.map((v, j) => {
+          const y = ebY(v), h = Math.abs(y - zeroY);
+          return <rect key={j} x={pad + bw * j + 1.5} y={Math.min(y, zeroY)} width={Math.max(1, bw - 3)} height={Math.max(1, h)} fill={v < 0 ? ERR : "url(#nxSeriesV)"} opacity={0.9} rx={1} />;
+        })}
+        <polyline points={revPts} fill="none" stroke={LOCATE} strokeWidth={1.6} opacity={0.95} />
+        {n <= 12 && MONTHS.slice(0, n).map((m, j) => (
+          <text key={j} x={pad + bw * (j + 0.5)} y={H - 1} fontSize={7} textAnchor="middle" fill="var(--nx-text-muted)">{m}</text>
+        ))}
+      </svg>
+      <div className="mt-1 flex gap-4 caption text-[10px] text-nx-text-muted">
+        <span className="inline-flex items-center gap-1"><span style={{ width: 10, height: 6, background: GRAD, display: "inline-block", borderRadius: 1 }} /> {t("EBITDA/Monat")}</span>
+        <span className="inline-flex items-center gap-1"><span style={{ width: 10, height: 2, background: LOCATE, display: "inline-block" }} /> {t("Revolver-Saldo")}</span>
+      </div>
+    </Tile>
+  );
+}
+
+/** Umsatz & Deckungsbeitrag nach Kultur (horizontale Balken, sortiert). */
+function CropMix({ contrib }: { contrib: ReturnType<typeof deriveContribution> }) {
+  const rows = [...contrib.crops].sort((a, b) => b.revenueCent - a.revenueCent);
+  const maxRev = Math.max(1, ...rows.map((r) => r.revenueCent));
+  const marginOf = (r: any) => { const rev = r.revenueCent + (r.subsidyCent ?? 0); return rev > 0 ? r.contributionCent / rev : 0; };
+  const maxMargin = Math.max(0.01, ...rows.map(marginOf));
+  return (
+    <Tile title={t("Umsatz & Deckungsbeitrag nach Kultur")} hint={t("Balkenfarbe = DB-Marge · €/Jahr")}>
+      <div className="space-y-1.5">
+        {rows.map((r) => {
+          const w = (r.revenueCent / maxRev) * 100;
+          const margin = marginOf(r);
+          const dbPos = r.contributionCent >= 0;
+          // Farbabstufung nach DB-Marge: kräftiger emerald = höhere Marge; rot = negativ.
+          //  Intensität über brightness() (hue-treu, volle Deckkraft) — KEIN Alpha, sonst scheint im
+          //  Dark Mode der schwarze Track durch und das Emerald wirkt oliv/matt.
+          const shade = Math.min(1, Math.max(0, margin / maxMargin));
+          const bg = dbPos ? GRAD : ERR;
+          const filt = dbPos ? `brightness(${(0.78 + 0.42 * shade).toFixed(2)})` : undefined;
+          return (
+            <div key={r.cropId} className="flex items-center gap-2">
+              <div className="w-[128px] shrink-0 truncate text-[11px] text-nx-text-secondary" title={r.name}>{r.name}</div>
+              <div className="relative h-[16px] flex-1 rounded-sm" style={{ background: "var(--nx-surface-sunken)" }}>
+                <div className="absolute top-0 h-full rounded-sm" style={{ width: `${w}%`, background: bg, filter: filt }} />
+              </div>
+              <div className="num w-[86px] shrink-0 text-right text-[11px]">{fmtMoney(r.revenueCent)}</div>
+              <div className="num w-[112px] shrink-0 text-right text-[10.5px]" style={{ color: dbPos ? "var(--nx-text-muted)" : ERR }} title={t("Deckungsbeitrag (€ · % vom Umsatz inkl. Förderung)")}>DB {fmtMoney(r.contributionCent)} · <b style={{ color: dbPos ? "var(--nx-brand-lift)" : ERR }}>{fmtPct(margin)}</b></div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex gap-4 caption text-[10px] text-nx-text-muted">
+        <span className="inline-flex items-center gap-1"><span style={{ width: 24, height: 6, background: GRAD, display: "inline-block", borderRadius: 1 }} /> {t("DB-Marge — kräftiger = höher")}</span>
+        <span className="inline-flex items-center gap-1"><span style={{ width: 10, height: 6, background: ERR, display: "inline-block", borderRadius: 1 }} /> {t("negativ")}</span>
+      </div>
+    </Tile>
+  );
+}
+
+/** Funding-Box: Investitionsvolumen, Peak-Finanzierungsbedarf, Verschuldung. */
+function FundingBox({ annual, monthly, idx }: { annual: ComputedModel; monthly: ComputedModel; idx: number }) {
+  const capex = Math.abs(sum(monthly.cashFlow.capex.values));
+  const peakRevolver = Math.max(0, ...(monthly.balanceSheet.revolver?.values ?? [0]));
+  const peakVat = Math.max(0, ...(monthly.balanceSheet.vatReceivable?.values ?? [0]));
+  const debtEnd = (annual.balanceSheet.debt.values[idx] ?? 0) + (annual.balanceSheet.revolver.values[idx] ?? 0);
+  const equity = annual.balanceSheet.totalEquity.values[idx] ?? 0;
+  const gearing = equity + debtEnd > 0 ? debtEnd / (equity + debtEnd) : 0;
+  const items = [
+    { cap: t("Investitionsvolumen (CapEx)"), val: fmtMoney(capex) + " €" },
+    { cap: t("Peak Revolver-Bedarf"), val: fmtMoney(peakRevolver) + " €" },
+    { cap: t("Peak USt-Vorfinanzierung"), val: fmtMoney(peakVat) + " €" },
+    { cap: t("Finanzverbindlichkeiten (Ende)"), val: fmtMoney(debtEnd) + " €" },
+    { cap: t("Gearing (FK / (FK+EK))"), val: fmtPct(gearing) },
+  ];
+  return (
+    <Tile title={t("Finanzierung & Funding")} hint={t("Kapitalbedarf im Jahresverlauf")}>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 sm:grid-cols-3">
+        {items.map((it) => (
+          <div key={it.cap}>
+            <div className="caption text-[10px] text-nx-text-muted">{it.cap}</div>
+            <div className="num text-[15px] font-semibold">{it.val}</div>
+          </div>
+        ))}
+      </div>
+    </Tile>
+  );
+}
