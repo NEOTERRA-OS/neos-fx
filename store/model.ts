@@ -388,6 +388,14 @@ export function deriveCropAreasMY(domain: Domain): { years: number; irrHa: numbe
   const areas: Record<string, number[]> = {};
   for (const e of domain.anbauplan) areas[e.cropId] = new Array(years).fill(0);
   const baseOf = (id: string) => domain.anbauplan.filter((e) => e.cropId === id).reduce((s, e) => s + e.areaHa, 0);
+  // Zwei-Pool: Dryland-Kulturen füllen die unberegnete Fläche (totalByYear − areaByYear), NICHT das
+  //  Beregnungs-Residual. dryIds/dryBaseSum steuern die separate Verteilung.
+  const dryIds = new Set(domain.anbauplan.filter((a) => a.pool === "dryland").map((a) => a.cropId));
+  const dryBaseSum = domain.anbauplan.filter((a) => a.pool === "dryland").reduce((s, a) => s + a.areaHa, 0) || 1;
+  const dryHaOf = (y: number) => {
+    const tb = gEff?.totalByYear; const totY = tb ? (tb[Math.min(y, tb.length - 1)] ?? 0) : (gEff?.startTotalHa ?? irrHa[y]);
+    return Math.max(0, totY - irrHa[y]);
+  };
 
   for (let y = 0; y < years; y++) {
     // Jahr 0 = IST-Anbauplan (Konsistenz mit deriveCapex/Flotten-Sizing/Lager-Basis, die auf dem
@@ -424,14 +432,17 @@ export function deriveCropAreasMY(domain: Domain): { years: number; irrHa: numbe
     //  (Σ je Jahr bleibt IMMER = beregnete Fläche, keine Phantom-Hektar).
     if (fixed > irrHa[y] && fixed > 0) {
       const k = irrHa[y] / fixed;
-      for (const id of Object.keys(areas)) areas[id][y] *= k;
+      for (const id of Object.keys(areas)) if (!dryIds.has(id)) areas[id][y] *= k;
       fixed = irrHa[y];
     }
-    // (3) Residual proportional auf scale-Kulturen
-    const scaleEntries = domain.anbauplan.filter((e) => !pol[e.cropId] || pol[e.cropId].mode === "scale");
+    // (3) Residual proportional auf scale-Kulturen (nur beregnet — Dryland getrennt, s. u.)
+    const scaleEntries = domain.anbauplan.filter((e) => e.pool !== "dryland" && (!pol[e.cropId] || pol[e.cropId].mode === "scale"));
     const scaleBase = scaleEntries.reduce((s, e) => s + e.areaHa, 0) || 1;
     const residual = Math.max(0, irrHa[y] - fixed);
     for (const e of scaleEntries) areas[e.cropId][y] += residual * (e.areaHa / scaleBase);
+    // (3b) Dryland-Pool: füllt totalByYear − areaByYear, proportional zu den Basis-Anteilen.
+    const dryHaY = dryHaOf(y);
+    for (const e of domain.anbauplan) if (e.pool === "dryland") areas[e.cropId][y] += dryHaY * (e.areaHa / dryBaseSum);
     // (4) MARKT-CAPS (Absatzobergrenze t/a → ha = cap/Ertrag, Base-Szenario): gekappter Überschuss
     //  wandert proportional in die übrigen scale-Kulturen (Rotationsfläche bleibt Σ-konstant).
     const cappedIds = Object.keys(pol).filter((id) => (pol[id]?.capTonnes ?? 0) > 0 && areas[id]);
@@ -1115,6 +1126,9 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("seed.soja_luzerne", "seed.soja_luzerne", "Saatgut Soja €/kg (inkl. Impfung)", "money", 150),
   A("seed.winterraps", "seed.winterraps", "Saatgut Winterraps-Hybrid €/Einheit", "money", 12000),
   A("seed.mais", "seed.mais", "Saatgut Körnermais-Hybrid €/Einheit (80.000 K)", "money", 23000),
+  A("seed.weizen_dry", "seed.weizen_dry", "Saatgut Winterweizen (trocken) €/kg", "money", 55),
+  A("seed.gerste_dry", "seed.gerste_dry", "Saatgut Wintergerste (trocken) €/kg", "money", 53),
+  A("seed.raps_dry", "seed.raps_dry", "Saatgut Winterraps (trocken) €/Einheit", "money", 12000),
   A("seed.tomate", "seed.tomate", "Tomate F1-Jungpflanzen €/1000 Pfl.", "money", 3600),
   A("seed.kartoffel_pommes", "seed.kartoffel_pommes", "Pflanzkartoffeln (Pommes) €/t", "money", 39000),
   A("seed.kartoffel_chips", "seed.kartoffel_chips", "Pflanzkartoffeln (Chips) €/t", "money", 41000),
@@ -1571,6 +1585,7 @@ const CROP_IDS: CropId[] = [
   "weizen", "gerste_zw", "soja_luzerne", "winterraps", "mais", "tomate",
   "kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre",
   "suesskartoffel", "knoblauch", "knollensellerie",
+  "weizen_dry", "gerste_dry", "raps_dry",
 ];
 
 /** Wertkulturen (Beregnung/Gemüse, hoher DB) vs. Break Crops (Getreide/Ölsaat der Rotation). */
@@ -1891,6 +1906,11 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
     plantingPeriod: CROP_CAL[cropId].plant,
     harvestPeriods: CROP_CAL[cropId].harvest.slice(),
   });
+  const mkDry = (cropId: CropId, area: number): AnbauEntry => ({ ...mk(cropId, area), pool: "dryland" });
+  // Unberegnete Trockenrotation (~1,5× beregnete Fläche in Süd-Dolj: 4.000 → 6.000 ha):
+  //  Weizen 40 % · Gerste 35 % · Raps 25 % (Rain-fed-Varianten mit eigener Kalkulation).
+  const dryBase = Math.round(STAGES[String(stage)].beregneteFlaecheHa * 1.5);
+  const wDry = Math.round(dryBase * 0.40), gDry = Math.round(dryBase * 0.35), rDry = dryBase - wDry - gDry;
   // Marktanalyse 24.07.: Zwiebel/Möhre-Feld teilt sich mit den neuen Import-Substitutions-Kulturen
   //  (Celeriac läuft bereits im Betrieb; Süßkartoffel/Knoblauch als skalierbare Pilotflächen).
   const sellerie = Math.round(feld * 0.15);   // ~100 ha @ Stufe 1
@@ -1910,6 +1930,9 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
     mk("knollensellerie", sellerie),
     mk("suesskartoffel", suess),
     mk("knoblauch", knobl),
+    mkDry("weizen_dry", wDry),
+    mkDry("gerste_dry", gDry),
+    mkDry("raps_dry", rDry),
   ];
 }
 
@@ -3832,36 +3855,6 @@ export function deriveContribution(
     else { breakCent += contributionCent; breakBeCent += betriebsergebnisCent; }
   }
 
-  // --- Trockenrotation (unberegnet, Rain-fed) als eigene Break-Crop-Zeilen ---
-  //  Engine-konsistent: Beitrag = Fläche × DB/ha (Netto, wie in buildModelState). Umsatz/COGS
-  //  nur informativ zerlegt (Umsatz = Fläche × Rain-fed-Ertrag × Preis; COGS = Umsatz − DB).
-  {
-    const eff = effectiveGrowth(domain.growth);
-    const irr = Math.round(eff?.areaByYear?.[0] ?? domain.anbauplan.reduce((s, a) => s + a.areaHa, 0));
-    const totFarm = Math.round(eff?.totalByYear?.[0] ?? eff?.startTotalHa ?? irr);
-    const dryHa = Math.max(0, totFarm - irr);
-    for (const dr of eff?.drylandRotation ?? []) {
-      const ha = Math.round(dr.sharePct * dryHa);
-      if (ha <= 0) continue;
-      const cat = domain.catalog.find((c) => c.cropId === dr.cropId);
-      const price = cat ? resolveScalar(domain, cat.priceKey, sc) : 0;
-      const y = dr.yieldTHa ?? 0; const loss = dr.lossPct ?? 0.05;
-      const revenueCent = Math.round(ha * y * price * (1 - loss));
-      const contributionCent = Math.round(ha * dr.dbPerHaCent);
-      const cogsCent = Math.max(0, revenueCent - contributionCent);
-      const pachtCent = Math.round(ha * PACHT_PER_HA * 100);
-      const betriebsergebnisCent = contributionCent - pachtCent;
-      crops.push({
-        cropId: `${dr.cropId}__dry`, name: `${dr.label ?? cat?.name ?? dr.cropId} (trocken)`,
-        group: "break", areaHa: ha,
-        revenueCent, subsidyCent: 0, cogsCent, contributionCent, contribPerHaCent: dr.dbPerHaCent,
-        machineAfaZinsPerHaCent: 0, personnelPerHaCent: 0, fixPerHaCent: PACHT_PER_HA * 100,
-        betriebsergebnisCent, bePerHaCent: ha > 0 ? betriebsergebnisCent / ha : 0,
-      });
-      breakCent += contributionCent; breakBeCent += betriebsergebnisCent;
-    }
-  }
-
   const totalCent = valueCent + breakCent;
   const totalBeCent = valueBeCent + breakBeCent;
   return {
@@ -4463,7 +4456,11 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   //  netto der variablen Kosten). Fließt in Bruttoergebnis + Cash; finanziert den Landzukauf-
   //  Kapitaldienst. Ernte der Break Crops ~Juli. Output-Inflation je Jahr.
   const gpFwd = gEff;
-  if (years > 1 && gpFwd?.totalByYear && gpFwd.drylandRotation?.length) {
+  // Ab der Vollintegration laufen die Trockenkulturen NATIV als Rain-fed-Kulturvarianten durch die
+  //  Erlös−Kosten-Maschinen-Rechnung (pool:"dryland" im Anbauplan). Der alte DB-Lump-Sum darf dann
+  //  NICHT mehr laufen (sonst Doppelzählung). Nur Fallback, wenn kein natives Dryland im Plan steht.
+  const hasNativeDryland = domain.anbauplan.some((a) => a.pool === "dryland");
+  if (!hasNativeDryland && years > 1 && gpFwd?.totalByYear && gpFwd.drylandRotation?.length) {
     const dryDbPerHa = gpFwd.drylandRotation.reduce((s, r) => s + r.sharePct * r.dbPerHaCent, 0);
     let prevTot = gpFwd.startTotalHa ?? gpFwd.totalByYear[0] ?? 0;
     for (let y = 0; y < years; y++) {

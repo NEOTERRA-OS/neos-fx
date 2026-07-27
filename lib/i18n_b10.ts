@@ -55,8 +55,8 @@ const B10: Record<string, string> = {
   "Ertrag (t/ha)": "Yield (t/ha)",
   "Verlust": "Loss",
   "Produktion netto (t)": "Net production (t)",
-  "Netto-Erntemenge nach Feld-/Lagerverlust. Beregnete Kulturen: Basis für Umsatz (× Preis × Kontrakt-Qualität). Trockenrotation: Rain-fed-Ertrag; ökonomisch als Netto-Deckungsbeitrag modelliert (bereits in EBITDA). Flächenentwicklung über die Jahre steht im Wachstumsplan.":
-    "Net harvest after field/storage loss. Irrigated crops: basis for revenue (× price × contract quality). Dryland rotation: rain-fed yield; modeled economically as net contribution margin (already in EBITDA). Area development over the years is in the growth plan.",
+  "Netto-Erntemenge nach Feld-/Lagerverlust. Beregnete Kulturen: Basis für Umsatz (× Preis × Kontrakt-Qualität). Trockenkulturen (☀): Rain-fed-Ertrag mit eigener Bottom-up-Kalkulation — volle Kosten (Agronomie, Maschinen, Personal, Fixkosten) über die gesamte Fläche gerechnet, nicht als Pauschale. Flächenentwicklung über die Jahre steht im Wachstumsplan.":
+    "Net harvest after field/storage loss. Irrigated crops: basis for revenue (× price × contract quality). Dryland crops (☀): rain-fed yield with their own bottom-up costing — full costs (agronomy, machinery, personnel, fixed costs) computed over the entire area, not as a lump sum. Area development over the years is in the growth plan.",
 
   // Logo / Nav
   "Zum Dashboard": "To dashboard",

@@ -7,7 +7,7 @@ import { AssumptionGroupCards } from "./AssumptionGroupCards";
 import { AnbauAnalysePanel } from "./AnbauAnalysePanel";
 import { AnbauWhatIfPanel } from "./AnbauWhatIfPanel";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
-import { deriveCropAreasMY, effectiveGrowth, scopedDomain, type CropPolicy } from "../../store/model";
+import { deriveCropAreasMY, scopedDomain, type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
 import { Droplets, Sun, X } from "lucide-react";
 import { Segmented } from "../primitives/Segmented";
@@ -64,29 +64,21 @@ export function AnbauplanView() {
   const stageCashOnly = domain.growth?.stage === "s1a";
   const planDomain = stageCashOnly ? scopedDomain(domain) : domain;
   const plan = planDomain.anbauplan;
-  const totalHa = plan.reduce((a, e) => a + e.areaHa, 0);
-  const totalAgroCent = plan.reduce((a, e) => {
+  // Trockenrotation läuft jetzt NATIV im Anbauplan (pool:"dryland"). Aufteilung rein über das pool-Feld.
+  const agroOf = (e: { cropId: string; areaHa: number }) => {
     const entry = planDomain.catalog.find((c) => c.cropId === e.cropId);
-    return a + (entry ? fieldCostPerHaCent(planDomain, entry, sc) : 0) * e.areaHa;
-  }, 0);
+    return (entry ? fieldCostPerHaCent(planDomain, entry, sc) : 0) * e.areaHa;
+  };
+  const irrRows = plan.filter((e) => e.pool !== "dryland");
+  const dryPlanRows = plan.filter((e) => e.pool === "dryland");
+  const beregHa = irrRows.reduce((a, e) => a + e.areaHa, 0);
+  const dryHa = dryPlanRows.reduce((a, e) => a + e.areaHa, 0);
+  const totalHa = beregHa + dryHa;
+  const beregAgroCent = irrRows.reduce((a, e) => a + agroOf(e), 0);
+  const dryAgroCent = dryPlanRows.reduce((a, e) => a + agroOf(e), 0);
+  const totalAgroCent = beregAgroCent + dryAgroCent;
   const avgPerHaCent = totalHa > 0 ? totalAgroCent / totalHa : 0;
-
-  // ── Trockenrotation (unberegnet): 2. Block. Fläche = Gesamtbetrieb − beregnete Fläche,
-  //    aufgeteilt nach growth.drylandRotation. Stufenabhängig über effectiveGrowth (Basisjahr y0).
-  //    Der DB steckt bereits in der Engine (buildModelState, alle Jahre) — hier nur die Anzeige.
-  const eff = effectiveGrowth(domain.growth);
-  const irrHa0 = Math.round(eff?.areaByYear?.[0] ?? totalHa);
-  const totFarmHa0 = Math.round(eff?.totalByYear?.[0] ?? eff?.startTotalHa ?? irrHa0);
-  const dryHa = Math.max(0, totFarmHa0 - irrHa0);
-  const dryRot = eff?.drylandRotation ?? [];
-  const dryRows = dryRot.map((r) => {
-    const cat = domain.catalog.find((c) => c.cropId === r.cropId);
-    const ha = Math.round(r.sharePct * dryHa);
-    return { cropId: r.cropId, name: r.label ?? cat?.name ?? cropName(r.cropId), ha, dbCent: r.dbPerHaCent, sumCent: Math.round(ha * r.dbPerHaCent), sharePct: r.sharePct, plant: cat?.plantingPeriod, harvest: cat?.harvestPeriods ?? [] };
-  });
-  const dryTotHa = dryRows.reduce((a, r) => a + r.ha, 0);
-  const dryTotDb = dryRows.reduce((a, r) => a + r.sumCent, 0);
-  const showDry = dryHa > 0 && dryRows.length > 0;
+  const showDry = dryHa > 0;
 
   return (
     <div className="space-y-4">
@@ -102,9 +94,9 @@ export function AnbauplanView() {
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
         <div>
           <h2 className="text-[14px] font-semibold">{stageCashOnly ? t("Anbauplan (Stufe 1: reiner Ackerbau)") : t("Anbauplan — Kulturen & Flächen")}</h2>
-          <div className="text-[10.5px] text-nx-text-muted">{showDry ? t("Beregnete Kulturen + unberegnete Trockenrotation in einer Tabelle. Agronomie aus dem Katalog; Trockenfläche als Netto-Deckungsbeitrag.") : t("Agronomie-Kosten aus dem Katalog (Maschinen separat).")}</div>
+          <div className="text-[10.5px] text-nx-text-muted">{showDry ? t("Beregnete Kulturen + unberegnete Trockenrotation in einer Tabelle. Jede Kultur mit eigener Bottom-up-Kalkulation.") : t("Agronomie-Kosten aus dem Katalog (Maschinen separat).")}</div>
         </div>
-        <span className="caption text-[10.5px] text-nx-text-muted">{t("Gesamtbetrieb · Σ")} {fmtNumber(totalHa + dryTotHa, 0)} ha</span>
+        <span className="caption text-[10.5px] text-nx-text-muted">{t("Gesamtbetrieb · Σ")} {fmtNumber(totalHa, 0)} ha</span>
       </div>
       {stageCashOnly && (
         <div className="border-b px-4 py-2 text-[11px]" style={{ borderColor: "var(--nx-border)", background: "color-mix(in srgb, var(--nx-warn, #C9A227) 12%, transparent)", color: "var(--nx-warn, #C9A227)" }}>
@@ -143,7 +135,7 @@ export function AnbauplanView() {
                       </select>
                     )}
                   </td>
-                  <td className="px-2 py-2"><BeregBadge kind="beregnet" /></td>
+                  <td className="px-2 py-2"><BeregBadge kind={e.pool === "dryland" ? "trocken" : "beregnet"} /></td>
                   <td className="px-2 py-2 text-right">
                     {stageCashOnly
                       ? <span className="num">{fmtNumber(e.areaHa, 0)} ha</span>
@@ -166,42 +158,31 @@ export function AnbauplanView() {
                 </tr>
               );
             })}
-            {showDry && dryRows.map((r) => (
-              <tr key={`dry-${r.cropId}`} style={{ borderTop: "1px solid var(--nx-border-divider)", background: "color-mix(in srgb, var(--nx-warn, #C9A227) 5%, transparent)" }}>
-                <td className="px-2 py-2 font-semibold" style={{ color: "var(--nx-text-secondary)" }}>{t(r.name)}</td>
-                <td className="px-2 py-2"><BeregBadge kind="trocken" /></td>
-                <td className="num px-2 py-2 text-right">{fmtNumber(r.ha, 0)} ha</td>
-                <td className="num px-2 py-2 text-right text-nx-text-secondary">{r.plant ?? "—"}</td>
-                <td className="num px-2 py-2 text-right text-nx-text-secondary">{r.harvest.length ? r.harvest.join(", ") : "—"}</td>
-                <td className="num px-2 py-2 text-right" title={t("Deckungsbeitrag (netto) — Trockenfläche wird als DB modelliert")} style={{ color: "var(--nx-green)" }}>{fmtMoney(r.dbCent)} <span className="text-[9px] opacity-70">DB</span></td>
-                <td className="num px-2 py-2 text-right font-semibold" style={{ color: "var(--nx-green)" }}>{fmtMoney(r.sumCent)}</td>
-                <td className="px-2 py-2" />
-              </tr>
-            ))}
           </tbody>
           <tfoot>
             <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
-              <td className="px-2 py-2.5 font-semibold" style={{ color: "var(--nx-brand-lift)" }} colSpan={2}>{t("Beregnet ·")} {plan.length} {t("Kulturen")}</td>
-              <td className="num px-2 py-2.5 text-right font-semibold">{fmtNumber(totalHa, 0)} ha</td>
+              <td className="px-2 py-2.5 font-semibold" style={{ color: "var(--nx-brand-lift)" }} colSpan={2}>{t("Beregnet ·")} {irrRows.length} {t("Kulturen")}</td>
+              <td className="num px-2 py-2.5 text-right font-semibold">{fmtNumber(beregHa, 0)} ha</td>
               <td className="px-2 py-2.5" colSpan={2} />
               <td className="num px-2 py-2.5 text-right text-nx-text-secondary" title={t("gewichteter Durchschnitt")}>ø {fmtMoney(avgPerHaCent)}</td>
-              <td className="num px-2 py-2.5 text-right font-semibold">{fmtMoney(totalAgroCent)}</td>
+              <td className="num px-2 py-2.5 text-right font-semibold">{fmtMoney(beregAgroCent)}</td>
               <td className="px-2 py-2.5" />
             </tr>
             {showDry && (
               <tr>
-                <td className="px-2 py-1.5 font-semibold" style={{ color: "var(--nx-brand-lift)" }} colSpan={2}>{t("Trocken ·")} {dryRows.length} {t("Kulturen")}</td>
-                <td className="num px-2 py-1.5 text-right font-semibold">{fmtNumber(dryTotHa, 0)} ha</td>
-                <td className="px-2 py-1.5" colSpan={3} />
-                <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: "var(--nx-green)" }}>{fmtMoney(dryTotDb)} <span className="text-[9px] opacity-70">DB</span></td>
+                <td className="px-2 py-1.5 font-semibold" style={{ color: "var(--nx-brand-lift)" }} colSpan={2}>{t("Trocken ·")} {dryPlanRows.length} {t("Kulturen")}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold">{fmtNumber(dryHa, 0)} ha</td>
+                <td className="px-2 py-1.5" colSpan={2} />
+                <td className="px-2 py-1.5" />
+                <td className="num px-2 py-1.5 text-right font-semibold">{fmtMoney(dryAgroCent)}</td>
                 <td className="px-2 py-1.5" />
               </tr>
             )}
             {showDry && (
               <tr style={{ borderTop: "1px solid var(--nx-border)" }}>
                 <td className="px-2 py-2 font-bold" style={{ color: "var(--nx-brand-lift)" }} colSpan={2}>{t("Gesamtbetrieb")}</td>
-                <td className="num px-2 py-2 text-right font-bold">{fmtNumber(totalHa + dryTotHa, 0)} ha</td>
-                <td className="px-2 py-2 text-[10px] text-nx-text-muted" colSpan={5}>{fmtNumber(totalHa, 0)} {t("beregnet")} + {fmtNumber(dryTotHa, 0)} {t("trocken")}</td>
+                <td className="num px-2 py-2 text-right font-bold">{fmtNumber(totalHa, 0)} ha</td>
+                <td className="px-2 py-2 text-[10px] text-nx-text-muted" colSpan={5}>{fmtNumber(beregHa, 0)} {t("beregnet")} + {fmtNumber(dryHa, 0)} {t("trocken")}</td>
               </tr>
             )}
           </tfoot>
@@ -222,7 +203,7 @@ export function AnbauplanView() {
           {stageCashOnly
             ? t("Stufe 1: reine Cash-Crop-Rotation (abgeleitet, nicht editierbar).")
             : t("Fläche ändern → Kosten & Maschinen rechnen automatisch nach.")}
-          {showDry ? " " + t("Trockenzeilen sind aus dem Wachstumsplan abgeleitet; DB bereits in EBITDA/Cashflow.") : ""}
+          {showDry ? " " + t("Trockenkulturen laufen nativ mit eigener Kalkulation (☀ trocken); Maschinen über die volle Fläche.") : ""}
         </span>
       </div>
     </section>
@@ -318,27 +299,20 @@ function PolicyPanel() {
 function ProduktionsTabelle() {
   const { domain, view } = useModelStore();
   const sc = view.scenarioId;
-  const rows = domain.anbauplan.map((e) => {
+  // Native Zeilen: beregnet + trocken kommen beide aus dem Anbauplan (pool). Die Trockenkulturen
+  // (weizen_dry …) tragen ihre eigenen Rain-fed-Ertragsannahmen — kein separater Abschlag mehr.
+  const allRows = domain.anbauplan.map((e) => {
     const y = cropYield(domain, e.cropId, sc);
     const loss = cropLoss(domain, e.cropId, sc);
     const t = netTonnes(domain, e.cropId, sc, e.areaHa, false);
     const entry = domain.catalog.find((c) => c.cropId === e.cropId);
-    return { id: e.id, cropId: e.cropId, name: entry?.name ?? e.cropId, ha: e.areaHa, y, loss, t };
+    return { id: e.id, cropId: e.cropId, name: entry?.name ?? e.cropId, ha: e.areaHa, y, loss, t, pool: e.pool ?? "irrigated" };
   });
+  const rows = allRows.filter((r) => r.pool !== "dryland");
+  const dryRows = allRows.filter((r) => r.pool === "dryland");
   const beregHa = rows.reduce((a, r) => a + r.ha, 0);
   const beregT = rows.reduce((a, r) => a + r.t, 0);
-  // Trockenrotation (unberegnet) — Fläche = Gesamtbetrieb − beregnet; Produktion aus Rain-fed-Ertrag.
-  const eff = effectiveGrowth(domain.growth);
-  const irrHa0 = Math.round(eff?.areaByYear?.[0] ?? beregHa);
-  const totFarmHa0 = Math.round(eff?.totalByYear?.[0] ?? eff?.startTotalHa ?? irrHa0);
-  const dryHaTotal = Math.max(0, totFarmHa0 - irrHa0);
-  const dryRows = (eff?.drylandRotation ?? []).map((r) => {
-    const cat = domain.catalog.find((c) => c.cropId === r.cropId);
-    const ha = Math.round(r.sharePct * dryHaTotal);
-    const y = r.yieldTHa ?? 0; const loss = r.lossPct ?? 0.05;
-    return { id: `dry-${r.cropId}`, cropId: r.cropId, name: r.label ?? cat?.name ?? cropName(r.cropId), ha, y, loss, t: Math.round(ha * y * (1 - loss)) };
-  });
-  const showDry = dryHaTotal > 0 && dryRows.length > 0;
+  const showDry = dryRows.length > 0;
   const dryTotHa = dryRows.reduce((a, r) => a + r.ha, 0);
   const dryTotT = dryRows.reduce((a, r) => a + r.t, 0);
   const grandHa = beregHa + dryTotHa;
@@ -423,7 +397,7 @@ function ProduktionsTabelle() {
         </table>
       </div>
       <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
-        {t("Netto-Erntemenge nach Feld-/Lagerverlust. Beregnete Kulturen: Basis für Umsatz (× Preis × Kontrakt-Qualität). Trockenrotation: Rain-fed-Ertrag; ökonomisch als Netto-Deckungsbeitrag modelliert (bereits in EBITDA). Flächenentwicklung über die Jahre steht im Wachstumsplan.")}
+        {t("Netto-Erntemenge nach Feld-/Lagerverlust. Beregnete Kulturen: Basis für Umsatz (× Preis × Kontrakt-Qualität). Trockenkulturen (☀): Rain-fed-Ertrag mit eigener Bottom-up-Kalkulation — volle Kosten (Agronomie, Maschinen, Personal, Fixkosten) über die gesamte Fläche gerechnet, nicht als Pauschale. Flächenentwicklung über die Jahre steht im Wachstumsplan.")}
       </div>
     </section>
   );
