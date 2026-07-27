@@ -3,6 +3,7 @@ import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import type { CommentThread } from "../../store/model";
 import { t, getLang } from "../../lib/i18n";
+import { MessageSquare } from "lucide-react";
 
 const rid = () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
@@ -43,7 +44,7 @@ export function CommentsPanel({ target, targetLabel, area, onClose }: {
         <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--nx-border)" }}>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="truncate text-[14px] font-semibold">💬 {targetLabel}</h3>
+              <h3 className="inline-flex items-center gap-1.5 truncate text-[14px] font-semibold"><MessageSquare size={14} strokeWidth={2} aria-hidden /> {targetLabel}</h3>
               {thread?.resolved && <span className="rounded-control px-1.5 py-0.5 text-[9.5px] font-semibold" style={{ background: "var(--nx-green)", color: "#fff" }}>{t("erledigt")}</span>}
             </div>
             {area && <div className="text-[10.5px] text-nx-text-muted">{t(area)}</div>}

@@ -9,6 +9,8 @@ import { AnbauWhatIfPanel } from "./AnbauWhatIfPanel";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
 import { deriveCropAreasMY, effectiveGrowth, scopedDomain, type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
+import { Droplets, Sun } from "lucide-react";
+import { Segmented } from "../primitives/Segmented";
 
 /** Feldkosten €/ha einer Kultur = Σ opLine (Menge/ha × Stücksatz), aus dem KATALOG gezogen. */
 function fieldCostPerHaCent(domain: Domain, entry: CatalogEntry, scenarioId: string): number {
@@ -45,7 +47,8 @@ function BeregBadge({ kind }: { kind: "beregnet" | "trocken" }) {
         background: beregnet ? "color-mix(in srgb, var(--nx-locate) 14%, transparent)" : "color-mix(in srgb, var(--nx-warn, #C9A227) 16%, transparent)",
         color: beregnet ? "var(--nx-locate)" : "var(--nx-warn, #C9A227)",
       }}>
-      {beregnet ? "💧" : "☀"} {beregnet ? t("beregnet") : t("trocken")}
+      {beregnet ? <Droplets size={12} strokeWidth={2} aria-hidden /> : <Sun size={12} strokeWidth={2} aria-hidden />}
+      {beregnet ? t("beregnet") : t("trocken")}
     </span>
   );
 }
@@ -87,12 +90,12 @@ export function AnbauplanView() {
 
   return (
     <div className="space-y-4">
-    <div className="flex items-center gap-1 rounded-tile border p-1" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)", width: "fit-content" }}>
-      {([["anbau", t("Anbauplan")], ["ertraege", t("Erträge")], ["preise", t("Preise")]] as const).map(([id, label]) => (
-        <button key={id} onClick={() => setTab(id)} className="rounded-control px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors"
-          style={tab === id ? { background: "var(--nx-yellow)", color: "var(--nx-green)" } : { color: "var(--nx-text-secondary)", background: "transparent" }}>{label}</button>
-      ))}
-    </div>
+    <Segmented ariaLabel={t("Ansicht")} value={tab} onChange={(v) => setTab(v as typeof tab)}
+      options={[
+        { value: "anbau", label: t("Anbauplan") },
+        { value: "ertraege", label: t("Erträge") },
+        { value: "preise", label: t("Preise") },
+      ]} />
 
     {tab === "anbau" && (<>
     <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
@@ -219,7 +222,7 @@ export function AnbauplanView() {
           {stageCashOnly
             ? t("Stufe 1: reine Cash-Crop-Rotation (abgeleitet, nicht editierbar).")
             : t("Fläche ändern → Kosten & Maschinen rechnen automatisch nach.")}
-          {showDry ? " " + t("Trockenzeilen (☀) sind aus dem Wachstumsplan abgeleitet; DB bereits in EBITDA/Cashflow.") : ""}
+          {showDry ? " " + t("Trockenzeilen sind aus dem Wachstumsplan abgeleitet; DB bereits in EBITDA/Cashflow.") : ""}
         </span>
       </div>
     </section>
@@ -322,19 +325,36 @@ function ProduktionsTabelle() {
     const entry = domain.catalog.find((c) => c.cropId === e.cropId);
     return { id: e.id, cropId: e.cropId, name: entry?.name ?? e.cropId, ha: e.areaHa, y, loss, t };
   });
-  const totHa = rows.reduce((a, r) => a + r.ha, 0);
-  const totT = rows.reduce((a, r) => a + r.t, 0);
+  const beregHa = rows.reduce((a, r) => a + r.ha, 0);
+  const beregT = rows.reduce((a, r) => a + r.t, 0);
+  // Trockenrotation (unberegnet) — Fläche = Gesamtbetrieb − beregnet; Produktion aus Rain-fed-Ertrag.
+  const eff = effectiveGrowth(domain.growth);
+  const irrHa0 = Math.round(eff?.areaByYear?.[0] ?? beregHa);
+  const totFarmHa0 = Math.round(eff?.totalByYear?.[0] ?? eff?.startTotalHa ?? irrHa0);
+  const dryHaTotal = Math.max(0, totFarmHa0 - irrHa0);
+  const dryRows = (eff?.drylandRotation ?? []).map((r) => {
+    const cat = domain.catalog.find((c) => c.cropId === r.cropId);
+    const ha = Math.round(r.sharePct * dryHaTotal);
+    const y = r.yieldTHa ?? 0; const loss = r.lossPct ?? 0.05;
+    return { id: `dry-${r.cropId}`, cropId: r.cropId, name: r.label ?? cat?.name ?? cropName(r.cropId), ha, y, loss, t: Math.round(ha * y * (1 - loss)) };
+  });
+  const showDry = dryHaTotal > 0 && dryRows.length > 0;
+  const dryTotHa = dryRows.reduce((a, r) => a + r.ha, 0);
+  const dryTotT = dryRows.reduce((a, r) => a + r.t, 0);
+  const grandHa = beregHa + dryTotHa;
+  const grandT = beregT + dryTotT;
   return (
     <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
         <h2 className="text-[14px] font-semibold">{t("Anbaustruktur & Produktion")}</h2>
-        <span className="caption text-[10.5px] text-nx-text-muted">{t("Fläche × Ertrag × (1 − Verlust) → Netto-Erntemenge ·")} {fmtNumber(totT, 0)} t</span>
+        <span className="caption text-[10.5px] text-nx-text-muted">{t("Fläche × Ertrag × (1 − Verlust) → Netto-Erntemenge ·")} {fmtNumber(grandT, 0)} t</span>
       </div>
       <div className="overflow-x-auto px-2 py-2">
         <table className="w-full text-[12.5px]">
           <thead>
             <tr className="caption text-[10.5px] text-nx-text-muted">
               <th className="px-2 py-2 text-left">{t("Kultur")}</th>
+              <th className="px-2 py-2 text-left">{t("Beregnung")}</th>
               <th className="px-2 py-2 text-right">{t("Fläche (ha)")}</th>
               <th className="px-2 py-2 text-right">{t("Anteil")}</th>
               <th className="px-2 py-2 text-right">{t("Ertrag (t/ha)")}</th>
@@ -351,8 +371,25 @@ function ProduktionsTabelle() {
                     {r.name}
                   </span>
                 </td>
+                <td className="px-2 py-2"><BeregBadge kind="beregnet" /></td>
                 <td className="num px-2 py-2 text-right">{fmtNumber(r.ha, 0)}</td>
-                <td className="num px-2 py-2 text-right text-nx-text-muted">{fmtNumber(totHa > 0 ? (r.ha / totHa) * 100 : 0, 0)}%</td>
+                <td className="num px-2 py-2 text-right text-nx-text-muted">{fmtNumber(grandHa > 0 ? (r.ha / grandHa) * 100 : 0, 0)}%</td>
+                <td className="num px-2 py-2 text-right">{fmtNumber(r.y, 1)}</td>
+                <td className="num px-2 py-2 text-right text-nx-text-muted">{fmtNumber(r.loss * 100, 0)}%</td>
+                <td className="num px-2 py-2 text-right font-semibold">{fmtNumber(r.t, 0)}</td>
+              </tr>
+            ))}
+            {showDry && dryRows.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid var(--nx-border-divider)", background: "color-mix(in srgb, var(--nx-warn, #C9A227) 5%, transparent)" }}>
+                <td className="px-2 py-2">
+                  <span className="inline-flex items-center gap-2">
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: cropColor(r.cropId), display: "inline-block", opacity: 0.6 }} />
+                    {r.name}
+                  </span>
+                </td>
+                <td className="px-2 py-2"><BeregBadge kind="trocken" /></td>
+                <td className="num px-2 py-2 text-right">{fmtNumber(r.ha, 0)}</td>
+                <td className="num px-2 py-2 text-right text-nx-text-muted">{fmtNumber(grandHa > 0 ? (r.ha / grandHa) * 100 : 0, 0)}%</td>
                 <td className="num px-2 py-2 text-right">{fmtNumber(r.y, 1)}</td>
                 <td className="num px-2 py-2 text-right text-nx-text-muted">{fmtNumber(r.loss * 100, 0)}%</td>
                 <td className="num px-2 py-2 text-right font-semibold">{fmtNumber(r.t, 0)}</td>
@@ -361,18 +398,32 @@ function ProduktionsTabelle() {
           </tbody>
           <tfoot>
             <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
-              <td className="px-2 py-2.5 font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Summe ·")} {rows.length} {t("Kulturen")}</td>
-              <td className="num px-2 py-2.5 text-right font-semibold">{fmtNumber(totHa, 0)}</td>
-              <td className="px-2 py-2.5" />
-              <td className="px-2 py-2.5" />
-              <td className="px-2 py-2.5" />
-              <td className="num px-2 py-2.5 text-right font-semibold">{fmtNumber(totT, 0)} t</td>
+              <td className="px-2 py-2.5 font-semibold" style={{ color: "var(--nx-brand-lift)" }} colSpan={2}>{t("Beregnet ·")} {rows.length} {t("Kulturen")}</td>
+              <td className="num px-2 py-2.5 text-right font-semibold">{fmtNumber(beregHa, 0)}</td>
+              <td className="px-2 py-2.5" colSpan={3} />
+              <td className="num px-2 py-2.5 text-right font-semibold">{fmtNumber(beregT, 0)} t</td>
             </tr>
+            {showDry && (
+              <tr>
+                <td className="px-2 py-1.5 font-semibold" style={{ color: "var(--nx-brand-lift)" }} colSpan={2}>{t("Trocken ·")} {dryRows.length} {t("Kulturen")}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold">{fmtNumber(dryTotHa, 0)}</td>
+                <td className="px-2 py-1.5" colSpan={3} />
+                <td className="num px-2 py-1.5 text-right font-semibold">{fmtNumber(dryTotT, 0)} t</td>
+              </tr>
+            )}
+            {showDry && (
+              <tr style={{ borderTop: "1px solid var(--nx-border)" }}>
+                <td className="px-2 py-2 font-bold" style={{ color: "var(--nx-brand-lift)" }} colSpan={2}>{t("Gesamtbetrieb")}</td>
+                <td className="num px-2 py-2 text-right font-bold">{fmtNumber(grandHa, 0)}</td>
+                <td className="px-2 py-2" colSpan={3} />
+                <td className="num px-2 py-2 text-right font-bold">{fmtNumber(grandT, 0)} t</td>
+              </tr>
+            )}
           </tfoot>
         </table>
       </div>
       <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
-        {t("Netto-Erntemenge nach Feld-/Lagerverlust — Basis für Umsatz (× Preis × Kontrakt-Qualität) und Contribution. Wertkulturen nur auf beregneter Fläche; die Flächenentwicklung über die Jahre steht im Wachstumsplan.")}
+        {t("Netto-Erntemenge nach Feld-/Lagerverlust. Beregnete Kulturen: Basis für Umsatz (× Preis × Kontrakt-Qualität). Trockenrotation: Rain-fed-Ertrag; ökonomisch als Netto-Deckungsbeitrag modelliert (bereits in EBITDA). Flächenentwicklung über die Jahre steht im Wachstumsplan.")}
       </div>
     </section>
   );

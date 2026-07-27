@@ -711,7 +711,10 @@ const TRANSPORT_DEFAULT: TransportConfig = {
  *  HARTE REGEL (Agronomie Süd-Dolj): Soja (auch Doppel-Soja als Zweitfrucht) und Mais sind
  *  reine BEWÄSSERUNGS-Kulturen — sie dürfen NIE in der Trockenrotation stehen.
  *  `label` überschreibt den Katalognamen (z. B. Wintergerste OHNE das Doppel-Soja-Suffix). */
-export type DrylandCrop = { cropId: CropId; sharePct: number; dbPerHaCent: number; label?: string };
+export type DrylandCrop = { cropId: CropId; sharePct: number; dbPerHaCent: number; label?: string;
+  /** Rain-fed Ertrag (t/ha) & Feld-/Lagerverlust — nur für die physische Produktions-Anzeige
+   *  (Ökonomie läuft über dbPerHaCent, nicht über Ertrag × Preis). */
+  yieldTHa?: number; lossPct?: number };
 export type GrowthPlan = {
   years: number;
   /** BEREGNETE Fläche je Jahr = Irrigations-Ramp (Stufe 1→3b). Treibt das Kern-Modell (Wertrotation). */
@@ -805,9 +808,9 @@ const GROWTH: GrowthPlan = {
   // REGEL: Soja (inkl. Doppel-Soja) & Mais NUR beregnet → Trockenrotation ist reine
   //  Getreide-/Raps-Rotation (Weizen–Gerste–Raps). Gerste hier OHNE Doppel-Soja (Label!).
   drylandRotation: [
-    { cropId: "weizen",     sharePct: 0.40, dbPerHaCent: 55000 },                          // 550 €/ha rain-fed
-    { cropId: "gerste_zw",  sharePct: 0.35, dbPerHaCent: 45000, label: "Wintergerste" },   // 450 €/ha — OHNE Doppel-Soja (trocken!)
-    { cropId: "winterraps", sharePct: 0.25, dbPerHaCent: 60000 },                          // 600 €/ha
+    { cropId: "weizen",     sharePct: 0.40, dbPerHaCent: 55000, yieldTHa: 5.5, lossPct: 0.05 },                          // 550 €/ha rain-fed
+    { cropId: "gerste_zw",  sharePct: 0.35, dbPerHaCent: 45000, label: "Wintergerste", yieldTHa: 4.8, lossPct: 0.05 },   // 450 €/ha — OHNE Doppel-Soja (trocken!)
+    { cropId: "winterraps", sharePct: 0.25, dbPerHaCent: 60000, yieldTHa: 2.8, lossPct: 0.05 },                          // 600 €/ha
   ],
   // Stufe 3b — Akquiseprofil: Mix aus Pachtübernahme (asset-light) und Betriebskauf (mit Assets).
   acquisitions: [
@@ -3776,6 +3779,37 @@ export function deriveContribution(
     if (isValue) { valueCent += contributionCent; valueBeCent += betriebsergebnisCent; }
     else { breakCent += contributionCent; breakBeCent += betriebsergebnisCent; }
   }
+
+  // --- Trockenrotation (unberegnet, Rain-fed) als eigene Break-Crop-Zeilen ---
+  //  Engine-konsistent: Beitrag = Fläche × DB/ha (Netto, wie in buildModelState). Umsatz/COGS
+  //  nur informativ zerlegt (Umsatz = Fläche × Rain-fed-Ertrag × Preis; COGS = Umsatz − DB).
+  {
+    const eff = effectiveGrowth(domain.growth);
+    const irr = Math.round(eff?.areaByYear?.[0] ?? domain.anbauplan.reduce((s, a) => s + a.areaHa, 0));
+    const totFarm = Math.round(eff?.totalByYear?.[0] ?? eff?.startTotalHa ?? irr);
+    const dryHa = Math.max(0, totFarm - irr);
+    for (const dr of eff?.drylandRotation ?? []) {
+      const ha = Math.round(dr.sharePct * dryHa);
+      if (ha <= 0) continue;
+      const cat = domain.catalog.find((c) => c.cropId === dr.cropId);
+      const price = cat ? resolveScalar(domain, cat.priceKey, sc) : 0;
+      const y = dr.yieldTHa ?? 0; const loss = dr.lossPct ?? 0.05;
+      const revenueCent = Math.round(ha * y * price * (1 - loss));
+      const contributionCent = Math.round(ha * dr.dbPerHaCent);
+      const cogsCent = Math.max(0, revenueCent - contributionCent);
+      const pachtCent = Math.round(ha * PACHT_PER_HA * 100);
+      const betriebsergebnisCent = contributionCent - pachtCent;
+      crops.push({
+        cropId: `${dr.cropId}__dry`, name: `${dr.label ?? cat?.name ?? dr.cropId} (trocken)`,
+        group: "break", areaHa: ha,
+        revenueCent, subsidyCent: 0, cogsCent, contributionCent, contribPerHaCent: dr.dbPerHaCent,
+        machineAfaZinsPerHaCent: 0, personnelPerHaCent: 0, fixPerHaCent: PACHT_PER_HA * 100,
+        betriebsergebnisCent, bePerHaCent: ha > 0 ? betriebsergebnisCent / ha : 0,
+      });
+      breakCent += contributionCent; breakBeCent += betriebsergebnisCent;
+    }
+  }
+
   const totalCent = valueCent + breakCent;
   const totalBeCent = valueBeCent + breakBeCent;
   return {

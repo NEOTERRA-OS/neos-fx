@@ -99,7 +99,7 @@ export function Sidebar({
 }: { active: ViewId; onSelect: (v: ViewId) => void; theme?: "light" | "dark"; onToggleTheme?: () => void; readOnly?: boolean; onToggleReadOnly?: () => void }) {
   return (
     <aside className="nsb" aria-label={t("Hauptnavigation")}>
-      <button type="button" className="nsb-brand">
+      <button type="button" className="nsb-brand" onClick={() => onSelect("dashboard")} title={t("Zum Dashboard")}>
         <span className="nsb-logo" style={{ width: 28, height: 28, background: "var(--nsb-accent)", borderRadius: "22%", display: "grid", placeItems: "center", color: "#2C3C2B" }}>
           <svg width="56%" height="56%" viewBox="0 0 30.88 30.86" fill="currentColor" aria-hidden>
             <path d="M0,9.78c0-1.36.26-2.64.77-3.83.51-1.19,1.21-2.22,2.1-3.11s1.92-1.58,3.11-2.08c1.19-.51,2.46-.76,3.8-.76v9.78H0ZM0,20.29v-9.78h9.78v9.78H0ZM0,30.86v-9.78h9.78v9.78H0ZM10.54,9.78V0h9.78v9.78h-9.78ZM10.54,20.29v-9.78h9.78v9.78h-9.78ZM30.11,3.8c-.51,1.19-1.22,2.22-2.11,3.11-.89.88-1.93,1.58-3.12,2.1-1.19.51-2.46.77-3.83.77V0h9.83c0,1.35-.26,2.62-.77,3.8ZM21.05,20.29v-9.78h9.83v9.78h-9.83Z" />

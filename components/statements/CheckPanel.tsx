@@ -3,6 +3,7 @@ import React from "react";
 import type { CheckResult } from "../../core/types";
 import { fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
+import { Check, X, TriangleAlert } from "lucide-react";
 
 /** Engine-Check-Labels übersetzen: statische Labels via t(); dynamische (mit Zahlen/Keys)
  *  über bekannte Teilphrasen. In DE ist t(x)===x → alles No-op, Label bleibt deutsch. */
@@ -45,12 +46,12 @@ export function CheckPanel({ checks }: { checks: CheckResult[] }) {
       <ul className="space-y-1.5">
         {ordered.map((c) => {
           const tone = c.passed ? "var(--nx-success)" : c.severity === "warning" ? "var(--nx-warning)" : "var(--nx-error)";
-          const icon = c.passed ? "✓" : c.severity === "warning" ? "!" : "✕";
+          const Icon = c.passed ? Check : c.severity === "warning" ? TriangleAlert : X;
           return (
             <li key={c.id} className="flex items-center gap-2 text-[12.5px]">
-              <span className="num inline-flex h-5 w-5 items-center justify-center rounded-pill text-[11px] font-bold"
+              <span className="num inline-flex h-5 w-5 items-center justify-center rounded-pill"
                 style={{ color: tone, background: c.passed ? "var(--nx-success-bg)" : c.severity === "warning" ? "var(--nx-warning-bg)" : "var(--nx-error-bg)" }}
-                aria-hidden>{icon}</span>
+                aria-hidden><Icon size={12} strokeWidth={2.5} /></span>
               <span className="flex-1">{trCheck(c.label)}</span>
               <span className="num text-[11px] text-nx-text-muted">
                 {c.passed ? "OK" : `Δ ${fmtDev(c.id, c.maxDeviation)} · M${c.offendingPeriods.join(",")}`}

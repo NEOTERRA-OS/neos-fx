@@ -12,6 +12,7 @@ import { KommentareView } from "../inputs/KommentareView";
 import { TeamAdminView } from "../inputs/TeamAdminView";
 import { getSupabase } from "../../lib/supabaseClient";
 import { t } from "../../lib/i18n";
+import { Lock } from "lucide-react";
 import { MaschinenView } from "../inputs/MaschinenView";
 import { MaschinenHub } from "../inputs/MaschinenHub";
 import { InvestitionenView } from "../inputs/InvestitionenView";
@@ -127,7 +128,7 @@ export function AppShell() {
         {readOnly && (
           <div className="flex items-center justify-between gap-3 px-6 py-1.5 text-[11.5px] font-semibold"
             style={{ background: "color-mix(in srgb, var(--nx-warn, #C9A227) 18%, transparent)", color: "var(--nx-warn, #C9A227)", borderBottom: "1px solid var(--nx-border)" }}>
-            <span>🔒 {t("Betrachter-Modus — Modell schreibgeschützt. Kommentieren bleibt möglich.")}</span>
+            <span className="inline-flex items-center gap-1.5"><Lock size={12} strokeWidth={2.5} aria-hidden /> {t("Betrachter-Modus — Modell schreibgeschützt. Kommentieren bleibt möglich.")}</span>
             <button className="rounded-control border px-2 py-0.5 text-[11px]" style={{ borderColor: "currentColor" }} onClick={() => setReadOnly(false)}>{t("Bearbeiten aktivieren")}</button>
           </div>
         )}
