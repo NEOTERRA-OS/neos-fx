@@ -4437,15 +4437,20 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   //  läuft vollständig über secondCrop in der Engine (SSOT, sonst Doppelzählung ~+1,7 M€/a im Endausbau).
   const baseSubs: { s: Subsidy; baseHa: number; perHa: number }[] =
     domain.subsidies.map((s) => ({ s, baseHa: areaFor(s.cropIds), perHa: s.ratePerHaCent ?? 0 }));
+  // Förderfähige GESAMTfläche je Jahr = beregnet + trocken (Σ aller Kultur-Flächenkurven). Die
+  //  flächenpauschalen CAP-Direktzahlungen (BISS/Eco) gelten für die gesamte bewirtschaftete
+  //  Ackerfläche — auch die Trockenrotation ist förderfähig (sonst ~1 Mio€/a Unterzählung).
+  const fullFarmHaOf = (y: number) =>
+    Object.values(cropAreasMY.areas).reduce((sum, curve) => sum + (curve[Math.min(y, years - 1)] ?? 0), 0);
   const subsidies: Subsidy[] = [];
   for (let y = 0; y < years; y++) {
     for (const { s, baseHa, perHa } of baseSubs) {
       if (s.active === false) continue;
       // Kulturgebundene Subventionen (VCP etc.) folgen der Politik-Fläche der Kultur(en);
-      //  flächenpauschale (BISS/Öko) weiter der beregneten Gesamtskalierung.
+      //  flächenpauschale (BISS/Öko) der gesamten förderfähigen Fläche (beregnet + trocken).
       let elig = (s.cropIds && s.cropIds.length)
         ? s.cropIds.reduce((sum, cid) => sum + (cropAreasMY.areas[cid]?.[Math.min(y, years - 1)] ?? (cropBaseHa.get(cid) ?? 0) * scale[y]), 0)
-        : baseHa * scale[y];
+        : fullFarmHaOf(y);
       if (s.firstHaCap != null && s.firstHaCap > 0) elig = Math.min(elig, s.firstHaCap);
       const amt = s.basis === "per_ha" ? Math.round(perHa * elig) : (s.lumpSumCent ?? 0);
       if (amt === 0) continue;
