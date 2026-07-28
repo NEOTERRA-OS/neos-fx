@@ -321,7 +321,7 @@ function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domai
                 <td className="px-1 py-1">
                   <span className="inline-flex items-center gap-1.5">
                     <span style={{ width: 9, height: 9, borderRadius: 2, background: r.color, display: "inline-block" }} />
-                    {r.name}{r.dry
+                    {t(r.name)}{r.dry
                       ? <span className="caption text-[9px] text-nx-text-muted">{" · "}{t("trocken")}</span>
                       : <span className="caption text-[9px]" style={{ color: "var(--nx-locate)" }}>{" · "}{t("bewässert")}</span>}
                   </span>
@@ -495,7 +495,7 @@ function CropMix({ contrib }: { contrib: ReturnType<typeof deriveContribution> }
           const filt = dbPos ? `brightness(${(0.78 + 0.42 * shade).toFixed(2)})` : undefined;
           return (
             <div key={r.cropId} className="flex items-center gap-2">
-              <div className="w-[128px] shrink-0 truncate text-[11px] text-nx-text-secondary" title={r.name}>{r.name}</div>
+              <div className="w-[128px] shrink-0 truncate text-[11px] text-nx-text-secondary" title={t(r.name)}>{t(r.name)}</div>
               <div className="relative h-[16px] flex-1 rounded-sm" style={{ background: "var(--nx-surface-sunken)" }}>
                 <div className="absolute top-0 h-full rounded-sm" style={{ width: `${w}%`, background: bg, filter: filt }} />
               </div>

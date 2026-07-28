@@ -71,6 +71,8 @@ const B11: Record<string, string> = {
   "Alle Konten zugeordnet": "All accounts assigned",
   "ausgeglichen": "balanced",
   "außerh. Benchmark": "outside benchmark",
+  "Agronomie-Wächter OK (alle Pflicht-Maßnahmen je Kultur vorhanden)":
+    "Agronomy guard OK (all mandatory operations present per crop)",
   "Finanzierung & Funding": "Financing & Funding",
   "Kapitalbedarf im Jahresverlauf": "Capital requirement over the year",
   "zilieri FTE": "day-laborer FTE",
