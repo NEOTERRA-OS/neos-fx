@@ -105,6 +105,7 @@ export function MaschinenView() {
               <th className={th + " text-right"}>{t("Rücknahme")}</th>
               <th className={th + " text-right"}>{t("Rückn. €")}</th>
               <th className={th + " text-right"} style={{ color: "var(--nx-brand-lift)" }}>{t("Bestand")}</th>
+              <th className={th + " text-right"} title={t("Intercompany-Miete (z. B. von Isolde): gemietete Einheiten, kein CAPEX — stundenbasierte Miet-OPEX")}>{t("Gemietet")}</th>
               <th className={th + " text-right"} style={{ color: "var(--nx-locate)" }}>{t("+ Neu")}</th>
               <th className={th + " text-right"}>{t("= Park")}</th>
               <th className={th + " text-right"}>{t("Alter (J.)")}</th>
@@ -120,7 +121,7 @@ export function MaschinenView() {
               return (
                 <React.Fragment key={cat}>
                   <tr>
-                    <td colSpan={16} className="px-2 pt-3 pb-1">
+                    <td colSpan={17} className="px-2 pt-3 pb-1">
                       <span className="inline-flex items-center gap-2">
                         <span className="caption text-[10px] font-semibold" style={{ color: INFRA.has(cat) ? "var(--nx-locate)" : "var(--nx-brand-lift)" }}>{INFRA.has(cat) ? "▸ " : ""}{t(cat)}</span>
                         <button className="rounded-pill border px-1.5 text-[10px]" style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-muted)", background: "var(--nx-surface)" }} title={`${t("Maschine in „")}${t(cat)}${t("\" hinzufügen")}`} onClick={() => addMachine(cat)}>{t("+ Maschine")}</button>
@@ -154,6 +155,7 @@ export function MaschinenView() {
                         <td className="px-2 py-1.5 text-right"><NumberInput value={res * 100} width={56} suffix="%" onCommit={(nn) => upd(m.id, (mm) => { mm.residualPctList = Math.max(0, nn / 100); })} /></td>
                         <td className="num px-2 py-1.5 text-right text-nx-text-muted">{fmtMoney(resCent)}</td>
                         <td className="px-2 py-1.5 text-right">{isFleet ? <NumberInput value={m.ownedUnits ?? 0} width={48} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedUnits = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
+                        <td className="px-2 py-1.5 text-right">{isFleet ? <NumberInput value={m.rentedUnits ?? 0} width={48} onCommit={(nn) => upd(m.id, (mm) => { mm.rentedUnits = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
                         {/* Augmentierung aus den Investitionen (Bedarf − Bestand): + Neu → = Park gesamt */}
                         <td className="num px-2 py-1.5 text-right" style={{ color: "var(--nx-locate)" }}>{isFleet && (newById.get(m.id) ?? 0) > 0 ? `+${fmtNumber(newById.get(m.id) ?? 0, 0)}` : "–"}</td>
                         <td className="num px-2 py-1.5 text-right font-semibold">{isFleet ? fmtNumber((m.ownedUnits ?? 0) + (newById.get(m.id) ?? 0), 0) : "–"}</td>

@@ -204,6 +204,10 @@ export type MachineType = {
   /** Bestand-vs-Plan: bereits im Betrieb vorhandene Einheiten. Neu-CAPEX (Bilanzzugang +
    *  Finanzierung) entsteht nur für ⌈benötigte Flotte − ownedUnits⌉. Editierbar (Swap Ist/Plan). */
   ownedUnits?: number;
+  /** Intercompany-Miete (z. B. von Isolde): Einheiten, die NICHT gekauft, sondern gemietet werden.
+   *  Kein CAPEX/AfA — stattdessen stundenbasierte Miet-OPEX (gemietete Stück × Stunden/Stück ×
+   *  €/h aus Stundenkosten × (1 + machine.rent_markup)). Neu-CAPEX = ⌈benötigt − owned − rented⌉. */
+  rentedUnits?: number;
   /** Durchschnittsalter des Bestands (Jahre) → Restbuchwert = Netto × max(Restwert-%,
    *  1 − (1−Restwert-%) × Verschleiß). Editierbar im Register. */
   ownedAgeYears?: number;
@@ -255,6 +259,8 @@ export type DerivedCapex = {
   ownedUnits?: number;
   /** Neu zu beschaffende Einheiten = max(0, count − ownedUnits); nur diese erzeugen `amount`. */
   newUnits?: number;
+  /** Intercompany gemietete Einheiten (kein CAPEX — Miet-OPEX). Reduziert die kapitalisierte Flotte. */
+  rentedUnits?: number;
 };
 export type TCOBreakdown = {
   machineId: string; label: string; count: number; assetClass: string;
@@ -1082,6 +1088,10 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // opex.machines: NUR Wartung/Service (separater Pfad, reale JD-€/h). Betrieb steckt in COGS,
   // AfA/Zins in CAPEX/Finanzierung. Composer überschreibt je Build aus den Service-Sätzen.
   A("opex.machines", "opex.machines", "Maschinen-Wartung/Service /Monat", "money", 0),
+  // opex.machine_rent: Intercompany-Maschinenmiete (gemietete Einheiten × Stunden × €/h). Composer-gesetzt.
+  A("opex.machine_rent", "opex.machine_rent", "Maschinen-Miete (Intercompany) /Monat", "money", 0),
+  // Aufschlag auf die Stundenkosten (AfA/h + Service/h) für die Intercompany-Miete (z. B. +15 % Isolde-Marge).
+  A("machine.rent_markup", "machine.rent_markup", "Miet-Aufschlag Intercompany (auf Stundenkosten)", "rate", 0.15),
   // opex.fix: Pacht + Overhead je Kultur — wird im Composer je Build aus dem Anbauplan
   // deterministisch als Monatswert überschrieben.
   A("opex.fix", "opex.fix", "Fixkosten/Monat (Pacht + Overhead/Versich./Zins)", "money", 0),
@@ -2946,6 +2956,30 @@ function machineServiceAnnualCent(domain: Domain, scenarioId: string): number {
   return cent;
 }
 
+/** Intercompany-Maschinenmiete (CENT/Jahr): für jede Maschine mit rentedUnits > 0 laufen die
+ *  gemieteten Einheiten NICHT über CAPEX, sondern stundenbasiert als Miet-OPEX.
+ *   Miete = gemietete Stück × (Maschinenstunden/Jahr ÷ benötigte Flotte) × Satz€/h;
+ *   Satz€/h = (AfA/h + Service/h) × (1 + machine.rent_markup) — Stundenkosten × Aufschlag. */
+export function machineRentAnnualCent(domain: Domain, scenarioId: string): number {
+  const markup = 1 + resolveScalar(domain, "machine.rent_markup", scenarioId);
+  let cent = 0;
+  for (const m of domain.machineCatalog) {
+    const rentedReq = Math.round(m.rentedUnits ?? 0);
+    if (m.mode !== "fixedFleet" || rentedReq <= 0) continue;
+    const required = machineFleetCount(domain, m, scenarioId);
+    const owned = Math.max(0, Math.round(m.ownedUnits ?? 0));
+    const rented = Math.max(0, Math.min(rentedReq, Math.max(0, required - owned)));
+    if (rented <= 0 || required <= 0) continue;
+    const hoursTotal = serviceHoursPerYear(domain, m);              // Ist-Stunden der Flotte (cEff/Träger)
+    const hoursPerUnit = hoursTotal / required;
+    const afaH = m.afaPerHourCent ?? 0;                             // AfA €/h (CENT)
+    const serviceH = m.serviceRateKey ? resolveScalar(domain, m.serviceRateKey, scenarioId) : 0;
+    const ratePerH = (afaH + serviceH) * markup;                   // Stundenkosten × Aufschlag
+    cent += rented * hoursPerUnit * ratePerH;
+  }
+  return Math.round(cent);
+}
+
 /* --------------------------------------------------------------------------
  * Delta 21.07. (2): Spritzstrategie — fenstergetriebene Flotte (Mehrkultur-Sommerpeak).
  *  Je Kultur ein PSM-Fenster (KW) + Flächenleistung ha/Tag je Spritze. Bedarf je Woche =
@@ -3172,12 +3206,15 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
     let area: number;
     let owned = 0;
     let newUnits = 0;
+    let rentedOut = 0;
     if (m.mode === "fixedFleet") {
       count = machineFleetCount(domain, m, scenarioId);
       // Bestand-vs-Plan: bereits vorhandene Einheiten erzeugen KEINEN Neu-CAPEX/keine Finanzierung.
-      // Neu zu beschaffen = ⌈benötigte Flotte − Bestand⌉ (Bestand skaliert NICHT mit der Stufe).
+      // Neu zu beschaffen = ⌈benötigte Flotte − Bestand − Gemietet⌉. Gemietete Einheiten (Intercompany-
+      //  Miete, z. B. von Isolde) sind KEIN CAPEX — ihre Kosten laufen als Miet-OPEX (machineRentAnnualCent).
       owned = Math.max(0, Math.round(m.ownedUnits ?? 0));
-      newUnits = Math.max(0, count - owned);
+      rentedOut = Math.max(0, Math.min(Math.round(m.rentedUnits ?? 0), Math.max(0, count - owned)));
+      newUnits = Math.max(0, count - owned - rentedOut);
       // Globale TCO: Netto-Einkauf = Listenpreis × (1 − Rabatt). Per-Maschine-Rabatt (reales
       // JD-Angebot) überschreibt den globalen Default. amount = Netto (bilanzieller Zugang, nur NEU).
       const disc = m.discountPct ?? discount;
@@ -3199,7 +3236,7 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
       count = 0;
       amount = 0;
     }
-    out.push({ machineId: m.id, label: m.label, areaHa: area, count, unitPrice, amount, assetClass: m.assetClass, ownedUnits: owned, newUnits });
+    out.push({ machineId: m.id, label: m.label, areaHa: area, count, unitPrice, amount, assetClass: m.assetClass, ownedUnits: owned, newUnits, rentedUnits: rentedOut });
   }
   return out;
 }
@@ -4285,12 +4322,15 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       const financingMode: FinancingMode = modeByMachine.get(d.machineId) ?? "cash";
       if (m.mode === "fixedFleet") {
         const e = effById.get(d.machineId)!;
+        // Gemietete Einheiten NICHT kapitalisieren — nur der nicht-gemietete Flottenanteil wird PPE.
+        //  rf = 1 bei rentedUnits=0 (kein Verhaltensänderung für bestehende Modelle).
+        const rf = d.count && d.count > 0 ? (d.count - (d.rentedUnits ?? 0)) / d.count : 1;
         return {
           id: `cx-${d.machineId}`,
           name: d.label,
           assetClass: d.assetClass as AssetClass,
-          amount: e.netCent,                 // Netto-Einkauf
-          salvageValue: e.residualCent,      // Restwert bleibt als PPE stehen
+          amount: Math.round(e.netCent * rf),        // Netto-Einkauf (ohne gemietete Einheiten)
+          salvageValue: Math.round(e.residualCent * rf), // Restwert bleibt als PPE stehen
           purchasePeriod: 0,
           usefulLifeMonths: holdMonths,
           usefulLifeFiscalMonths: Math.max(12, holdMonths - 12),
@@ -4452,6 +4492,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // Basiswerte (Jahr-1 / scale=1) → Monatswerte:
   const baseFixMonthly = Math.round((annualFixEur * 100) / 12);
   const baseMachMonthly = Math.round(machineServiceAnnualCent(domain, scenarioId) / 12);
+  const baseRentMonthly = Math.round(machineRentAnnualCent(domain, scenarioId) / 12);
   const baseTransMonthly = Math.round(transportTotalCent / 12);
   const baseSgaMonthly = Math.round(overheadMonthly * scopeFactor);
   // OPEX-Fix KULTURSCHARF: Overhead je Kultur × Politik-Flächenkurve (statt pauschal × Gesamtfläche —
@@ -4464,6 +4505,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   };
   setScaled("opex.fix", baseFixMonthly, (y) => fixFactor(y) * iIn(y));
   setScaled("opex.machines", baseMachMonthly, (y) => scale[y] * iIn(y));
+  setScaled("opex.machine_rent", baseRentMonthly, (y) => scale[y] * iIn(y));
   setScaled("opex.transport", baseTransMonthly, (y) => scale[y] * iIn(y));
   setScaled("opex.sga", baseSgaMonthly, (y) => sgaDamp(y) * iWage(y));
   // Pacht: Dritt-Pacht (bewirtschaftete Fläche − Eigentum, skaliert, input-inflationiert) +

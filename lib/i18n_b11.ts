@@ -73,6 +73,11 @@ const B11: Record<string, string> = {
   "außerh. Benchmark": "outside benchmark",
   "Agronomie-Wächter OK (alle Pflicht-Maßnahmen je Kultur vorhanden)":
     "Agronomy guard OK (all mandatory operations present per crop)",
+  "Gemietet": "Rented",
+  "Intercompany-Miete (z. B. von Isolde): gemietete Einheiten, kein CAPEX — stundenbasierte Miet-OPEX":
+    "Intercompany rental (e.g. from Isolde): rented units, no CAPEX — hours-based rental OPEX",
+  "Maschinen-Miete (Intercompany) /Monat": "Machinery rental (intercompany) /month",
+  "Miet-Aufschlag Intercompany (auf Stundenkosten)": "Rental markup intercompany (on hourly cost)",
   "Gesellschafts-Case ableiten": "Derive entity case",
   "→ NEOTERRA (Value Crops) ableiten": "→ Derive NEOTERRA (Value Crops)",
   "Erzeugt aus dem Kombimodell einen eigenständigen Wertkultur-Case (nur Value Crops, eigene Spezialflotte, Vollkosten). Das aktuelle Kombimodell bleibt unberührt, bis du speicherst.":
