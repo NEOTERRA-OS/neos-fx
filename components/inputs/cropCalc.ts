@@ -22,23 +22,26 @@ export const cropColor = (cropId: string) => (CROP_COLOR as Record<string, strin
 
 export type CropRow = { cropId: string; name: string; color: string; ha: number; yieldTHa: number; lossPct: number; tonnes: number; dry: boolean };
 
-/** Anbaustruktur einer Fläche: beregneter Block (Anbauplan-Anteile → irrHa) +
- *  unberegneter Block (Trockenrotation → dryHa). Liefert je Kultur ha & Netto-t. */
+/** Anbaustruktur einer Fläche: beregneter Block (pool≠"dryland" → irrHa) + native Trockenrotation
+ *  (pool="dryland" → dryHa). Pool-basiert — die Trockenkulturen tragen ihre eigenen Rain-fed-Erträge
+ *  (kein DRY_YIELD_FACTOR mehr, kein separater drylandRotation-Workaround → keine Doppelzählung). */
 export function cropStructure(d: Domain, sc: string, irrHa: number, dryHa: number): CropRow[] {
   const rows: CropRow[] = [];
-  const baseIrr = d.anbauplan.reduce((s, e) => s + e.areaHa, 0) || 1;
+  const irrEntries = d.anbauplan.filter((e) => e.pool !== "dryland");
+  const dryEntries = d.anbauplan.filter((e) => e.pool === "dryland");
+  const baseIrr = irrEntries.reduce((s, e) => s + e.areaHa, 0) || 1;
   const irrScale = irrHa / baseIrr;
-  for (const e of d.anbauplan) {
+  for (const e of irrEntries) {
     const ha = e.areaHa * irrScale;
     rows.push({ cropId: e.cropId, name: cropName(e.cropId), color: cropColor(e.cropId), ha,
       yieldTHa: cropYield(d, e.cropId, sc), lossPct: cropLoss(d, e.cropId, sc), tonnes: netTonnes(d, e.cropId, sc, ha, false), dry: false });
   }
-  const rot = d.growth?.drylandRotation ?? [];
-  for (const r of rot) {
-    const ha = dryHa * r.sharePct;
-    // Label-Override (z. B. Wintergerste OHNE Doppel-Soja — Soja/Mais sind nie trocken).
-    rows.push({ cropId: r.cropId, name: (r as any).label ?? cropName(r.cropId), color: cropColor(r.cropId), ha,
-      yieldTHa: cropYield(d, r.cropId, sc) * DRY_YIELD_FACTOR, lossPct: cropLoss(d, r.cropId, sc), tonnes: netTonnes(d, r.cropId, sc, ha, true), dry: true });
+  const baseDry = dryEntries.reduce((s, e) => s + e.areaHa, 0) || 1;
+  const dryScale = dryHa / baseDry;
+  for (const e of dryEntries) {
+    const ha = e.areaHa * dryScale;
+    rows.push({ cropId: e.cropId, name: cropName(e.cropId), color: cropColor(e.cropId), ha,
+      yieldTHa: cropYield(d, e.cropId, sc), lossPct: cropLoss(d, e.cropId, sc), tonnes: netTonnes(d, e.cropId, sc, ha, false), dry: true });
   }
   return rows;
 }
