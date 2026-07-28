@@ -93,28 +93,36 @@ export function deriveAnbauAdvice(domain: Domain): AdviceItem[] {
   const push = (i: AdviceItem) => items.push(i);
 
   /* ---- Fruchtfolge / Rotation ------------------------------------------ */
-  const grpLabel: Record<string, string> = { kartoffel: "Kartoffel", zwiebel_moehre: "Zwiebel/Möhre", raps: "Raps", solanaceae_tomate: "Tomate", getreide: "Getreide", mais: "Mais", leguminose: "Leguminosen" };
+  const grpLabel = (g: string): string => {
+    const de: Record<string, string> = { kartoffel: "Kartoffel", zwiebel_moehre: "Zwiebel/Möhre", raps: "Raps", solanaceae_tomate: "Tomate", getreide: "Getreide", mais: "Mais", leguminose: "Leguminosen" };
+    const en: Record<string, string> = { kartoffel: "Potato", zwiebel_moehre: "Onion/Carrot", raps: "Rapeseed", solanaceae_tomate: "Tomato", getreide: "Cereals", mais: "Maize", leguminose: "Legumes" };
+    return L(de[g] ?? g, en[g] ?? g);
+  };
   for (const [g, sh] of groupShare) {
     const prof = Object.values(AGRO).find((p) => p.hostGroup === g);
     if (!prof) continue;
     const maxByBreak = 1 / prof.breakYears; // aus Anbaupause abgeleitete Obergrenze (1/n-Feld-Rotation)
     const limit = Math.min(prof.maxShare, maxByBreak);
     if (sh > limit + 1e-6) {
+      const disease = g === "kartoffel" ? L("Kartoffelzystennematoden, Rhizoctonia", "potato cyst nematodes, Rhizoctonia") : g === "raps" ? L("Sclerotinia, Kohlhernie", "Sclerotinia, clubroot") : g === "zwiebel_moehre" ? "Sclerotinia/Fusarium" : L("Bodenmüdigkeit", "soil fatigue");
       push({ id: `rot-${g}`, category: "Fruchtfolge", severity: sh > limit * 1.5 ? "risk" : "warning",
-        title: `${grpLabel[g] ?? g}-Anteil zu hoch für die Anbaupause`,
-        detail: `${grpLabel[g] ?? g} braucht ~${prof.breakYears} Jahre Anbaupause (≤ ${pct(limit)} der Fläche). Aktuell ${pct(sh)} → erhöhtes Risiko für Nematoden/bodenbürtige Krankheiten (z. B. ${g === "kartoffel" ? "Kartoffelzystennematoden, Rhizoctonia" : g === "raps" ? "Sclerotinia, Kohlhernie" : g === "zwiebel_moehre" ? "Sclerotinia/Fusarium" : "Bodenmüdigkeit"}). Anteil senken oder Fruchtfolge weiten.`,
+        title: L(`${grpLabel(g)}-Anteil zu hoch für die Anbaupause`, `${grpLabel(g)} share too high for the rotation break`),
+        detail: L(`${grpLabel(g)} braucht ~${prof.breakYears} Jahre Anbaupause (≤ ${pct(limit)} der Fläche). Aktuell ${pct(sh)} → erhöhtes Risiko für Nematoden/bodenbürtige Krankheiten (z. B. ${disease}). Anteil senken oder Fruchtfolge weiten.`,
+          `${grpLabel(g)} needs ~${prof.breakYears} years of rotation break (≤ ${pct(limit)} of the area). Currently ${pct(sh)} → elevated risk of nematodes/soil-borne diseases (e.g. ${disease}). Reduce the share or widen the rotation.`),
         metric: `${pct(sh)} / max ${pct(limit)}` });
     }
   }
   if (hasLegume) {
     const lg = groupShare.get("leguminose") ?? 0;
     push({ id: "rot-legume", category: "Fruchtfolge", severity: "info",
-      title: "Leguminose als Fruchtfolgeglied vorhanden",
-      detail: `Soja/Luzerne (${pct(lg)}) fixiert Luftstickstoff (~30–60 kg N/ha Vorfruchtwert), lockert die Fruchtfolge auf und mindert bodenbürtige Getreide-/Rapskrankheiten. Gute Vorfrucht für Weizen.` });
+      title: L("Leguminose als Fruchtfolgeglied vorhanden", "Legume present in the rotation"),
+      detail: L(`Soja/Luzerne (${pct(lg)}) fixiert Luftstickstoff (~30–60 kg N/ha Vorfruchtwert), lockert die Fruchtfolge auf und mindert bodenbürtige Getreide-/Rapskrankheiten. Gute Vorfrucht für Weizen.`,
+        `Soy/alfalfa (${pct(lg)}) fixes atmospheric nitrogen (~30–60 kg N/ha pre-crop value), loosens the rotation and reduces soil-borne cereal/rapeseed diseases. A good pre-crop for wheat.`) });
   } else {
     push({ id: "rot-nolegume", category: "Fruchtfolge", severity: "advice",
-      title: "Keine Leguminose in der Rotation",
-      detail: "Ohne Soja/Luzerne fehlen N-Fixierung und Auflockerung. Ein Leguminosen-Slot senkt N-Zukauf und Krankheitsdruck der Halmfrüchte." });
+      title: L("Keine Leguminose in der Rotation", "No legume in the rotation"),
+      detail: L("Ohne Soja/Luzerne fehlen N-Fixierung und Auflockerung. Ein Leguminosen-Slot senkt N-Zukauf und Krankheitsdruck der Halmfrüchte.",
+        "Without soy/alfalfa, N fixation and loosening are missing. A legume slot reduces N purchases and disease pressure on straw crops.") });
   }
 
   /* ---- Wasser & Beregnung ---------------------------------------------- */
@@ -124,24 +132,28 @@ export function deriveAnbauAdvice(domain: Domain): AdviceItem[] {
   const wMean = plan.reduce((s, e) => { const p = AGRO[e.cropId]; return p ? s + e.areaHa * (p.waterMm[0] + p.waterMm[1]) / 2 : s; }, 0) / total;
   const overRain = wMean > site.rainfallMm;
   push({ id: "water-demand", category: "Wasser & Beregnung", severity: overRain ? "warning" : "info",
-    title: `Flächengewichteter Wasserbedarf ~${Math.round(wMean)} mm/Saison`,
-    detail: `Standort ~${site.rainfallMm} mm Niederschlag → die beregnungspflichtigen Kulturen (${pct(irrShare)} der Fläche) tragen die Pivot-/Fertigations-Last. ${overRain ? `Über dem Standort-Dargebot (~${site.rainfallMm} mm): Pivot-Kapazität, Pumpleistung und Wasserrecht müssen den Spitzenbedarf (Hochsommer) decken.` : "Im Rahmen — Defizitbewässerung in vegetativen Phasen möglich (WNE-Gewinn)."}`,
+    title: L(`Flächengewichteter Wasserbedarf ~${Math.round(wMean)} mm/Saison`, `Area-weighted water demand ~${Math.round(wMean)} mm/season`),
+    detail: L(`Standort ~${site.rainfallMm} mm Niederschlag → die beregnungspflichtigen Kulturen (${pct(irrShare)} der Fläche) tragen die Pivot-/Fertigations-Last. ${overRain ? `Über dem Standort-Dargebot (~${site.rainfallMm} mm): Pivot-Kapazität, Pumpleistung und Wasserrecht müssen den Spitzenbedarf (Hochsommer) decken.` : "Im Rahmen — Defizitbewässerung in vegetativen Phasen möglich (WNE-Gewinn)."}`,
+      `Site ~${site.rainfallMm} mm rainfall → the irrigation-dependent crops (${pct(irrShare)} of the area) carry the pivot/fertigation load. ${overRain ? `Above the site's supply (~${site.rainfallMm} mm): pivot capacity, pumping power and water rights must cover peak demand (high summer).` : "Within range — deficit irrigation possible in vegetative phases (water-use-efficiency gain)."}`),
     metric: `${Math.round(wMean)} / ${site.rainfallMm} mm` });
   // Simultan-Peak Hochsommer: Kartoffel-Knollenfüllung + Mais-Blüte + Tomate.
   const sommerIrr = plan.filter((e) => ["kartoffel_pommes", "kartoffel_chips", "mais", "tomate"].includes(e.cropId)).reduce((s, e) => s + e.areaHa, 0) / total;
   const heavySoil = site.soil === "chernozem" || site.soil === "ton" || site.soil === "lehm";
   if (sommerIrr > 0.5) push({ id: "water-peak", category: "Wasser & Beregnung", severity: site.summerHeat === "hoch" ? "warning" : "advice",
-    title: "Hoher Simultan-Wasserpeak im Hochsommer",
-    detail: `Kartoffel-Knollenfüllung, Mais-Blüte und Tomate haben zeitgleich den kritischen Wasserbedarf (${pct(sommerIrr)} der Fläche)${site.summerHeat === "hoch" ? " — bei hohem Sommer-Trockenstress besonders kritisch" : ""}. ${heavySoil ? `Auf ${site.soil === "chernozem" ? "schweren Chernozem-" : site.soil === "ton" ? "Ton-" : "Lehm-"}Böden Gaben < 12 mm gegen Runoff` : "Auf leichten Böden häufigere, kleinere Gaben (geringes Wasserhaltevermögen)"} — die Pivot-Rundenzeit muss den Spitzenbedarf packen, sonst Ertragsstress.` });
+    title: L("Hoher Simultan-Wasserpeak im Hochsommer", "High simultaneous water peak in high summer"),
+    detail: L(`Kartoffel-Knollenfüllung, Mais-Blüte und Tomate haben zeitgleich den kritischen Wasserbedarf (${pct(sommerIrr)} der Fläche)${site.summerHeat === "hoch" ? " — bei hohem Sommer-Trockenstress besonders kritisch" : ""}. ${heavySoil ? `Auf ${site.soil === "chernozem" ? "schweren Chernozem-" : site.soil === "ton" ? "Ton-" : "Lehm-"}Böden Gaben < 12 mm gegen Runoff` : "Auf leichten Böden häufigere, kleinere Gaben (geringes Wasserhaltevermögen)"} — die Pivot-Rundenzeit muss den Spitzenbedarf packen, sonst Ertragsstress.`,
+      `Potato tuber-filling, maize flowering and tomato share the critical water demand at the same time (${pct(sommerIrr)} of the area)${site.summerHeat === "hoch" ? " — especially critical under high summer drought stress" : ""}. ${heavySoil ? `On ${site.soil === "chernozem" ? "heavy chernozem" : site.soil === "ton" ? "clay" : "loam"} soils, applications < 12 mm against runoff` : "On light soils, more frequent, smaller applications (low water-holding capacity)"} — the pivot cycle time must handle the peak, otherwise yield stress.`) });
 
   /* ---- Nährstoffe ------------------------------------------------------- */
   if (areaOf("zwiebel_moehre") > 0) push({ id: "nutri-onion-k", category: "Nährstoffe", severity: "advice",
-    title: "Zwiebel/Möhre-Kalium prüfen",
-    detail: "Verifizierter K-Bedarf Zwiebel liegt bei ~45–80 kg K/ha (FAO) — falls im Modell höher angesetzt, Überdüngung/Kosten. Möhre-Kaliber profitiert von ausgewogenem K, nicht von Überschuss." });
+    title: L("Zwiebel/Möhre-Kalium prüfen", "Check onion/carrot potassium"),
+    detail: L("Verifizierter K-Bedarf Zwiebel liegt bei ~45–80 kg K/ha (FAO) — falls im Modell höher angesetzt, Überdüngung/Kosten. Möhre-Kaliber profitiert von ausgewogenem K, nicht von Überschuss.",
+      "Verified onion K demand is ~45–80 kg K/ha (FAO) — if set higher in the model, over-fertilization/cost. Carrot sizing benefits from balanced K, not from excess.") });
   const highN = plan.filter((e) => (AGRO[e.cropId]?.nKg ?? 0) >= 180).reduce((s, e) => s + e.areaHa, 0) / total;
   push({ id: "nutri-n", category: "Nährstoffe", severity: highN > 0.6 ? "warning" : "info",
-    title: `N-intensive Kulturen: ${pct(highN)} der Fläche`,
-    detail: `${highN > 0.6 ? "Hoher" : "Moderater"} N-Bedarf (Weizen/Mais/Kartoffel/Tomate ~180–200 kg N/ha). Fertigation über den Pivot (bedarfsgerechte Splits nahe Spitzenbedarf) senkt Auswaschung; Leguminosen-Vorfrucht rechnet N-Zukauf herunter.` });
+    title: L(`N-intensive Kulturen: ${pct(highN)} der Fläche`, `N-intensive crops: ${pct(highN)} of the area`),
+    detail: L(`${highN > 0.6 ? "Hoher" : "Moderater"} N-Bedarf (Weizen/Mais/Kartoffel/Tomate ~180–200 kg N/ha). Fertigation über den Pivot (bedarfsgerechte Splits nahe Spitzenbedarf) senkt Auswaschung; Leguminosen-Vorfrucht rechnet N-Zukauf herunter.`,
+      `${highN > 0.6 ? "High" : "Moderate"} N demand (wheat/maize/potato/tomato ~180–200 kg N/ha). Fertigation via the pivot (demand-based splits near peak) reduces leaching; a legume pre-crop lowers N purchases.`) });
 
   /* ---- Absatz & Verarbeitungskapazität (über den Ramp) ------------------- */
   {
@@ -153,9 +165,11 @@ export function deriveAnbauAdvice(domain: Domain): AdviceItem[] {
       const tomYield = readConst(domain, "yield.tomate", 88);
       const tomT = tomHa * tomYield;
       const capT = readConst(domain, "market.tomate_cap_t", 150000);
+      const loc = getLang() === "en" ? "en-US" : "de-DE";
       push({ id: "market-tomcap", category: "Markt & Preis", severity: tomT > capT ? "risk" : "info",
-        title: tomT > capT ? "Tomaten-Menge übersteigt Werkskapazität" : "Tomaten-Menge passt zur Werkskapazität",
-        detail: `Endausbau ${Math.round(tomHa).toLocaleString("de-DE")} ha × ${tomYield} t/ha ≈ ${Math.round(tomT).toLocaleString("de-DE")} t/Kampagne vs. kontrahierte Kapazität ${Math.round(capT).toLocaleString("de-DE")} t (mittelgroßes EU-Werk ≈ 100–250 kt). ${tomT > capT ? "Kein Werk kann das abnehmen — Tomatenfläche fixieren/deckeln (cropPolicy fix) oder zweiten Abnehmer kontrahieren." : "Fläche ist über die Kultur-Politik fixiert — skaliert bewusst NICHT mit dem Flächen-Ramp."}`,
+        title: tomT > capT ? L("Tomaten-Menge übersteigt Werkskapazität", "Tomato volume exceeds plant capacity") : L("Tomaten-Menge passt zur Werkskapazität", "Tomato volume fits plant capacity"),
+        detail: L(`Endausbau ${Math.round(tomHa).toLocaleString(loc)} ha × ${tomYield} t/ha ≈ ${Math.round(tomT).toLocaleString(loc)} t/Kampagne vs. kontrahierte Kapazität ${Math.round(capT).toLocaleString(loc)} t (mittelgroßes EU-Werk ≈ 100–250 kt). ${tomT > capT ? "Kein Werk kann das abnehmen — Tomatenfläche fixieren/deckeln (cropPolicy fix) oder zweiten Abnehmer kontrahieren." : "Fläche ist über die Kultur-Politik fixiert — skaliert bewusst NICHT mit dem Flächen-Ramp."}`,
+          `At full build-out ${Math.round(tomHa).toLocaleString(loc)} ha × ${tomYield} t/ha ≈ ${Math.round(tomT).toLocaleString(loc)} t/campaign vs. contracted capacity ${Math.round(capT).toLocaleString(loc)} t (mid-size EU plant ≈ 100–250 kt). ${tomT > capT ? "No plant can absorb that — fix/cap the tomato area (crop policy fix) or contract a second buyer." : "Area is fixed via the crop policy — deliberately does NOT scale with the area ramp."}`),
         metric: `${Math.round(tomT / 1000)} kt / ${Math.round(capT / 1000)} kt` });
     }
     // Kartoffel: Ramp-Pfad unter der Anbaupause-Grenze (Absatz gesichert, PRIO 1).
@@ -165,36 +179,46 @@ export function deriveAnbauAdvice(domain: Domain): AdviceItem[] {
       let reachYear = -1;
       for (let y = 0; y < my.years; y++) if (kart(y) >= target - 1) { reachYear = y; break; }
       const maxShare = Math.max(...Array.from({ length: my.years }, (_, y) => my.irrHa[y] > 0 ? kart(y) / my.irrHa[y] : 0));
+      const kloc = getLang() === "en" ? "en-US" : "de-DE";
+      const kseq = Array.from({ length: Math.min(my.years, 5) }, (_, y) => Math.round(kart(y)).toLocaleString(kloc)).join(" → ");
       push({ id: "market-kartramp", category: "Markt & Preis", severity: "info",
-        title: `Kartoffel-Ramp: ${Math.round(kart(0)).toLocaleString("de-DE")} → ${Math.round(target).toLocaleString("de-DE")} ha (PRIO 1, Absatz gesichert)`,
-        detail: `Skaliert schnellstmöglich unter der 4-Jahres-Anbaupause (≤ 25 % der beregneten Fläche): ${Array.from({ length: Math.min(my.years, 5) }, (_, y) => Math.round(kart(y)).toLocaleString("de-DE")).join(" → ")} ha${reachYear >= 0 ? `; Ziel erreicht in Jahr ${reachYear + 1}` : "; Ziel im Horizont nicht erreicht (beregnete Fläche limitiert)"}. Max. Rotationsanteil ${pct(maxShare)} — Fruchtfolge bleibt gesund.`,
-        metric: reachYear >= 0 ? `Ziel in J${reachYear + 1}` : "limitiert" });
+        title: L(`Kartoffel-Ramp: ${Math.round(kart(0)).toLocaleString(kloc)} → ${Math.round(target).toLocaleString(kloc)} ha (PRIO 1, Absatz gesichert)`,
+          `Potato ramp: ${Math.round(kart(0)).toLocaleString(kloc)} → ${Math.round(target).toLocaleString(kloc)} ha (PRIO 1, sales secured)`),
+        detail: L(`Skaliert schnellstmöglich unter der 4-Jahres-Anbaupause (≤ 25 % der beregneten Fläche): ${kseq} ha${reachYear >= 0 ? `; Ziel erreicht in Jahr ${reachYear + 1}` : "; Ziel im Horizont nicht erreicht (beregnete Fläche limitiert)"}. Max. Rotationsanteil ${pct(maxShare)} — Fruchtfolge bleibt gesund.`,
+          `Scales as fast as possible under the 4-year rotation break (≤ 25 % of the irrigated area): ${kseq} ha${reachYear >= 0 ? `; target reached in year ${reachYear + 1}` : "; target not reached within the horizon (irrigated area limited)"}. Max. rotation share ${pct(maxShare)} — rotation stays healthy.`),
+        metric: reachYear >= 0 ? L(`Ziel in J${reachYear + 1}`, `Target in Y${reachYear + 1}`) : L("limitiert", "limited") });
     }
   }
 
   /* ---- Markt & Preis ---------------------------------------------------- */
   const contractShare = plan.filter((e) => AGRO[e.cropId]?.market === "contract").reduce((s, e) => s + e.areaHa / total, 0);
   push({ id: "market-contract", category: "Markt & Preis", severity: contractShare > 0.5 ? "warning" : "info",
-    title: `Kontrakt-/Abnehmerabhängige Kulturen: ${pct(contractShare)}`,
-    detail: `Wertkulturen (Tomate → Verarbeiter, Kartoffel → Pommes/Chips-Werk) laufen über Verträge — hohe Marge, aber Gegenpartei-/Mengenrisiko. ${contractShare > 0.5 ? "Klumpenrisiko: Vertragsvolumina, Preisformeln und Ausfallszenarien absichern; Commodity-Anteil (Getreide) als liquider Puffer sinnvoll." : "Ausgewogen durch liquide Commodity-Märkte (Getreide/Raps/Soja) als Preis-Hedge."}`,
+    title: L(`Kontrakt-/Abnehmerabhängige Kulturen: ${pct(contractShare)}`, `Contract/buyer-dependent crops: ${pct(contractShare)}`),
+    detail: L(`Wertkulturen (Tomate → Verarbeiter, Kartoffel → Pommes/Chips-Werk) laufen über Verträge — hohe Marge, aber Gegenpartei-/Mengenrisiko. ${contractShare > 0.5 ? "Klumpenrisiko: Vertragsvolumina, Preisformeln und Ausfallszenarien absichern; Commodity-Anteil (Getreide) als liquider Puffer sinnvoll." : "Ausgewogen durch liquide Commodity-Märkte (Getreide/Raps/Soja) als Preis-Hedge."}`,
+      `Value crops (tomato → processor, potato → fries/chips plant) run on contracts — high margin, but counterparty/volume risk. ${contractShare > 0.5 ? "Concentration risk: hedge contract volumes, price formulas and default scenarios; a commodity share (cereals) as a liquid buffer is advisable." : "Balanced by liquid commodity markets (cereals/rapeseed/soy) as a price hedge."}`),
     metric: pct(contractShare) });
 
   /* ---- Standort (Süd-Dolj) --------------------------------------------- */
-  const soilLabel = { chernozem: "tiefgründiger Chernozem", lehm: "Lehmboden", sand: "leichter Sandboden", ton: "schwerer Tonboden" }[site.soil];
+  const soilLabel = L(
+    ({ chernozem: "tiefgründiger Chernozem", lehm: "Lehmboden", sand: "leichter Sandboden", ton: "schwerer Tonboden" } as Record<string, string>)[site.soil],
+    ({ chernozem: "deep chernozem", lehm: "loam soil", sand: "light sandy soil", ton: "heavy clay soil" } as Record<string, string>)[site.soil]);
   push({ id: "site-fit", category: "Standort", severity: "info",
-    title: `Standort-Fit ${site.name} (${soilLabel}, ~${site.rainfallMm} mm)`,
-    detail: `Beregnete Wertkulturen + Trockenrotation nutzen den Standort komplementär: ${soilLabel} trägt ${site.soil === "sand" ? "unter Pivot Ertrag, braucht aber häufige kleine Gaben" : "Hochertrag unter Pivot"}; die ${site.summerHeat === "hoch" ? "trockene, heiße" : site.summerHeat === "mittel" ? "mäßig trockene" : "gemäßigte"} Sommerwitterung ist ohne Beregnung ${site.summerHeat === "gering" ? "auch für Sommerungen tragbar" : "nur für Halmfrüchte/Raps sicher"}. Frühsaat-Fenster (Weizen: Termin schlägt Dichte; Mais: Bodentemperatur-Trigger) ${site.summerHeat === "hoch" ? "am wärmeren Ende früher" : "standortgemäß"} ansetzen.` });
+    title: L(`Standort-Fit ${site.name} (${soilLabel}, ~${site.rainfallMm} mm)`, `Site fit ${site.name} (${soilLabel}, ~${site.rainfallMm} mm)`),
+    detail: L(`Beregnete Wertkulturen + Trockenrotation nutzen den Standort komplementär: ${soilLabel} trägt ${site.soil === "sand" ? "unter Pivot Ertrag, braucht aber häufige kleine Gaben" : "Hochertrag unter Pivot"}; die ${site.summerHeat === "hoch" ? "trockene, heiße" : site.summerHeat === "mittel" ? "mäßig trockene" : "gemäßigte"} Sommerwitterung ist ohne Beregnung ${site.summerHeat === "gering" ? "auch für Sommerungen tragbar" : "nur für Halmfrüchte/Raps sicher"}. Frühsaat-Fenster (Weizen: Termin schlägt Dichte; Mais: Bodentemperatur-Trigger) ${site.summerHeat === "hoch" ? "am wärmeren Ende früher" : "standortgemäß"} ansetzen.`,
+      `Irrigated value crops + dryland rotation use the site complementarily: ${soilLabel} carries ${site.soil === "sand" ? "yield under pivot but needs frequent small applications" : "high yield under pivot"}; the ${site.summerHeat === "hoch" ? "dry, hot" : site.summerHeat === "mittel" ? "moderately dry" : "temperate"} summer weather without irrigation is ${site.summerHeat === "gering" ? "viable even for spring crops" : "safe only for straw crops/rapeseed"}. Set the early-sowing window (wheat: timing beats density; maize: soil-temperature trigger) ${site.summerHeat === "hoch" ? "earlier at the warmer end" : "as appropriate for the site"}.`) });
 
   /* ---- Arbeit & Maschinen ---------------------------------------------- */
   const herbstIntensiv = plan.filter((e) => (AGRO[e.cropId]?.peak ?? []).includes("herbst") && AGRO[e.cropId]?.irrigated).reduce((s, e) => s + e.areaHa, 0) / total;
   if (herbstIntensiv > 0.45) push({ id: "labor-autumn", category: "Arbeit & Maschinen", severity: "warning",
-    title: "Herbst-Erntepeak ist der engste Flaschenhals",
-    detail: `Kartoffel-, Zwiebel/Möhre-, Tomaten- und Maisernte fallen im Herbst zusammen (${pct(herbstIntensiv)} der Fläche). Wurzelernte-Fenster ist auslastungskritisch → Ernter-Staffelung (Sorten/Reife, 2-Schicht) und Transport-/Lagerkette müssen die Spitze tragen, sonst Qualitäts-/Ertragsverluste.` });
+    title: L("Herbst-Erntepeak ist der engste Flaschenhals", "Autumn harvest peak is the tightest bottleneck"),
+    detail: L(`Kartoffel-, Zwiebel/Möhre-, Tomaten- und Maisernte fallen im Herbst zusammen (${pct(herbstIntensiv)} der Fläche). Wurzelernte-Fenster ist auslastungskritisch → Ernter-Staffelung (Sorten/Reife, 2-Schicht) und Transport-/Lagerkette müssen die Spitze tragen, sonst Qualitäts-/Ertragsverluste.`,
+      `Potato, onion/carrot, tomato and maize harvests coincide in autumn (${pct(herbstIntensiv)} of the area). The root-harvest window is capacity-critical → harvester staggering (varieties/ripening, 2-shift) and the transport/storage chain must carry the peak, otherwise quality/yield losses.`) });
 
   /* ---- Ökonomie --------------------------------------------------------- */
   push({ id: "eco-mix", category: "Ökonomie", severity: valueShare > 0.6 ? "warning" : "info",
-    title: `Wertkultur-Anteil ${pct(valueShare)} — Ertrag vs. Risiko`,
-    detail: `Wertkulturen bringen den DB-Hebel, aber hohe Vorleistungen (Pflanzgut, PSM 16 Überfahrten, Ernte-/Lagertechnik) und Marktrisiko. ${valueShare > 0.6 ? "Sehr wertkultur-lastig → Kapitalbindung und Risiko hoch; Getreide/Raps stabilisieren Cashflow und Fruchtfolge." : "Ausgewogene Mischung: Wertkulturen als Ertragsmotor, Halmfrüchte als Stabilisator und Fruchtfolgeglied."}`,
+    title: L(`Wertkultur-Anteil ${pct(valueShare)} — Ertrag vs. Risiko`, `Value-crop share ${pct(valueShare)} — return vs. risk`),
+    detail: L(`Wertkulturen bringen den DB-Hebel, aber hohe Vorleistungen (Pflanzgut, PSM 16 Überfahrten, Ernte-/Lagertechnik) und Marktrisiko. ${valueShare > 0.6 ? "Sehr wertkultur-lastig → Kapitalbindung und Risiko hoch; Getreide/Raps stabilisieren Cashflow und Fruchtfolge." : "Ausgewogene Mischung: Wertkulturen als Ertragsmotor, Halmfrüchte als Stabilisator und Fruchtfolgeglied."}`,
+      `Value crops provide the margin leverage, but high inputs (planting material, 16 crop-protection passes, harvest/storage machinery) and market risk. ${valueShare > 0.6 ? "Very value-crop-heavy → capital lock-up and risk high; cereals/rapeseed stabilize cash flow and rotation." : "Balanced mix: value crops as the return engine, straw crops as stabilizer and rotation member."}`),
     metric: pct(valueShare) });
 
   return items;
