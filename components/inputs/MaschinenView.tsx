@@ -122,8 +122,8 @@ export function MaschinenView() {
                   <tr>
                     <td colSpan={16} className="px-2 pt-3 pb-1">
                       <span className="inline-flex items-center gap-2">
-                        <span className="caption text-[10px] font-semibold" style={{ color: INFRA.has(cat) ? "var(--nx-locate)" : "var(--nx-brand-lift)" }}>{INFRA.has(cat) ? "▸ " : ""}{cat}</span>
-                        <button className="rounded-pill border px-1.5 text-[10px]" style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-muted)", background: "var(--nx-surface)" }} title={`${t("Maschine in „")}${cat}${t("\" hinzufügen")}`} onClick={() => addMachine(cat)}>{t("+ Maschine")}</button>
+                        <span className="caption text-[10px] font-semibold" style={{ color: INFRA.has(cat) ? "var(--nx-locate)" : "var(--nx-brand-lift)" }}>{INFRA.has(cat) ? "▸ " : ""}{t(cat)}</span>
+                        <button className="rounded-pill border px-1.5 text-[10px]" style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-muted)", background: "var(--nx-surface)" }} title={`${t("Maschine in „")}${t(cat)}${t("\" hinzufügen")}`} onClick={() => addMachine(cat)}>{t("+ Maschine")}</button>
                       </span>
                     </td>
                   </tr>

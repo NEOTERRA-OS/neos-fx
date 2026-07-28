@@ -34,7 +34,7 @@ export function TopBar({ theme, onToggleTheme }: { theme: "light" | "dark"; onTo
       <div className="flex items-center gap-2">
         <span className="caption text-[10.5px] font-bold text-nx-text-muted">{t("Szenario")}</span>
         <Segmented
-          ariaLabel="Szenario"
+          ariaLabel={t("Szenario")}
           value={view.scenarioId}
           onChange={setScenario}
           options={[
@@ -50,7 +50,7 @@ export function TopBar({ theme, onToggleTheme }: { theme: "light" | "dark"; onTo
         {/* 1 (nur Ackerbau · Benchmark) durch Trenner abgesetzt von den Value-Szenarien 1a/2b/3c.
             Buchstabe = zusätzliche Stellschraube: a Wertkulturen · b Beregnung · c Fläche+Beregnung. */}
         <Segmented
-          ariaLabel="Skalierungsstufe"
+          ariaLabel={t("Skalierungsstufe")}
           value={stage}
           onChange={(v) => setStage(v as any)}
           options={[
@@ -65,7 +65,7 @@ export function TopBar({ theme, onToggleTheme }: { theme: "light" | "dark"; onTo
       <div className="flex items-center gap-2">
         <span className="caption text-[10.5px] font-bold text-nx-text-muted">{t("Umfang")}</span>
         <Segmented
-          ariaLabel="Umfang"
+          ariaLabel={t("Umfang")}
           value={scope}
           onChange={(v) => setScope(v as "full" | "valueOnly")}
           options={[
@@ -78,7 +78,7 @@ export function TopBar({ theme, onToggleTheme }: { theme: "light" | "dark"; onTo
       <div className="flex items-center gap-2">
         <span className="caption text-[10.5px] font-bold text-nx-text-muted">{t("Zeit")}</span>
         <Segmented
-          ariaLabel="Granularität"
+          ariaLabel={t("Granularität")}
           value={view.granularity}
           onChange={(g) => setGranularity(g as Granularity)}
           options={[
@@ -98,7 +98,7 @@ export function TopBar({ theme, onToggleTheme }: { theme: "light" | "dark"; onTo
           options={[{ value: "de", label: "DE" }, { value: "en", label: "EN" }]}
         />
         <Segmented
-          ariaLabel="Währung"
+          ariaLabel={t("Währung")}
           value={view.currency}
           onChange={(c) => setCurrency(c as "EUR" | "RON")}
           options={[{ value: "EUR", label: "€" }, { value: "RON", label: "RON" }]}

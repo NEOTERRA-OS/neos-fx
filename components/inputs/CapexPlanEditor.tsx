@@ -85,7 +85,7 @@ export function CapexPlanEditor({ blocks }: { blocks?: CapexBlock[] } = {}) {
             <span className="caption text-[10.5px] text-nx-text-muted">{t("Aktive Blöcke Σ")} <b className="num">{fmtMoney(activeTotal)} €</b> · {t("Gesamtplan")} <b className="num">{fmtMoney(planTotal)} €</b></span>
           </div>
           <p className="px-4 py-2.5 text-[11.5px] text-nx-text-secondary leading-relaxed">
-            {t("Jeder Block hat einen Schalter")} <b>{t("Detailplanung aktiv")}</b>{t(": aktiv → die Zeilen zählen im Modell und der jeweilige Auto-Block (Beregnung €/ha bzw. Lager €/t) wird abgeschaltet (kein Doppelzählen); inaktiv → der Auto-Block läuft und die Zeilen sind reine Planung. Netto-CAPEX = Menge × €/Einheit × (1 − Zuschuss);")} <code>Bestand</code> {t("= 0. Werte sind mit EU/RO-Benchmarks 2025/26 vorbefüllt — auf eure Angebote anpassen.")}
+            {t("Jeder Block hat einen Schalter")} <b>{t("Detailplanung aktiv")}</b>{t(": aktiv → die Zeilen zählen im Modell und der jeweilige Auto-Block (Beregnung €/ha bzw. Lager €/t) wird abgeschaltet (kein Doppelzählen); inaktiv → der Auto-Block läuft und die Zeilen sind reine Planung. Netto-CAPEX = Menge × €/Einheit × (1 − Zuschuss);")} <code>{t("Bestand")}</code> {t("= 0. Werte sind mit EU/RO-Benchmarks 2025/26 vorbefüllt — auf eure Angebote anpassen.")}
           </p>
         </section>
       )}

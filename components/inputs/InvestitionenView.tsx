@@ -137,7 +137,7 @@ export function InvestitionenView() {
                 const catSum = rows.reduce((a, d) => a + d.amount, 0);
                 return (
                   <React.Fragment key={cat}>
-                    <tr><td colSpan={9} className="px-2 pt-3 pb-1 caption text-[10px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{cat}</td></tr>
+                    <tr><td colSpan={9} className="px-2 pt-3 pb-1 caption text-[10px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t(cat)}</td></tr>
                     {rows.map((d) => {
                       const m = byId.get(d.machineId);
                       const neu = d.newUnits ?? 0;
@@ -159,7 +159,7 @@ export function InvestitionenView() {
                       );
                     })}
                     <tr style={{ background: "var(--nx-surface-sunken)" }}>
-                      <td colSpan={8} className="px-2 py-1 text-right caption text-[10px] text-nx-text-muted">Σ {cat}</td>
+                      <td colSpan={8} className="px-2 py-1 text-right caption text-[10px] text-nx-text-muted">Σ {t(cat)}</td>
                       <td className="num px-2 py-1 text-right font-semibold">{catSum ? fmtMoney(catSum) : "–"}</td>
                     </tr>
                   </React.Fragment>

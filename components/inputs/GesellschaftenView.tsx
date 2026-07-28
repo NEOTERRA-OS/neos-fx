@@ -95,7 +95,7 @@ export function GesellschaftenView() {
               <TextInput value={e.name} width={300} onCommit={(v) => upd(e.id, (x) => { x.name = v; })} />
               <select className="rounded-control border px-2 text-[12.5px]" style={selStyle}
                 value={e.country} onChange={(ev) => upd(e.id, (x) => { x.country = ev.target.value as Entity["country"]; })}>
-                {Object.entries(COUNTRY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {Object.entries(COUNTRY_LABEL).map(([k, v]) => <option key={k} value={k}>{t(v)}</option>)}
               </select>
               <select className="rounded-control border px-2 text-[12.5px]" style={selStyle}
                 value={e.role} onChange={(ev) => upd(e.id, (x) => { x.role = ev.target.value as EntityRole; })}>

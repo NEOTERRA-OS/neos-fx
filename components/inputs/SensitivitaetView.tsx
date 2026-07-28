@@ -171,7 +171,7 @@ export function SensitivitaetView() {
                   <div className="absolute" style={{ left: "50%", width: `${wHigh}%`, height: 14, background: "var(--nx-success)", borderRadius: 2, opacity: 0.9 }} title={`+ : ${fmtMoney(b.high)} €`} />
                 </div>
                 <div className="num w-[135px] shrink-0 text-right text-nx-text-muted">{fmtMoney(b.low)} … {fmtMoney(b.high)}</div>
-                <button className="shrink-0 text-[12px] text-nx-error px-1" title="Entfernen" onClick={() => setRows((r) => r.filter((x) => x.id !== b.id))}><X size={13} strokeWidth={2.5} aria-hidden /></button>
+                <button className="shrink-0 text-[12px] text-nx-error px-1" title={t("Entfernen")} onClick={() => setRows((r) => r.filter((x) => x.id !== b.id))}><X size={13} strokeWidth={2.5} aria-hidden /></button>
               </div>
             );
           })}
@@ -229,7 +229,7 @@ export function SensitivitaetView() {
           {scen.map((s) => (
             <div key={s.id} className="rounded-tile border px-3 py-2" style={{ borderColor: "var(--nx-border-divider)" }}>
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[12px] font-semibold">{s.name}</span>
+                <span className="text-[12px] font-semibold">{t(s.name)}</span>
                 <ShiftAdder onAdd={(fid) => setScen((arr) => arr.map((x) => x.id === s.id ? { ...x, shifts: { ...x.shifts, [fid]: x.shifts[fid] ?? -0.1 } } : x))} existing={Object.keys(s.shifts)} />
               </div>
               <div className="flex flex-wrap gap-2">

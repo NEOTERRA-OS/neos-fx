@@ -255,7 +255,7 @@ export function ShareholderView() {
             {cap.finalOwn.map((h, i) => (
               <span key={i} className="inline-flex items-center gap-1.5">
                 <span style={{ width: 10, height: 10, borderRadius: 3, background: OWN_COL[i % OWN_COL.length] }} />
-                {h.holder} <b className="num">{fmtNumber(h.pct * 100, 1)} %</b>
+                {t(h.holder)} <b className="num">{fmtNumber(h.pct * 100, 1)} %</b>
                 <span className="text-nx-text-muted num">→ Exit {fmtMoney(h.pct * proj.exitEquity)} €</span>
               </span>
             ))}
