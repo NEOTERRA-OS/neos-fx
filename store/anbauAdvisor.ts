@@ -11,6 +11,11 @@
  * ======================================================================== */
 import type { Domain, StandortProfil } from "./model";
 import { CROP_NAME, VALUE_CROP_IDS, deriveContribution, deriveCropAreasMY } from "./model";
+import { getLang, t } from "../lib/i18n";
+
+/** Sprachabhängiger Satzbau für DYNAMISCH generierte Texte (Advice/Optimizer): der Schlüssel-
+ *  basierte t()-Layer kann interpolierte Sätze nicht übersetzen, daher hier direkt DE/EN wählen. */
+const L = (de: string, en: string): string => (getLang() === "en" ? en : de);
 
 /** Konstanten-Profil einer Assumption lesen (Advisor läuft ohne Szenario-Auflösung). */
 function readConst(domain: Domain, key: string, fallback: number): number {
@@ -239,9 +244,9 @@ const DRYLAND_CANDIDATES = ["weizen_dry", "gerste_dry", "raps_dry", "sonnenblume
 /** Break-Gruppen der Trockenrotation mit kombinierter Obergrenze (Anteil am Trockenpool).
  *  Getreide (Weizen+Gerste) ≤ 2/3 (Halmfrucht-Krankheiten/Take-all); Ölsaaten (Raps+Sonnenblume,
  *  beide Sclerotinia-Wirte) ≤ 1/3 als EIN Ölsaat-Slot mit 4-Jahres-Pause. Summe = 1,0. */
-const DRYLAND_GROUPS: { group: string; label: string; members: string[]; cap: number }[] = [
-  { group: "getreide", label: "Getreide (Weizen/Gerste)", members: ["weizen_dry", "gerste_dry"], cap: 0.66 },
-  { group: "oelsaat", label: "Ölsaaten (Raps/Sonnenblume)", members: ["raps_dry", "sonnenblume"], cap: 0.34 },
+const DRYLAND_GROUPS: { group: string; label: string; labelEn: string; members: string[]; cap: number }[] = [
+  { group: "getreide", label: "Getreide (Weizen/Gerste)", labelEn: "Cereals (wheat/barley)", members: ["weizen_dry", "gerste_dry"], cap: 0.66 },
+  { group: "oelsaat", label: "Ölsaaten (Raps/Sonnenblume)", labelEn: "Oilseeds (rapeseed/sunflower)", members: ["raps_dry", "sonnenblume"], cap: 0.34 },
 ];
 
 export type RotAlloc = { cropId: string; name: string; ha: number; sharePct: number; dbPerHaCent: number };
@@ -312,8 +317,8 @@ function allocateDryland(
     const ha = Math.max(0, Math.min(own, groupBudget, remaining));
     if (ha <= 0) continue;
     // Welche Schranke bindet?
-    if (ha === own && own < groupBudget && own < remaining) binding.add(`${c.name}: Einzel-Anbaupause ${pct(c.maxShare)}`);
-    if (g && ha === groupBudget && groupBudget < own) binding.add(`${g.label}: Gruppen-Anbaupause ≤ ${pct(g.cap)}`);
+    if (ha === own && own < groupBudget && own < remaining) binding.add(`${t(c.name)}: ${L("Einzel-Anbaupause", "individual break")} ${pct(c.maxShare)}`);
+    if (g && ha === groupBudget && groupBudget < own) binding.add(`${L(g.label, g.labelEn)}: ${L("Gruppen-Anbaupause ≤", "group break ≤")} ${pct(g.cap)}`);
     alloc.push({ cropId: c.id, name: c.name, ha: Math.round(ha), sharePct: ha / areaHa, dbPerHaCent: c.dbc });
     if (g) groupUsed.set(g.group, (groupUsed.get(g.group) ?? 0) + ha);
     remaining -= ha;
@@ -351,7 +356,7 @@ export function deriveOptimalRotation(domain: Domain, scenarioId: string): Optim
     const cur = mkCurrent(irrRows, irrArea);
     pools.push({ pool: "irrigated", areaHa: Math.round(irrArea), current: cur, recommended: cur,
       currentDbCent: sumDb(cur), recommendedDbCent: sumDb(cur), upliftCent: 0,
-      binding: ["Wertkulturen sind kontrakt-/absatzbegrenzt (Werkskapazität, Anbaupause) — die Kultur-Politik plant den beregneten Pool bereits an der Kapazitätsgrenze."],
+      binding: [L("Wertkulturen sind kontrakt-/absatzbegrenzt (Werkskapazität, Anbaupause) — die Kultur-Politik plant den beregneten Pool bereits an der Kapazitätsgrenze.", "Value crops are contract/sales-limited (plant capacity, rotation break) — the crop policy already plans the irrigated pool at the capacity limit.")],
       optimized: false });
   }
 
@@ -368,8 +373,10 @@ export function deriveOptimalRotation(domain: Domain, scenarioId: string): Optim
     dbPerHaCent: sbDb, bestAlternativeId: best.id, bestAlternativeDbCent: best.dbc,
     deltaPerHaCent: delta, recommendedHa: recSbHa, attractive,
     note: attractive
-      ? `Sonnenblume liefert ${Math.round(delta / 100)} €/ha mehr DB als die beste Alternative (${best.name}) — als trockentolerante Ölsaat mit niedrigem N-Bedarf der stärkste Trocken-Kandidat. Empfohlen bis zur Ölsaat-Anbaupausengrenze.`
-      : `Sonnenblume liegt beim DB nicht vor ${best.name} — an diesem Standort/Preis kein Vorteil.`,
+      ? L(`Sonnenblume liefert ${Math.round(delta / 100)} €/ha mehr DB als die beste Alternative (${t(best.name)}) — als trockentolerante Ölsaat mit niedrigem N-Bedarf der stärkste Trocken-Kandidat. Empfohlen bis zur Ölsaat-Anbaupausengrenze.`,
+          `Sunflower delivers ${Math.round(delta / 100)} €/ha more contribution margin than the best alternative (${t(best.name)}) — a drought-tolerant oilseed with low N demand, the strongest dryland candidate. Recommended up to the oilseed rotation-break limit.`)
+      : L(`Sonnenblume liegt beim DB nicht vor ${t(best.name)} — an diesem Standort/Preis kein Vorteil.`,
+          `Sunflower does not beat ${t(best.name)} on contribution margin — no advantage at this site/price.`),
   };
 
   return { pools, totalUpliftCent: pools.reduce((s, p) => s + p.upliftCent, 0), sunflower };
