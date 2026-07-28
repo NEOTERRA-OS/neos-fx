@@ -74,5 +74,54 @@ const B11: Record<string, string> = {
   "Finanzierung & Funding": "Financing & Funding",
   "Kapitalbedarf im Jahresverlauf": "Capital requirement over the year",
   "zilieri FTE": "day-laborer FTE",
+
+  // — Sensitivität-Szenarien / diverse Panel-Labels & Dropdowns —
+  "Trockenjahr": "Dry year",
+  "Preisverfall Kartoffel": "Potato price drop",
+  "Zins- & Kostenschock": "Interest & cost shock",
+  "Begründung": "Rationale",
+  "Ernte": "Harvest",
+  "Getreide/Ölsaat": "Cereals/oilseed",
+  "Getreide/Ölsaat/Soja/Mais": "Cereals/oilseed/soy/maize",
+  "Gründer": "Founder",
+  "Gründer / Management": "Founders / Management",
+  "Kontrakt-Qualität (Erfüllung 0..1)": "Contract quality (fulfillment 0..1)",
+  "Makro & Steuer": "Macro & Tax",
+  "Preis & Verlust (€/t · %)": "Price & loss (€/t · %)",
+  "Steuer-Optimierung & Finanzierung": "Tax optimization & financing",
+  "Stück": "Units",
+  "Stücksätze (Inputs)": "Unit rates (inputs)",
+  "Rumänien": "Romania",
+  "Keine Übernahmen — „+ Übernahme\".": "No acquisitions — \"+ Acquisition\".",
+  " J). „+ Stufe\" für individuelle Anhebungen.": " yrs). \"+ Stage\" for individual increases.",
+  "\" hinzufügen": "\" add",
+
+  // — Längere Fußnoten/Hilfetexte (Fragmente aus t()-Konkatenation) —
+  "Setze mit „Baseline = aktueller Plan\" einen Referenzstand. Danach zeigt dieses Panel bei jeder Änderung, wie sich Deckungsbeitrag, agronomisches Risiko und Wasserbedarf verschieben — und welche Hinweise neu entstehen oder wegfallen.":
+    "Set a reference state with \"Baseline = current plan\". This panel then shows, for every change, how contribution margin, agronomic risk and water demand shift — and which notes newly appear or disappear.",
+  " entfällt die große Mähdrescher-Flotte. Die CAPEX-Wirkung je Szenario ist oben („Voll durchgerechnet je Szenario\") bereits real aus dem Schlagkraft-Sizing gerechnet.":
+    " the large combine fleet is dropped. The CAPEX effect per scenario is already computed for real above (\"Fully modeled per scenario\") from the capacity sizing.",
+  "/Probe. Labor fällt bei Eigen & DL an → kürzt sich im Delta; Ersparnis-Treiber ist die Entnahme. Bei „Eigen\" fließt CAPEX (":
+    "/sample. Labor accrues for both in-house & contractor → cancels out in the delta; the savings driver is the extraction. For \"in-house\", CAPEX flows (",
+  "Effektive Kosten = Netto-Einkauf (Liste − Rabatt) − Rücknahme/Restwert am Ende der Haltedauer. Rabatt/Restwert-Sätze im View „Preise & Treiber\" (TCO). JD-Schlepper 8RX 410 / 6R 260 mit realen Angebotswerten. Cash-Effekte (Rabatt beim Einkauf → Netto-CAPEX; AfA auf den Restwert) sind in GuV/Bilanz verdrahtet.":
+    "Effective cost = net purchase (list − discount) − buy-back/residual value at end of holding period. Discount/residual rates in the \"Prices & drivers\" view (TCO). JD tractors 8RX 410 / 6R 260 with real quotation values. Cash effects (discount at purchase → net CAPEX; depreciation on the residual value) are wired into P&L/balance sheet.",
+  "J; bei „Dienstleister\" nur laufende OPEX. Volle Aufschlüsselung & Parameter im Rechner (CAPEX Szenarien → Bodenprobenahme).":
+    "yrs; for \"contractor\" only ongoing OPEX. Full breakdown & parameters in the calculator (CAPEX scenarios → soil sampling).",
+  " Monate: Anfangskasse → operativer + investiver + USt- + Finanzierungs-Cashflow → Revolver gleicht Lücken bis zur Linie aus → Endkasse. „Verfügbare Liquidität\" = Endkasse + freie Kreditlinie; der Tiefpunkt zeigt den maximalen Finanzierungsbedarf (Saison-Swing, CAPEX-/Avans-/USt-Spitzen).":
+    " months: opening cash → operating + investing + VAT + financing cash flow → revolver bridges gaps up to the line → closing cash. \"Available liquidity\" = closing cash + free credit line; the low point shows the maximum funding need (seasonal swing, CAPEX/advance/VAT peaks).",
+  "= Hybrid-Override (manuelle Stückzahl, „×\" löst ihn). Zugklassen sind gepoolt (C_eff aus den Anbaugeräten), daher ohne Breite/Speed.":
+    "= hybrid override (manual unit count, \"×\" clears it). Tractor classes are pooled (C_eff from the implements), hence without width/speed.",
+  "= Bestand reicht nicht (Zukauf n). „Bestand trägt bis\" = Fläche, bis zu der der heutige Bestand ohne Zukauf ausreicht — die kleinste Zahl ist dein erster Engpass.":
+    "= existing fleet insufficient (purchase n). \"Fleet covers up to\" = area up to which today's fleet suffices without purchase — the smallest number is your first bottleneck.",
+  "(2.000–3.000 €/ha → Land+Gebäude + Maschinen-Zeitwert). FK = Akquisitionskredit-Anteil je Deal. „In Flächen-Ramp übernehmen\" leitet die Fläche aus heute + Akquisitionen ab.":
+    "(2,000–3,000 €/ha → land+buildings + machinery book value). Debt = acquisition-loan share per deal. \"Apply to area ramp\" derives the area from today + acquisitions.",
+  "gesetzlich gedeckelt, jährlicher „indice national des fermages\" (Betriebseinkommen + Preisniveau).":
+    "legally capped, annual \"indice national des fermages\" (farm income + price level).",
+  "üblich als eigene Zeile „Pacht & Mieten\" bzw. sonstige betriebliche Aufwendungen — über dem EBIT, kein COGS.":
+    "usually as a separate line \"leases & rents\" or other operating expenses — above EBIT, not COGS.",
+  ". Die Flotte fließt über den TCO-Pfad in CAPEX/Bilanz. Alle operativen Größen unter „Preise & Treiber → Spritzstrategie\".":
+    ". The fleet flows via the TCO path into CAPEX/balance sheet. All operating figures under \"Prices & drivers → spraying strategy\".",
+  "€/ha): Wertkulturen binden mehr Kapital (Spezialtechnik, Lager) und mehr Arbeit, erwirtschaften je Hektar aber ein Vielfaches. Der reine Ackerbau (Stufe 1) ist der faire, effiziente Vergleichsmaßstab — kein „Schlechtrechnen\", sondern der belastbare Boden, auf dem der Wertkultur-Aufschlag steht.":
+    "€/ha): value crops tie up more capital (specialized machinery, storage) and more labor, but earn a multiple per hectare. Pure arable farming (stage 1) is the fair, efficient benchmark — not \"talking it down\", but the solid ground on which the value-crop premium stands.",
 };
 export default B11;
