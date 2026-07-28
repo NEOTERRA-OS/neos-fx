@@ -3,7 +3,7 @@ import React from "react";
 import { useModelStore, selectComputedAnnual, selectComputedMonthly } from "../../store/modelStore";
 import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, scopedDomain } from "../../store/model";
 import { useModelStore as useStore, readAssumption } from "../../store/modelStore";
-import { cropStructure, cropName, cropColor, cropYield, cropLoss, DRY_YIELD_FACTOR } from "../inputs/cropCalc";
+import { cropName, cropColor, cropYield, cropLoss } from "../inputs/cropCalc";
 import { CheckPanel } from "../statements/CheckPanel";
 import { ContributionView } from "../inputs/ContributionView";
 import { fmtMoney, fmtNumber, fmtPct, fmtFactor } from "../../design/format";
@@ -286,20 +286,17 @@ function StufenBoard({ domain, annual, scenarioId }: { domain: any; annual: Comp
 /** Anbaustruktur & Produktion — Fläche (ha), Anteil, Ertrag (t/ha) und Netto-Produktion (t) je Kultur
  *  für das angezeigte Jahr (beregneter Block + Trockenrotation). */
 function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domain: any; scenarioId: string; yearIndex: number; yearLabel: string }) {
-  const gEff = effectiveGrowth(domain.growth);
   const my = deriveCropAreasMY(domain);
   const yi = Math.min(yearIndex, my.years - 1);
-  const irrHa = my.irrHa[yi];
-  const dryHa = Math.max(0, (gEff?.totalByYear?.[yi] ?? irrHa) - irrHa);
-  // Beregneter Block aus der Kultur-Politik (Kartoffel-Ramp/Tomaten-Fix!), Trockenrotation wie gehabt.
-  const irrRows = Object.entries(my.areas).map(([cropId, curve]) => {
-    const ha = curve[yi] ?? 0;
+  // Pool-basiert & native: Trockenkulturen (pool:"dryland") sind bereits in my.areas — KEIN separater
+  //  drylandRotation-Workaround mehr (sonst Doppelzählung: native + Workaround-Zeilen).
+  const dryIds = new Set<string>((domain.anbauplan ?? []).filter((a: any) => a.pool === "dryland").map((a: any) => a.cropId));
+  const rows = Object.entries(my.areas).map(([cropId, curve]) => {
+    const ha = (curve as number[])[yi] ?? 0;
+    const y = cropYield(domain, cropId, scenarioId), loss = cropLoss(domain, cropId, scenarioId);
     return { cropId, name: cropName(cropId), color: cropColor(cropId), ha,
-      yieldTHa: cropYield(domain, cropId, scenarioId), lossPct: cropLoss(domain, cropId, scenarioId),
-      tonnes: ha * cropYield(domain, cropId, scenarioId) * (1 - cropLoss(domain, cropId, scenarioId)), dry: false };
-  });
-  const rows = [...irrRows, ...cropStructure(domain, scenarioId, 0, dryHa).filter((r) => r.dry)]
-    .filter((r) => r.ha > 0.5).sort((a, b) => b.ha - a.ha);
+      yieldTHa: y, lossPct: loss, tonnes: ha * y * (1 - loss), dry: dryIds.has(cropId) };
+  }).filter((r) => r.ha > 0.5).sort((a, b) => b.ha - a.ha);
   const totHa = rows.reduce((s, r) => s + r.ha, 0) || 1;
   const totT = rows.reduce((s, r) => s + r.tonnes, 0);
   const maxHa = Math.max(1, ...rows.map((r) => r.ha));
