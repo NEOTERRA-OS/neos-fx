@@ -73,6 +73,12 @@ const B11: Record<string, string> = {
   "außerh. Benchmark": "outside benchmark",
   "Agronomie-Wächter OK (alle Pflicht-Maßnahmen je Kultur vorhanden)":
     "Agronomy guard OK (all mandatory operations present per crop)",
+  "Gesellschafts-Case ableiten": "Derive entity case",
+  "→ NEOTERRA (Value Crops) ableiten": "→ Derive NEOTERRA (Value Crops)",
+  "Erzeugt aus dem Kombimodell einen eigenständigen Wertkultur-Case (nur Value Crops, eigene Spezialflotte, Vollkosten). Das aktuelle Kombimodell bleibt unberührt, bis du speicherst.":
+    "Derives a standalone value-crop case from the combined model (value crops only, own specialized fleet, full costs). The current combined model stays untouched until you save.",
+  "neoterra-Value-Crop-Case abgeleitet — Zahlen prüfen, dann unten »Als neues Modell speichern«.":
+    "neoterra value-crop case derived — check the figures, then use »Save as new model« below.",
   "Finanzierung & Funding": "Financing & Funding",
   "Kapitalbedarf im Jahresverlauf": "Capital requirement over the year",
   "zilieri FTE": "day-laborer FTE",

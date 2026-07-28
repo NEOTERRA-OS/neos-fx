@@ -3961,6 +3961,35 @@ function scopeToValueOnly(domain: Domain): Domain {
   return { ...domain, anbauplan, machineCatalog };
 }
 
+/** Leitet aus dem Kombimodell (Isolde = Cash/Trocken · neoterra = Value Crops) einen EIGENSTÄNDIGEN
+ *  neoterra-Value-Crop-Case ab, der als separates Modell gespeichert werden kann:
+ *   · Anbauplan nur Wertkulturen (Isolde-Cash/Trockenrotation entfällt),
+ *   · Maschinenpark nur die von den Wertkulturen genutzte Spezialtechnik (Tomaten-/Kartoffel-/
+ *     Gemüse-Erntekette, Pflanzer + geteilte Feldtechnik) — auf die Wertkultur-Fläche dimensioniert,
+ *   · `scope: "full"` → VOLLKOSTEN (eigene Flotte + eigene Struktur, KEINE anteilige Verwässerung),
+ *   · Wachstum flach auf die Wertkultur-Fläche (kein Cash-Ramp, keine Trockenrotation/Zukäufe).
+ *  Overhead/Personal bleiben editierbar — für den Standalone bewusst zu prüfen. */
+export function deriveValueCropCase(domain: Domain): Domain {
+  const vco = scopeToValueOnly(domain);                              // Anbauplan + Maschinen gefiltert
+  const vcHa = vco.anbauplan.reduce((s, a) => s + a.areaHa, 0) || 1;
+  const years = Math.max(1, domain.growth?.years ?? 1);
+  const growth = domain.growth ? {
+    ...domain.growth,
+    stage: "s1" as const,                                            // flach, Status quo (kein Cash-Ramp)
+    areaByYear: Array.from({ length: years }, () => vcHa),
+    totalByYear: Array.from({ length: years }, () => vcHa),
+    startTotalHa: vcHa, startIrrigatedHa: vcHa,
+    drylandRotation: [], acquisitions: [],
+  } : domain.growth;
+  return {
+    ...vco,
+    meta: { ...domain.meta, name: "NEOTERRA (Value Crops)" },
+    scope: "full",                                                   // Vollkosten-Standalone
+    stage: 1,
+    growth,
+  };
+}
+
 /** Value-crop-spezifische Maschinen (Gemüse/Kartoffel-Kette) — entfallen im reinen Ackerbau (1a). */
 const VALUE_ONLY_MACHINE_IDS = new Set([
   "tomernte", "roder_ropa", "krautschl", "gem_schwad", "gem_lader", "gem_moehre",

@@ -3,6 +3,7 @@ import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import { TextInput } from "./NumberInput";
 import * as P from "../../store/persistence";
+import { deriveValueCropCase } from "../../store/model";
 import { getSupabase } from "../../lib/supabaseClient";
 import { StatusPill } from "../primitives/StatusPill";
 import { VersionsVergleich } from "./VersionsVergleich";
@@ -77,6 +78,16 @@ export function VerwaltungView() {
               catch (err: any) { setMsg({ tone: "error", text: err?.message ?? t("Ungültige Datei.") }); }
               e.target.value = "";
             }} />
+        </div>
+
+        {/* Modell ableiten — eigenständige Gesellschafts-Cases aus dem Kombimodell */}
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border-divider)" }}>
+          <span className="text-[12px] font-semibold text-nx-text-secondary">{t("Gesellschafts-Case ableiten")}</span>
+          <button className={btn} style={{ ...btnStyle, borderColor: "var(--nx-brand-lift)", color: "var(--nx-brand-lift)" }}
+            onClick={() => { loadDomain(deriveValueCropCase(domain)); setMsg({ tone: "success", text: t("neoterra-Value-Crop-Case abgeleitet — Zahlen prüfen, dann unten »Als neues Modell speichern«.") }); }}>
+            {t("→ NEOTERRA (Value Crops) ableiten")}
+          </button>
+          <span className="text-[11px] text-nx-text-muted flex-1 min-w-[280px]">{t("Erzeugt aus dem Kombimodell einen eigenständigen Wertkultur-Case (nur Value Crops, eigene Spezialflotte, Vollkosten). Das aktuelle Kombimodell bleibt unberührt, bis du speicherst.")}</span>
         </div>
 
         {msg && <div className="px-4 py-2"><StatusPill tone={msg.tone} label={msg.text} /></div>}
