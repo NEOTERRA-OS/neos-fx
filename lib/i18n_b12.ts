@@ -292,6 +292,14 @@ const B12: Record<string, string> = {
 
   // --- Paket B: Zahlungs-Timing und Anzahlungen der Off-taker ---
   "Bonus-Verzug": "Bonus delay",
+  // --- Paket C: Downside ---
+  "davon: Deckungskauf (Untererfüllung Kontrakt)": "of which: cover purchase (contract shortfall)",
+  "Zurückweisungsquote am Werkstor": "Rejection rate at the factory gate",
+  "Erlösabschlag; die Kosten bleiben, die Ware ist gewachsen":
+    "revenue deduction; costs remain — the crop was grown",
+  "Deckungskauf-Aufschlag je t Fehlmenge": "Cover-purchase premium per t of shortfall",
+  "greift erst, wenn die Ernte unter die kontrahierte Menge fällt":
+    "bites only once the harvest falls below the contracted volume",
   // --- Feldbestand-Aktivierung / Working Capital Kostenseite ---
   "Feldbestand (wachsende Kultur, zu Herstellungskosten)": "Growing crop (work in progress, at cost)",
   "davon: Aufbau/Auflösung Feldbestand": "of which: growing-crop build-up / release",

@@ -700,6 +700,8 @@ interface OperatingResult {
   receiptTerms: ReceiptTerm[];
   /** Anzahlungszuflüsse je Vertrag und Jahr. */
   advances: AdvanceFlow[];
+  /** Deckungskauf-Aufwand bei Untererfüllung kontrahierter Mengen (Paket C) — Betriebsaufwand. */
+  coverPurchaseCost: number[];
 }
 
 function computeOperating(
@@ -796,6 +798,11 @@ function computeOperating(
   //  der Spotpreis (buildModelState/curveInfl, iOut). Jahr 1 = unterschriebener Preis.
   //  Ohne diesen Schritt fiele der Mischpreis nur deshalb hinter den Spot zurück, weil
   //  ein Einjahresvertrag über acht Jahre fortgeschrieben wird — ein Artefakt, keine Aussage.
+  // Zurückweisungsquote am Werkstor (Paket C): EINHEITLICH für Kontrakt- und Spotmengen.
+  // Wirkt als Erlösabschlag; die Produktionskosten bleiben unberührt, weil die Ware gewachsen
+  // und geerntet ist. Der Rücktransport zurückgewiesener Ware (VIA AGRO 6.7) ist NICHT bewertet.
+  const rejectSeries = resolveAssumption(state, "quality.reject", chain, n, ppy);
+  const acceptAt = (p: number) => 1 - Math.max(0, Math.min(1, rejectSeries[p] ?? 0));
   const inflOutSeries = resolveAssumption(state, "infl.output", chain, n, ppy);
   const offtakeIdx = (y: number) => Math.pow(1 + (inflOutSeries[Math.min(y * ppy, n - 1)] ?? 0), y);
   /** Ein Vertragsanteil eines Kultur-Jahres, nach Kürzung bei Übervergabe.
@@ -816,9 +823,11 @@ function computeOperating(
           ? (total > 0 ? Math.min(1, (c.tonnesPerYear ?? 0) / total) : 0)
           : Math.max(0, Math.min(1, c.share ?? 0));
         if (s <= 0) continue;
-        // Realisierter Kontraktpreis: (Basis + erwarteter Bonus/Malus) × Indexierung,
-        // gemindert um die erwartete Zurückweisungsquote am Werkstor.
-        const keep = idx * (1 - (c.rejectRate ?? 0));
+        // Realisierter Kontraktpreis: (Basis + erwarteter Bonus/Malus) × Indexierung.
+        // Die Zurückweisungsquote steckt NICHT hier, sondern einheitlich im Erlösabschlag
+        // (quality.reject) — sonst würde sie doppelt gezählt. OfftakeContract.rejectRate ist
+        // seit Paket C dokumentarisch.
+        const keep = idx;
         const base = c.priceCentPerTonne * keep;
         const bonus = (c.bonusCentPerTonne ?? 0) * keep;
         const eff = base + bonus;
@@ -866,7 +875,8 @@ function computeOperating(
       // Mischpreis: kontrahierter Anteil zum Vertragspreis, Rest zum Kulturpreis.
       const blended = m && m.share > 0 ? m.share * m.price + (1 - m.share) * spot : spot;
       // Kontrakt-Qualitätserfüllung: realisierter Preis nach Bonus/Malus × akzeptierte Menge (0..1).
-      const rev = round(calc.netT[p] * blended * calc.qual[p]);     // €/t in Minor-Units
+      // Erlösabschlag Zurückweisung: die zurückgewiesene Menge wird nicht bezahlt.
+      const rev = round(calc.netT[p] * blended * calc.qual[p] * acceptAt(p));
       revenue[p] += rev;
       outputVat[p] += round(rev * outRate(plan.cropId));           // Ausgangs-USt (0 bei Reverse-Charge)
 
@@ -916,7 +926,7 @@ function computeOperating(
       const hp = s2.harvestPeriod;
       if (hp >= 0 && hp < n) {
         const netT = y2[hp] * plan.areaHa * (1 - (l2 ? l2[hp] : 0));   // t
-        const rev2 = round(netT * p2[hp]);
+        const rev2 = round(netT * p2[hp] * acceptAt(hp));
         revenue[hp] += rev2;
         outputVat[hp] += round(rev2 * outRate(plan.cropId));
         // Zweitfrucht läuft ohne Abnahmevertrag → globaler DSO, keine Vorfinanzierung.
@@ -1077,11 +1087,57 @@ function computeOperating(
     bioAssets[p] = bioRunning;
   }
 
+  /* --- Deckungskauf bei Untererfüllung (Paket C) ----------------------------
+   * Zwei der drei Verträge geben dem Abnehmer bei Untererfüllung ein Recht, zu Marktpreisen
+   * zuzukaufen und NEOTERRA die Preisdifferenz in Rechnung zu stellen — bei PepsiCo ohne
+   * Deckelung, bei VIA AGRO ab dem 15.11. (3.6) bzw. bei fehlendem Pflanzgutbeleg (5.10).
+   * Das ist ein negativ korrelierter Cashflow: er entsteht genau dann, wenn die Ernte
+   * schlecht ausfällt und die Marktpreise hoch stehen.
+   *
+   * Fehlmenge = kontrahierte Tonnage − tatsächlich zugeteilte Menge. Bei volumeMode 'share'
+   * kann per Definition keine Fehlmenge entstehen (der Anteil folgt der Ernte). Gebucht wird
+   * zur LETZTEN Ernteperiode der Kultur im jeweiligen Jahr — dann steht die Fehlmenge fest.
+   * Läuft als Betriebsaufwand ins EBITDA, damit im Worst Case sichtbar wird, dass der
+   * Ertragsausfall doppelt trifft: weniger Erlös UND Strafzahlung. */
+  const coverPurchaseCost = zeros(n);
+  const coverPremium = resolveAssumption(state, "market.cover_premium", chain, n, ppy);
+  const lastHarvestOfCropYear = new Map<string, number>();
+  for (const c of calcs) {
+    for (const h of c.plan.harvestPeriods) {
+      if (h < 0 || h >= n) continue;
+      const k = `${c.plan.cropId}:${Math.floor(h / ppy)}`;
+      const cur = lastHarvestOfCropYear.get(k);
+      if (cur === undefined || h > cur) lastHarvestOfCropYear.set(k, h);
+    }
+  }
+  for (const [cropId, list] of byCrop) {
+    const tons = tonnesByCropYear.get(cropId);
+    const mixYears = mix.get(cropId);
+    if (!mixYears) continue;
+    for (let y = 0; y < years; y++) {
+      const period = lastHarvestOfCropYear.get(`${cropId}:${y}`);
+      if (period === undefined) continue;
+      const total = tons ? tons[y] : 0;
+      let shortfall = 0;
+      for (const c of list) {
+        if (!c.coverPurchase || c.volumeMode !== 'tonnes') continue;
+        const pt = mixYears[y]?.parts.find((q) => q.c.id === c.id);
+        const allocated = pt ? pt.s * total : 0;
+        shortfall += Math.max(0, (c.tonnesPerYear ?? 0) - allocated);
+      }
+      if (shortfall <= 0) continue;
+      coverPurchaseCost[period] += round(shortfall * (coverPremium[period] ?? 0));
+    }
+  }
+
   // TODO: Ernte-auf-Lager (Fertigerzeugnisse) — braucht einen Lieferplan, der auch den
   // Umsatz aus dem Erntemonat in die Liefermonate verschiebt. Bewusst offen; solange der
   // Umsatz vollständig im Erntemonat gebucht wird, liegt per Konstruktion keine fertige
   // Ware auf Lager (siehe wc.inv, Standard 0).
-  return { revenue, cogs, costIncurred, bioAssets, subsidies, inventoryValue, outputVat, receiptTerms, advances };
+  return {
+    revenue, cogs, costIncurred, bioAssets, subsidies, inventoryValue, outputVat,
+    receiptTerms, advances, coverPurchaseCost,
+  };
 }
 
 /* --------------------------------------------------------------------------
@@ -1382,7 +1438,13 @@ export function computeModel(
   );
   const wcChange = workingCapital.wcChange;
 
-  const opex = addArr(addArr(opexAssumptions, personnelCost), workingCapital.advanceSecurityFee);
+  // Deckungskauf (Paket C) und Avalprovision auf Anzahlungen sind Betriebsaufwand und damit
+  // EBITDA-wirksam — gewollt: im Worst Case soll sichtbar sein, dass ein Ertragsausfall
+  // zusätzlich eine Vertragsstrafe auslöst.
+  const opex = addArr(
+    addArr(addArr(opexAssumptions, personnelCost), workingCapital.advanceSecurityFee),
+    op.coverPurchaseCost,
+  );
 
   const ebitda = subArr(grossProfit, opex);
 
@@ -1647,6 +1709,7 @@ export function computeModel(
     state.workingCapital.inventoryDaysAssumptionKey,
     state.tax.corporateTaxRateKey,
   );
+  referencedKeys.push('quality.reject', 'market.cover_premium', 'infl.output');
   if (state.harvestAdvance?.active) {
     referencedKeys.push(state.harvestAdvance.rateAssumptionKey);
     if (state.harvestAdvance.costRateAssumptionKey) referencedKeys.push(state.harvestAdvance.costRateAssumptionKey);
@@ -1702,6 +1765,10 @@ export function computeModel(
     ? (resolveAssumption(state, 'covenant.leverage_max', chain, n, ppy)[0] ?? 3.5) : 3.5;
   const dscrOffending: PeriodIndex[] = []; let dscrMaxShortfall = 0;
   const levOffending: PeriodIndex[] = []; let levMaxExcess = 0;
+  /** Jahre mit Netto-Verschuldung UND EBITDA <= 0: die Kennzahl ist nicht berechenbar, die
+   *  Auflage aber erst recht nicht erfüllt. Vorher wurden solche Jahre stillschweigend
+   *  übersprungen — der Check meldete "grün", je schlechter das Ergebnis wurde. */
+  let levNotComputable = 0;
   for (const ye of yearEnds) {
     const win = Math.min(ppy, ye + 1);
     const yEbitda = sumWin(ebitda, ye, win);
@@ -1713,10 +1780,14 @@ export function computeModel(
       const v = yCfo / yDs;
       if (Number.isFinite(v) && v < dscrMin) { dscrOffending.push(ye); dscrMaxShortfall = Math.max(dscrMaxShortfall, dscrMin - v); }
     }
-    // Leverage (nur wenn Jahres-EBITDA positiv)
+    // Leverage: bei positivem Jahres-EBITDA als Verhältnis, sonst als nicht einhaltbar.
     if (yEbitda > 0) {
       const v = yNetDebt / yEbitda;
       if (Number.isFinite(v) && v > leverageMax) { levOffending.push(ye); levMaxExcess = Math.max(levMaxExcess, v - leverageMax); }
+    } else if (yNetDebt > 0) {
+      // EBITDA <= 0 bei Netto-Verschuldung: aus negativem Ergebnis ist kein Kapitaldienst
+      // zu leisten. Als gerissen ausweisen statt den Check zu überspringen.
+      levOffending.push(ye); levNotComputable++;
     }
   }
   checks.push({
@@ -1727,7 +1798,9 @@ export function computeModel(
   });
   checks.push({
     id: 'leverage_covenant',
-    label: `Net Debt / EBITDA ≤ ${leverageMax.toFixed(2)} (Verschuldungsgrenze, p.a.)`,
+    label: levNotComputable > 0
+      ? `Net Debt / EBITDA ≤ ${leverageMax.toFixed(2)} (Verschuldungsgrenze, p.a.) — in ${levNotComputable} Jahr(en) nicht berechenbar: EBITDA ≤ 0 bei Netto-Verschuldung`
+      : `Net Debt / EBITDA ≤ ${leverageMax.toFixed(2)} (Verschuldungsgrenze, p.a.)`,
     passed: levOffending.length === 0, maxDeviation: levMaxExcess,
     offendingPeriods: levOffending, severity: 'warning',
   });
@@ -1743,6 +1816,7 @@ export function computeModel(
         'Bei der Ernte aus dem Feldbestand entlastet — nicht bei Kostenentstehung. Der Zahlungsstrom folgt den entstandenen Kosten (Verbindlichkeiten), nicht dieser Zeile.'),
       grossProfit: makeLine('pnl.gross_profit', 'Rohertrag', 'money', grossProfit, ['pnl.revenue', 'pnl.subsidies', 'pnl.cogs']),
       opex: makeLine('pnl.opex', 'OpEx / SG&A', 'money', opex),
+      coverPurchase: makeLine('pnl.cover_purchase', 'davon: Deckungskauf (Untererfüllung Kontrakt)', 'money', op.coverPurchaseCost),
       ebitda: makeLine('pnl.ebitda', 'EBITDA', 'money', ebitda, ['pnl.gross_profit', 'pnl.opex']),
       depreciation: makeLine('pnl.depreciation', 'Abschreibung (bilanziell)', 'money', depCommercial),
       fairValueChangeBio: makeLine('pnl.fv_bio', 'FV-Änderung biol. Vermögen', 'money', fvBio),

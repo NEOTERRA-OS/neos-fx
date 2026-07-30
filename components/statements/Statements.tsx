@@ -11,7 +11,8 @@ function pnlRows(c: ComputedModel): GridRow[] {
   return [
     { item: p.revenue }, { item: p.subsidies }, { item: p.cogs },
     { item: p.grossProfit, emphasis: true },
-    { item: p.opex }, { item: p.ebitda, emphasis: true },
+    { item: p.opex },
+    ...(p.coverPurchase ? [{ item: p.coverPurchase }] : []), { item: p.ebitda, emphasis: true },
     { item: p.depreciation }, { item: p.ebit, emphasis: true },
     { item: p.interest }, { item: p.pbt, emphasis: true },
     { item: p.currentTax, level: 1 }, { item: p.deferredTax, level: 1 }, { item: p.tax },

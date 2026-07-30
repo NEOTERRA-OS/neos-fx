@@ -1150,7 +1150,11 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Pestova erreicht). Best 7 = besser als jeder vorliegende Vertrag. Worst 28 = PepsiCos
   // effektives Ziel inkl. Sperrfenster. Die 47 Tage von VIA AGRO liegen damit AUSSERHALB des
   // Bandes — bleibt dieser Vertrag unverändert, ist das Band nach oben zu erweitern.
-  A("wc.dso", "wc.dso", "Zahlungsziel Forderungen (DSO)", "days", 14, 7, 28),
+  // Worst 47 = das gewichtete Zahlungsziel von VIA AGRO (50 % @ 15 AT · 25 % @ 45 AT ·
+  //  25 % @ 60 AT). Ein Worst Case, der ein besseres Ziel unterstellt als der schlechteste
+  //  laufende Vertrag, wäre keiner. Fällt der VIA-AGRO-Rahmenvertrag weg, kann Worst auf 28
+  //  (PepsiCos effektives Ziel inkl. Sperrfenster) zurückgenommen werden.
+  A("wc.dso", "wc.dso", "Zahlungsziel Forderungen (DSO)", "days", 14, 7, 47),
   A("wc.dpo", "wc.dpo", "DPO (Verb.-Tage)", "days", 30),
   // Fertigerzeugnisse (Ernte auf Lager) — STANDARD 0. Solange der Umsatz vollständig im
   // Erntemonat gebucht wird, liegt per Konstruktion keine fertige Ware auf Lager; ein Wert
@@ -1444,7 +1448,34 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Pflanzenschutz-Stücksatz — bis hierher teilte sich PSM den Pauschalsatz mit Material und
   //  Handarbeit, ein PSM-Regler hätte zwei fremde Kostenblöcke mitgezogen. Jetzt eigener Satz.
   A("psm.per_euro", "psm.per_euro", "Pflanzenschutz-Stücksatz (1 € = 100 ct)", "money", 100),
+
+  /* --- Paket C: Downside ------------------------------------------------- */
+  // Zurückweisungsquote am Werkstor. EINHEITLICH für alle Erlöse (Kontrakt und Spot), weil
+  //  auch ein Händler zurückweist und weil ein Satz je Kontrakt das Modell an den heutigen
+  //  Abnehmermix fesselt. Grundlage: VIA-AGRO-Prüfprotokoll ANEXA 1F-P.2.2.-9 mit harten
+  //  Ausschlussgrenzen (>200 Punkte, UWG <345/>480 g, Trockenmasse <19 %, Zucker >4 g/l,
+  //  Erde ≥10 % ab Feld bzw. ≥6 % ab Lager, Steine >1 %, Schwimmer ≥6 %, Phytophthora,
+  //  Mindesttemperatur 8 °C). Der Erzeuger verzichtet auf Ansprüche für zurückgewiesene Ware
+  //  (6.2) und trägt den Rücktransport (6.7) — Letzterer ist hier NOCH NICHT bewertet.
+  //  Wirkt als Erlösabschlag; die COGS bleiben unberührt, denn die Ware ist gewachsen.
+  A("quality.reject", "quality.reject", "Zurückweisungsquote am Werkstor", "rate", 0.03, 0.01, 0.05),
+  // Deckungskauf: Marktaufschlag je Tonne Fehlmenge, den der Abnehmer NEOTERRA in Rechnung
+  //  stellt (VIA AGRO 3.6 / 5.10, PepsiCo ohne Deckelung). Negativ korreliert: er entsteht
+  //  genau dann, wenn die Ernte schlecht ausfällt und die Marktpreise hoch stehen.
+  A("market.cover_premium", "market.cover_premium", "Deckungskauf-Aufschlag je t Fehlmenge", "money_per_tonne", 3000, 0, 8000),
 ]);
+
+/* Begründungspflichtige Annahmen (Paket C). Die Kartoffelerträge liegen über der
+ * rumänischen Evidenz; der einzige EXTERNE, vertraglich bindende Anker ist Pestova mit
+ * 36 t/ha auf 28,2 ha. Sie sind damit nicht falsch, aber belegpflichtig — im Register
+ * sichtbar als strittig markiert, damit sie nicht unbemerkt in den Investorencase wandern. */
+for (const [key, note] of [
+  ["yield.kartoffel_chips", "42 t/ha liegen 17 % über dem einzigen externen Anker: Pestova schreibt 36 t/ha als vertragliche Produktionsverpflichtung fest (SALES CONTRACT NO 03/2026). Worst Case steht auf 35 t/ha und damit unter dem Anker. Base ist zu belegen."],
+  ["yield.kartoffel_pommes", "45 t/ha liegen über der rumänischen Evidenz (siehe NEOS-FX-Agronomie-Nachschlag2-Research.md). Kein externer Vertragsanker vorhanden, weil VIA AGRO Anexa 1 unbefüllt ist. Base ist zu belegen."],
+] as const) {
+  const a = ASSUMPTIONS[key];
+  if (a) a.meta = { ...(a.meta ?? {}), status: "strittig", confidence: "niedrig", note };
+}
 
 /* --------------------------------------------------------------------------
  * KOSTENKATALOG je Kultur (Agronomie-Direktkosten → opLines).
@@ -5537,6 +5568,7 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
   ]},
   { group: "Working Capital", keys: ["wc.dso", "wc.dpo", "wc.inv"] },
   { group: "Anzahlungen Off-taker (Annahme)", keys: ["advance.rate", "advance.cost_rate", "advance.aval_fee"] },
+  { group: "Downside (Zurückweisung & Deckungskauf)", keys: ["quality.reject", "market.cover_premium"] },
   { group: "Subventionen", keys: ["subsidy.per_ha", "subsidy.coupled_freilandgemuese", "rev.gerste_zweitfrucht"] },
   { group: "Covenants", keys: ["covenant.dscr_min", "covenant.leverage_max"] },
 ];

@@ -672,6 +672,9 @@ export interface IncomeStatement {
   cogs: LineItem;
   grossProfit: LineItem;
   opex: LineItem;
+  /** Nachrichtlich: „davon" aus der OpEx-Zeile — Deckungskauf bei Untererfüllung (Paket C).
+   *  NICHT zusätzlich addieren. */
+  coverPurchase?: LineItem;
   ebitda: LineItem;
   depreciation: LineItem;
   fairValueChangeBio: LineItem;       // IAS 41, 0 wenn deaktiviert
