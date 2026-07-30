@@ -33,6 +33,7 @@ import type {
   UUID,
   PeriodIndex,
   CropPlan,
+  OfftakeContract,
   FinancingContract,
   FinancingSchedule,
   FinancingScheduleRow,
@@ -503,7 +504,16 @@ function computeOperating(
     return t === 'standard' ? vat.standardRate : t === 'reduced' ? vat.reducedRate : 0; // reverse_charge/export/zero → 0
   };
 
-  for (const plan of state.cropPlans) {
+  // --- Durchgang 1: Netto-Erntemengen je Plan/Periode -----------------------
+  // Die Vertragsaufteilung braucht die Gesamtmenge je Kultur, BEVOR der Umsatz
+  // gerechnet wird — deshalb zwei Durchgänge über die Anbaupläne.
+  interface PlanCalc {
+    plan: CropPlan;
+    priceEurT: number[];   // Spot-/Kulturpreis aus den Annahmen (CENT/t)
+    qual: number[];        // Qualitätserfüllung 0..1 (1 = voll)
+    netT: number[];        // Netto-Erntemenge in t je Periode
+  }
+  const calcs: PlanCalc[] = state.cropPlans.map((plan) => {
     const yieldTHa = resolveAssumption(state, plan.yieldAssumptionKey, chain, n, ppy);
     const priceEurT = resolveAssumption(state, plan.priceAssumptionKey, chain, n, ppy);
     const lossRate = plan.lossRateAssumptionKey
@@ -512,15 +522,68 @@ function computeOperating(
     const qualFactor = plan.qualityAssumptionKey
       ? resolveAssumption(state, plan.qualityAssumptionKey, chain, n, ppy)
       : null;
-
+    const qual = zeros(n).map((_, p) => (qualFactor ? (qualFactor[p] > 0 ? qualFactor[p] : 1) : 1));
+    const netT = zeros(n);
     for (const p of plan.harvestPeriods) {
       if (p < 0 || p >= n) continue;
       const mf = maturityFactor(state, plan, p, ppy);
-      const effYield = yieldTHa[p] * mf * plan.areaHa;              // t
-      const netTonnes = effYield * (1 - lossRate[p]);
+      netT[p] = yieldTHa[p] * mf * plan.areaHa * (1 - lossRate[p]);   // t
+    }
+    return { plan, priceEurT, qual, netT };
+  });
+
+  // --- Abnahmeverträge: Mischpreis je Kultur und JAHR ------------------------
+  // Kontraktmengen sind Jahresmengen; der Anteil gilt dann in allen Ernteperioden
+  // des Jahres. Ohne Vertrag bleibt share = 0 → voller Kulturpreis (Rückfall).
+  const years = Math.max(1, Math.ceil(n / ppy));
+  const tonnesByCropYear = new Map<string, number[]>();
+  for (const c of calcs) {
+    let arr = tonnesByCropYear.get(c.plan.cropId);
+    if (!arr) { arr = new Array(years).fill(0); tonnesByCropYear.set(c.plan.cropId, arr); }
+    for (let p = 0; p < n; p++) arr[Math.floor(p / ppy)] += c.netT[p];
+  }
+  const byCrop = new Map<string, OfftakeContract[]>();
+  for (const c of state.offtake ?? []) {
+    if (c.active === false) continue;
+    const l = byCrop.get(c.cropId);
+    if (l) l.push(c); else byCrop.set(c.cropId, [c]);
+  }
+  /** cropId → je Jahr { share: kontrahierter Mengenanteil, price: mengengewichteter Kontraktpreis }. */
+  const mix = new Map<string, { share: number; price: number }[]>();
+  for (const [cropId, list] of byCrop) {
+    const tons = tonnesByCropYear.get(cropId);
+    mix.set(cropId, Array.from({ length: years }, (_, y) => {
+      const total = tons ? tons[y] : 0;
+      let share = 0, valued = 0;
+      for (const c of list) {
+        const s = c.volumeMode === 'tonnes'
+          ? (total > 0 ? Math.min(1, (c.tonnesPerYear ?? 0) / total) : 0)
+          : Math.max(0, Math.min(1, c.share ?? 0));
+        if (s <= 0) continue;
+        // Realisierter Kontraktpreis: Basis + erwarteter Bonus/Malus, gemindert um
+        // die erwartete Zurückweisungsquote am Werkstor.
+        const eff = (c.priceCentPerTonne + (c.bonusCentPerTonne ?? 0)) * (1 - (c.rejectRate ?? 0));
+        share += s; valued += s * eff;
+      }
+      // Übervergabe (Σ > 100 %): es gibt nur eine Ernte → proportional kürzen.
+      if (share > 1) { valued /= share; share = 1; }
+      return { share, price: share > 0 ? valued / share : 0 };
+    }));
+  }
+
+  // --- Durchgang 2: Umsatz, Zweitfrucht, Produktionskosten ------------------
+  for (const calc of calcs) {
+    const plan = calc.plan;
+    const mixYears = mix.get(plan.cropId);
+
+    for (const p of plan.harvestPeriods) {
+      if (p < 0 || p >= n) continue;
+      const m = mixYears?.[Math.floor(p / ppy)];
+      const spot = calc.priceEurT[p];
+      // Mischpreis: kontrahierter Anteil zum Vertragspreis, Rest zum Kulturpreis.
+      const blended = m && m.share > 0 ? m.share * m.price + (1 - m.share) * spot : spot;
       // Kontrakt-Qualitätserfüllung: realisierter Preis nach Bonus/Malus × akzeptierte Menge (0..1).
-      const qual = qualFactor ? (qualFactor[p] > 0 ? qualFactor[p] : 1) : 1;
-      const rev = round(netTonnes * priceEurT[p] * qual);          // €/t in Minor-Units
+      const rev = round(calc.netT[p] * blended * calc.qual[p]);     // €/t in Minor-Units
       revenue[p] += rev;
       outputVat[p] += round(rev * outRate(plan.cropId));           // Ausgangs-USt (0 bei Reverse-Charge)
     }

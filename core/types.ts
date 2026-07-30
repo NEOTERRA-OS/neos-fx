@@ -472,6 +472,53 @@ export interface BiologicalAssetPolicy {
 }
 
 /* --------------------------------------------------------------------------
+ * 7b. Abnahmeverträge (Off-take) — kontraktspezifischer Preis statt Punktwert
+ * ------------------------------------------------------------------------ */
+
+/** Ein Liefervertrag mit einem Abnehmer. GENERISCH über cropId — die Mechanik gilt
+ *  für jede Kultur; befüllt ist zunächst nur Kartoffel (VIA AGRO / PepsiCo / Pestova).
+ *
+ *  Umsatzlogik (computeOperating): Die Erntemenge einer Kultur wird je Jahr auf die
+ *  aktiven Verträge aufgeteilt; die Restmenge geht zum Kulturpreis (Spot) aus den
+ *  Annahmen weg. OHNE Vertrag bleibt es exakt beim bisherigen Verhalten. */
+export interface OfftakeContract {
+  id: UUID;
+  /** Abnehmer (Anzeigename). */
+  buyer: string;
+  /** Kultur, auf die der Vertrag zielt (CatalogEntry.cropId). */
+  cropId: UUID;
+  /** false → Vertrag ruht (keine Mengen-/Preiswirkung). */
+  active: boolean;
+  /** Mengenbindung: feste Jahres-Tonnage oder Anteil der Erntemenge. */
+  volumeMode: 'tonnes' | 'share';
+  /** Kontraktmenge in t/Jahr (nur volumeMode='tonnes'). */
+  tonnesPerYear?: number;
+  /** Anteil der Erntemenge 0..1 (nur volumeMode='share'). */
+  share?: number;
+  /** Kontrakt-Basispreis in CENT je Tonne. Fix — die Verträge sind NICHT indexiert. */
+  priceCentPerTonne: Money;
+  /** false → Basispreis ist ein Platzhalter (im Vertrag nicht befüllt) und wird in der
+   *  Oberfläche sichtbar markiert. */
+  priceConfirmed: boolean;
+  /** Erwarteter Bonus/Malus aus der Qualitätsleiter, CENT/t (kann negativ sein). */
+  bonusCentPerTonne?: Money;
+  /** Anteil des Bonus, der erst deutlich später fließt (VIA AGRO: Auszahlung ab 01.12.). */
+  bonusDelayDays?: number;
+  /** Gewichtetes Zahlungsziel in Kalendertagen (Working-Capital-Paket B). */
+  dsoDays: number;
+  /** Erwartete Zurückweisungsquote am Werkstor 0..1 → mindert die abgerechnete Menge. */
+  rejectRate?: number;
+  /** Lagerpflicht: 'none' = kein Lager, 'atCost' = auf eigene Kosten ohne Prämie,
+   *  'bonus' = Lagerung wird vergütet. */
+  storage?: 'none' | 'atCost' | 'bonus';
+  /** Deckungskauf-Haftung bei Untererfüllung (Downside-Paket C). */
+  coverPurchase?: boolean;
+  /** Forderung abtretbar? false → nicht bankfähig (kein Factoring). */
+  assignable?: boolean;
+  note?: string;
+}
+
+/* --------------------------------------------------------------------------
  * 8. ModelState — der vollständige, editierbare Eingabezustand
  * ------------------------------------------------------------------------ */
 
@@ -498,6 +545,8 @@ export interface ModelState {
   /** USt-/TVA-Mechanik (RO). Optional; fehlt/enabled=false → keine USt-Wirkung. */
   vat?: VatPolicy;
   subsidies: Subsidy[];
+  /** Abnahmeverträge je Kultur. Fehlt/leer → Umsatz komplett zum Kulturpreis (Spot). */
+  offtake?: OfftakeContract[];
   biologicalAssets: BiologicalAssetPolicy;
   /** Personalplanung (RO-Standard). Optional; Arbeitgeberaufwand fließt in OpEx. */
   personnel?: PersonnelPlan;

@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Sprout, Route, BookOpen, ClipboardList, Tractor, Gauge, CalendarRange, RefreshCw,
   TrendingUp, Users, Briefcase, Clock, Landmark, BadgeEuro, Building2, Workflow, ScrollText,
   SlidersHorizontal, LineChart, Scale, Activity, Wallet, Percent, PieChart, GitCompare, Calculator,
-  CircleDollarSign, Save, Circle, Coins, ArrowUpFromDot, Network, FlaskConical, ClipboardCheck, MessageSquare, UserCog, type LucideIcon,
+  CircleDollarSign, Save, Circle, Coins, ArrowUpFromDot, Network, FlaskConical, ClipboardCheck, MessageSquare, UserCog, Handshake, type LucideIcon,
 } from "lucide-react";
 
 /** NEOS Sidebar — pixelgenau nach NEOS Sidebar DS (extrahiert aus NEOS Snap/Index).
@@ -19,7 +19,7 @@ export type ViewId =
   | "einsatz" | "bewertung" | "contribution" | "overhead" | "verwaltung"
   | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht" | "anbaustrategie" | "hebel"
   | "gesellschaften" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
-  | "studio";
+  | "studio" | "abnahme";
 
 type Item = { id: string; label: string; view?: ViewId };
 type Group = { title: string; items: Item[] };
@@ -34,6 +34,7 @@ const IA: Group[] = [
     { id: "produktkatalog", label: "Produktkatalog (Dünger · PSM · Sorten)", view: "produktkatalog" },
     { id: "anbaustrategie", label: "Anbaustrategie & Fruchtfolge", view: "anbaustrategie" },
     { id: "hebel", label: "Wertkulturen-Hebel (Gesellschafter)", view: "hebel" },
+    { id: "abnahme", label: "Abnahmeverträge (Off-taker)", view: "abnahme" },
   ]},
   { title: "Maschinen & Flotte", items: [
     { id: "leistung", label: "Performance Review", view: "leistung" },
@@ -80,7 +81,7 @@ const IA: Group[] = [
 
 /** Sidebar-Icons — echte Lucide-Icons (konsistent, currentColor). */
 const ICON: Record<string, LucideIcon> = {
-  dashboard: LayoutDashboard, anbauplan: Sprout, kulturkalk: ClipboardList, produktkatalog: FlaskConical, anbaustrategie: Route, hebel: ArrowUpFromDot,
+  dashboard: LayoutDashboard, anbauplan: Sprout, kulturkalk: ClipboardList, produktkatalog: FlaskConical, anbaustrategie: Route, hebel: ArrowUpFromDot, abnahme: Handshake,
   maschinen: Tractor, investitionen: Coins, leistung: Gauge, einsatz: CalendarRange,
   capexScenarien: GitCompare,
   ersatz: RefreshCw, mehrjahr: TrendingUp, personal: Users, overhead: Briefcase, arbeitszeit: Clock,

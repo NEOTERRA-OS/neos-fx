@@ -59,9 +59,11 @@ import type {
   Entity,
   OpeningBalance,
   BiologicalAssetPolicy,
+  OfftakeContract,
   UUID,
   CheckResult,
 } from "../core/types";
+export type { OfftakeContract } from "../core/types";
 import { DEFAULT_PRODUCTS, type CatalogProduct } from "./productCatalog";
 export type { CatalogProduct } from "./productCatalog";
 
@@ -352,6 +354,9 @@ export type Domain = {
   productCatalog?: CatalogProduct[];
   /** Kommentar-Threads (Team-Diskussion) je Ziel (Treiber/Zahl). Im gemeinsamen Cloud-Stand. */
   comments?: CommentThread[];
+  /** Abnahmeverträge (Off-taker) je Kultur — kontraktspezifischer Preis statt Punktwert.
+   *  Fehlt/leer → Umsatz rechnet unverändert mit dem Kulturpreis aus den Annahmen. */
+  offtake?: OfftakeContract[];
 };
 
 /** Kommentar-Thread an einem Ziel (z. B. Annahme, Maßnahme). Nachrichten chronologisch. */
@@ -1203,10 +1208,12 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("price.tomate", "price.tomate", "Preis Industrietomate", "money_per_tonne", 12000, 13800, 10200),
   A("loss.tomate", "loss.tomate", "Verlust Industrietomate", "rate", 0.08),
   A("yield.kartoffel_pommes", "yield.kartoffel_pommes", "Ertrag Kartoffel (Pommes)", "tonne_per_ha", 45, 50, 38),
-  A("price.kartoffel_pommes", "price.kartoffel_pommes", "Preis Kartoffel (Pommes)", "money_per_tonne", 23500, 27025, 19975),
+  // Preisband aus den geprüften Abnahmeverträgen (PepsiCo Basis 220 €/t, max. 255,40;
+  //  Pestova 240 €/t flat; VIA AGRO Leiter −0,15…+0,11 RON/kg). Spot/Rest-Menge.
+  A("price.kartoffel_pommes", "price.kartoffel_pommes", "Preis Kartoffel (Pommes)", "money_per_tonne", 23500, 25500, 22000),
   A("loss.kartoffel_pommes", "loss.kartoffel_pommes", "Verlust Kartoffel (Pommes)", "rate", 0.10),
   A("yield.kartoffel_chips", "yield.kartoffel_chips", "Ertrag Kartoffel (Chips)", "tonne_per_ha", 42, 47, 35),
-  A("price.kartoffel_chips", "price.kartoffel_chips", "Preis Kartoffel (Chips)", "money_per_tonne", 25000, 28750, 21250),
+  A("price.kartoffel_chips", "price.kartoffel_chips", "Preis Kartoffel (Chips)", "money_per_tonne", 23500, 25500, 22000),
   A("loss.kartoffel_chips", "loss.kartoffel_chips", "Verlust Kartoffel (Chips)", "rate", 0.10),
   A("yield.zwiebel_moehre", "yield.zwiebel_moehre", "Ertrag Zwiebel/Möhre", "tonne_per_ha", 60, 66, 51),
   A("price.zwiebel_moehre", "price.zwiebel_moehre", "Preis Zwiebel/Möhre", "money_per_tonne", 17500, 20125, 14875),
@@ -2567,6 +2574,74 @@ const SEED_OVERHEAD: OverheadItem[] = [
 export const OVERHEAD_GROUPS: string[] = [GA, FIN, IT, HR, PH, WH, LOG, MKT, SM, INS, QA, OTH];
 
 /* --------------------------------------------------------------------------
+ * ABNAHMEVERTRÄGE (Off-take) — aus den drei geprüften Kartoffelkontrakten.
+ * Quelle: Projektdoku „NEOS-FX-Abnahmeverträge-Kartoffel". Alle Preise CENT/t.
+ * Umrechnung RON → EUR mit 5,0 (Vertragskurs-Näherung).
+ * Die Mechanik ist generisch über cropId — befüllt ist bislang nur Kartoffel.
+ * ------------------------------------------------------------------------ */
+export const OFFTAKE_SEED: OfftakeContract[] = [
+  {
+    // Rahmenvertrag bis 30.12.2026. Anexa 1 (Menge/Basispreis) ist UNBEFÜLLT →
+    // Preis ist ein Platzhalter auf Höhe des Kulturpreises und in der Ansicht markiert.
+    // Bonus/Malus-Leiter −0,15 … +0,11 RON/kg ist asymmetrisch nach unten → Erwartungswert 0.
+    id: "ot-viaagro",
+    buyer: "VIA AGRO S.R.L.",
+    cropId: "kartoffel_pommes",
+    active: true,
+    volumeMode: "share",
+    share: 0.10,
+    priceCentPerTonne: 23500,
+    priceConfirmed: false,
+    bonusCentPerTonne: 0,
+    bonusDelayDays: 90,   // Qualitäts-/Lagerbonus separat fakturiert, frühestens ab 01.12.
+    dsoDays: 47,          // 50 % @ 15 AT · 25 % @ 45 AT · 25 % @ 60 AT ≈ 21/63/84 KT
+    rejectRate: 0,
+    storage: "bonus",
+    coverPurchase: true,  // 3.6 / 5.10 — Deckungskauf zulasten NEOTERRA
+    assignable: false,    // 14.3 — Abtretung nur mit schriftlicher Zustimmung
+    note: "Basispreis in Anexa 1 nicht befüllt — Platzhalter. Mengenanteil ist eine Planungsannahme. Dürre ist ausdrücklich KEIN Entschuldigungsgrund (§6.6).",
+  },
+  {
+    // Vertrag NEO-19378495, 06.04.2026 – 31.01.2027, 1.000 t (2 × 500 t).
+    // Basis 1.100 RON/t = 220 €/t. Bonus: +100 RON/t Menge (≥95 %) + 47,5–77 RON/t Defektstufe.
+    // Angesetzt: Mengenbonus erreicht + mittlere Defektstufe 56 RON/t → 156 RON/t = 31,20 €/t.
+    id: "ot-pepsico",
+    buyer: "STAR FOODS E.M. S.R.L. (PepsiCo)",
+    cropId: "kartoffel_chips",
+    active: true,
+    volumeMode: "tonnes",
+    tonnesPerYear: 1000,
+    priceCentPerTonne: 22000,
+    priceConfirmed: true,
+    bonusCentPerTonne: 3120,
+    dsoDays: 28,          // nominell 14 d, effektiv 14–28+ (Sperrfenster Monatsanfang/Feiertage/21.–31.12.)
+    rejectRate: 0,
+    storage: "atCost",    // bis ~6 Monate auf Kosten und Risiko NEOTERRA, ohne Prämie
+    coverPurchase: true,  // ohne Deckelung
+    assignable: true,
+    note: "Kein Investitionsschutz (Art. 13.3), Kündigung beidseitig mit 30 Tagen. Carbon Credits vertraglich blockiert.",
+  },
+  {
+    // SALES CONTRACT NO 03/2026, 17.03. – 01.10.2026, 28,2 ha × 36 t/ha = 1.015,2 t, 240 €/t FCA.
+    id: "ot-pestova",
+    buyer: "Pestova shpk (XK)",
+    cropId: "kartoffel_chips",
+    active: true,
+    volumeMode: "tonnes",
+    tonnesPerYear: 1015.2,
+    priceCentPerTonne: 24000,
+    priceConfirmed: true,
+    bonusCentPerTonne: 0,
+    dsoDays: 14,
+    rejectRate: 0,
+    storage: "none",      // Lagerung beim Erzeuger ausdrücklich ausgeschlossen
+    coverPurchase: false,
+    assignable: false,    // Eigentumsgarantie + Aufrechnung gegen Kaufvertrag Nr. 4/2026
+    note: "Zahlung ggf. per Aufrechnung gegen Maschinen-Kaufvertrag Nr. 4/2026 (Verpackungsanlage) — dann Sachleistung statt Cash. 36 t/ha sind vertraglich bindend.",
+  },
+];
+
+/* --------------------------------------------------------------------------
  * SEED — die vollständig vorbefüllte Domäne (Default: Stufe 1).
  * ------------------------------------------------------------------------ */
 export const SEED: Domain = {
@@ -2664,6 +2739,7 @@ export const SEED: Domain = {
     ],
     scenarios: [],
   },
+  offtake: OFFTAKE_SEED,
 };
 
 /* --------------------------------------------------------------------------
@@ -2684,7 +2760,7 @@ function scenarioChainOf(domain: Domain, scenarioId: string): string[] {
 }
 
 /** Auflösen eines Annahmewerts (Periode 0 / konstant) für ein Szenario. */
-function resolveScalar(domain: Domain, key: string, scenarioId: string): number {
+export function resolveScalar(domain: Domain, key: string, scenarioId: string): number {
   const a = domain.assumptions[key];
   if (!a) return 0;
   for (const sid of scenarioChainOf(domain, scenarioId)) {
@@ -5332,6 +5408,8 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     tax: domain.tax,
     vat: domain.vat,
     subsidies,
+    // Abnahmeverträge: nur aktive, und nur solche mit einer Kultur im Katalog.
+    offtake: (domain.offtake ?? []).filter((c) => c.active !== false && domain.catalog.some((k) => k.cropId === c.cropId)),
     biologicalAssets: domain.biologicalAssets,
     personnel: domain.personnel,
     holding: domain.holding,

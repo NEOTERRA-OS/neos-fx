@@ -30,6 +30,7 @@ import { ShareholderView } from "../inputs/ShareholderView";
 import { PachtView } from "../inputs/PachtView";
 import { AnbaustrategieView } from "../inputs/AnbaustrategieView";
 import { WertkulturenHebelView } from "../inputs/WertkulturenHebelView";
+import { AbnahmevertraegeView } from "../inputs/AbnahmevertraegeView";
 import { CapexScenarienView } from "../inputs/CapexScenarienView";
 import { ContributionView } from "../inputs/ContributionView";
 import { OverheadView } from "../inputs/OverheadView";
@@ -187,6 +188,7 @@ export function AppShell() {
                 : view === "arbeitszeit" ? <ArbeitszeitkontoView />
                 : view === "einsatz" ? <EinsatzView />
                 : view === "studio" ? <ScenarioStudioView />
+                : view === "abnahme" ? <AbnahmevertraegeView />
                 : view === "bewertung" ? <BewertungView />
                 : view === "shareholder" ? <ShareholderView />
                 : view === "pacht" ? <PachtView />

@@ -239,5 +239,47 @@ const B12: Record<string, string> = {
   "+50 % EURIBOR, +30 % Diesel, +25 % Dünger.": "+50 % EURIBOR, +30 % diesel, +25 % fertiliser.",
   "Tornado — Wirkung je Treiber": "Tornado — impact per driver",
   "Zielgröße": "Target metric",
+
+  /* --- Abnahmeverträge (Off-taker) --- */
+  "Abnahmeverträge (Off-taker)": "Off-take contracts (buyers)",
+  "Vertrag hinzufügen": "Add contract",
+  "Vertrag löschen": "Delete contract",
+  "Mischpreis & Zahlungsziel je Kultur": "Blended price & payment term per crop",
+  "Je Kultur wird die Erntemenge auf die aktiven Verträge aufgeteilt; die Restmenge geht zum Kulturpreis aus den Annahmen weg (Spot). Ohne Vertrag rechnet das Modell unverändert mit dem Kulturpreis. Die Kontraktpreise sind ":
+    "Per crop the harvest is allocated across the active contracts; the remainder is sold at the crop price from the assumptions (spot). Without a contract the model calculates exactly as before, at the crop price. Contract prices are ",
+  "fix und nicht indexiert": "fixed and not indexed",
+  " — über den Mehrjahresplan fällt der Mischpreis deshalb hinter den Spotpreis zurück.":
+    " — so over the multi-year plan the blended price falls behind the spot price.",
+  " — der Basispreis ist im Vertrag nicht befüllt. Der angesetzte Wert ist eine Annahme und muss nachgefordert werden.":
+    " — the base price is not filled in the contract. The value used is an assumption and must be requested.",
+  "Keine Abnahmeverträge hinterlegt — der Umsatz rechnet vollständig mit dem Kulturpreis.":
+    "No off-take contracts on file — revenue is calculated entirely at the crop price.",
+  "Erntemenge des ersten Planjahrs im aktuellen Szenario.": "Harvest volume of the first plan year in the current scenario.",
+  "Erntemenge": "Harvest volume",
+  "kontrahiert": "contracted",
+  "Kontraktpreis Ø": "Contract price Ø",
+  "Spotpreis": "Spot price",
+  "Mischpreis": "Blended price",
+  "Δ vs. Spot": "Δ vs. spot",
+  "Zahlungsziel Ø": "Payment term Ø",
+  "Zahlungsziel": "Payment term",
+  "Mengenbindung": "Volume commitment",
+  "feste Tonnage": "fixed tonnage",
+  "Anteil der Ernte": "share of harvest",
+  "der Erntemenge": "of the harvest",
+  "Kontraktmenge": "Contract volume",
+  "t/Jahr": "t/year",
+  "Basispreis": "Base price",
+  "Bonus/Malus": "Bonus/malus",
+  "Preis bestätigt": "Price confirmed",
+  "Platzhalterpreis": "Placeholder price",
+  "Platzhalter": "Placeholder",
+  "Zurückweisung": "Rejection rate",
+  "Lagerung": "Storage",
+  "Deckungskauf zulasten NEOTERRA. ": "Cover purchase at NEOTERRA's expense. ",
+  "Forderung nicht abtretbar (kein Factoring). ": "Receivable not assignable (no factoring). ",
+  "kein Lager": "no storage",
+  "auf eigene Kosten, ohne Prämie": "at own cost, no premium",
+  "Lagerbonus": "Storage bonus",
 };
 export default B12;
