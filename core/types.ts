@@ -675,6 +675,10 @@ export interface IncomeStatement {
   /** Nachrichtlich: „davon" aus der OpEx-Zeile — Deckungskauf bei Untererfüllung (Paket C).
    *  NICHT zusätzlich addieren. */
   coverPurchase?: LineItem;
+  /** Nachrichtlich: „davon" aus der OpEx-Zeile — Betriebskosten der Lagerung. */
+  storageCost?: LineItem;
+  /** Nachrichtlich: der im Umsatz enthaltene Lageraufschlag (Ertrag der Kostenstelle Lager). */
+  storageFeeRevenue?: LineItem;
   ebitda: LineItem;
   depreciation: LineItem;
   fairValueChangeBio: LineItem;       // IAS 41, 0 wenn deaktiviert

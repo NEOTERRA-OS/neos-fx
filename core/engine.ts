@@ -702,6 +702,14 @@ interface OperatingResult {
   advances: AdvanceFlow[];
   /** Deckungskauf-Aufwand bei Untererfüllung kontrahierter Mengen (Paket C) — Betriebsaufwand. */
   coverPurchaseCost: number[];
+  /** Betriebskosten der Lagerung (Energie, Ein-/Auslagerung) — Betriebsaufwand. */
+  storageCost: number[];
+  /** Eingelagerte Tonnage je Periode (Zugang) — für Belegung und Kostenstelle. */
+  storedTonnesIn: number[];
+  /** Lagerbestand in Tonnen zum Periodenende — Belegungskurve. */
+  storedTonnesBalance: number[];
+  /** Erlösaufschlag aus der Lagergebühr — der Ertrag der Kostenstelle Lager. */
+  storageFeeRevenue: number[];
 }
 
 function computeOperating(
@@ -802,6 +810,44 @@ function computeOperating(
   // Wirkt als Erlösabschlag; die Produktionskosten bleiben unberührt, weil die Ware gewachsen
   // und geerntet ist. Der Rücktransport zurückgewiesener Ware (VIA AGRO 6.7) ist NICHT bewertet.
   const rejectSeries = resolveAssumption(state, "quality.reject", chain, n, ppy);
+  /* --- Vermarktungskanal: direkt ab Feld gegen Lager -------------------------
+   * Die Planung ist von den Bestandsverträgen gelöst (die galten für 2025). Gerechnet wird
+   * mit zwei Kanälen je Kultur: die Tonnage, die DIREKT ab Feld weggeht, und die Tonnage,
+   * die EINGELAGERT wird. Lagerware erlöst später (Erntemonat + Lagerdauer), zum Preis des
+   * Auslagerungsmonats PLUS einem Aufschlag je Tonne und Lagermonat, den der Abnehmer zahlt.
+   * Der Schwund mindert die lieferbare MENGE, nicht die Kosten — die Herstellungskosten der
+   * verdorbenen Ware stecken bereits im Feldbestand. */
+  const has = (k: string) => !!state.assumptions[k];
+  const storeShareOf = (cropId: string): number => {
+    const k = `store.share.${cropId}`;
+    if (!has(k)) return 0;                       // ohne Quote: alles direkt ab Feld
+    const v = resolveAssumption(state, k, chain, n, ppy)[0] ?? 0;
+    return Math.max(0, Math.min(1, v));
+  };
+  // Das Lager existiert heute nicht — vor der Fertigstellung geht alles direkt ab Feld weg.
+  const storeFromP = has("store.from_month")
+    ? Math.max(0, Math.round(resolveAssumption(state, "store.from_month", chain, n, ppy)[0] ?? 0)) : 0;
+  const storeMonthsSeries = has("store.months")
+    ? resolveAssumption(state, "store.months", chain, n, ppy) : null;
+  const storeMonthsOf = (cropId: string): number => {
+    const k = `store.months.${cropId}`;
+    const v = has(k)
+      ? (resolveAssumption(state, k, chain, n, ppy)[0] ?? 0)
+      : (storeMonthsSeries ? (storeMonthsSeries[0] ?? 0) : 0);
+    return Math.max(0, Math.round(v));
+  };
+  const feeSeries = has("store.fee_per_t_month")
+    ? resolveAssumption(state, "store.fee_per_t_month", chain, n, ppy) : null;
+  const energySeries = has("store.energy_per_t_month")
+    ? resolveAssumption(state, "store.energy_per_t_month", chain, n, ppy) : null;
+  const handlingSeries = has("store.handling_per_t")
+    ? resolveAssumption(state, "store.handling_per_t", chain, n, ppy) : null;
+  const shrinkSeries = has("store.shrink_per_month")
+    ? resolveAssumption(state, "store.shrink_per_month", chain, n, ppy) : null;
+  const storageCost = zeros(n);
+  const storedTonnesIn = zeros(n);
+  const storedTonnesOut = zeros(n);
+  const storageFeeRevenue = zeros(n);
   const acceptAt = (p: number) => 1 - Math.max(0, Math.min(1, rejectSeries[p] ?? 0));
   const inflOutSeries = resolveAssumption(state, "infl.output", chain, n, ppy);
   const offtakeIdx = (y: number) => Math.pow(1 + (inflOutSeries[Math.min(y * ppy, n - 1)] ?? 0), y);
@@ -875,8 +921,59 @@ function computeOperating(
       // Mischpreis: kontrahierter Anteil zum Vertragspreis, Rest zum Kulturpreis.
       const blended = m && m.share > 0 ? m.share * m.price + (1 - m.share) * spot : spot;
       // Kontrakt-Qualitätserfüllung: realisierter Preis nach Bonus/Malus × akzeptierte Menge (0..1).
+      /* Kanal-Split: die eingelagerte Tonnage erlöst später und teurer, die Direktware
+       * sofort zum Feldpreis. Ohne Einlagerungsquote ist storedT = 0 und es bleibt exakt
+       * beim bisherigen Verhalten. */
+      const share = p >= storeFromP ? storeShareOf(plan.cropId) : 0;
+      const months = share > 0 ? storeMonthsOf(plan.cropId) : 0;
+      const storedT = calc.netT[p] * share;
+      const directT = calc.netT[p] - storedT;
+
       // Erlösabschlag Zurückweisung: die zurückgewiesene Menge wird nicht bezahlt.
-      const rev = round(calc.netT[p] * blended * calc.qual[p] * acceptAt(p));
+      let rev = round(directT * blended * calc.qual[p] * acceptAt(p));
+
+      if (storedT > 0) {
+        const outP = p + months;
+        // Mengenstrom und Betriebskosten fallen in JEDEM Fall an — auch wenn die Auslagerung
+        // jenseits des Horizonts liegt.
+        storedTonnesIn[p] += storedT;
+        const handling = handlingSeries ? (handlingSeries[p] ?? 0) : 0;
+        storageCost[p] += round(storedT * handling);              // Ein-/Auslagerung, Durchsatz
+        const energy = energySeries ? (energySeries[p] ?? 0) : 0;
+        for (let q = p + 1; q <= Math.min(outP, n - 1); q++) {
+          storageCost[q] += round(storedT * energy);              // Energie je Lagermonat
+        }
+
+        if (outP < n) {
+          const shrink = shrinkSeries ? Math.max(0, shrinkSeries[p] ?? 0) : 0;
+          const outT = storedT * Math.max(0, 1 - shrink * months); // Schwund mindert die Menge
+          const fee = feeSeries ? (feeSeries[outP] ?? 0) : 0;
+          const spotOut = calc.priceEurT[outP] ?? blended;
+          const mOut = mixYears?.[Math.floor(outP / ppy)];
+          const baseOut = mOut && mOut.share > 0
+            ? mOut.share * mOut.price + (1 - mOut.share) * spotOut : spotOut;
+          const revStored = round(outT * (baseOut + fee * months) * calc.qual[outP] * acceptAt(outP));
+          // Der Aufschlagsanteil ist der Ertrag der Kostenstelle Lager (nachrichtlich).
+          storageFeeRevenue[outP] += round(outT * fee * months * calc.qual[outP] * acceptAt(outP));
+          storedTonnesOut[outP] += storedT;
+          if (outP === p) {
+            rev += revStored;                   // Lagerdauer 0 → gleiche Periode
+          } else {
+            revenue[outP] += revStored;
+            outputVat[outP] += round(revStored * outRate(plan.cropId));
+            if (advEligible(plan.cropId)) advBaseByYear[Math.floor(outP / ppy)] += revStored;
+            if (revStored !== 0) {
+              receiptTerms.push({
+                period: outP, amount: revStored, cropId: plan.cropId,
+                advanceEligible: advEligible(plan.cropId) || undefined,
+              });
+            }
+          }
+        }
+        // outP >= n: die Ware ist am Horizontende noch nicht verkauft. Kein Umsatz, kein
+        // Erlösstrom — sie bleibt im Lagerbestand stehen. Sie in die letzte Periode zu
+        // quetschen würde das Schlussjahr künstlich aufblähen.
+      }
       revenue[p] += rev;
       outputVat[p] += round(rev * outRate(plan.cropId));           // Ausgangs-USt (0 bei Reverse-Charge)
 
@@ -1134,9 +1231,18 @@ function computeOperating(
   // Umsatz aus dem Erntemonat in die Liefermonate verschiebt. Bewusst offen; solange der
   // Umsatz vollständig im Erntemonat gebucht wird, liegt per Konstruktion keine fertige
   // Ware auf Lager (siehe wc.inv, Standard 0).
+  // Belegungskurve: Bestand am Periodenende = Zugänge minus Abgänge, kumuliert.
+  const storedTonnesBalance = zeros(n);
+  let stRunning = 0;
+  for (let p = 0; p < n; p++) {
+    stRunning += storedTonnesIn[p] - storedTonnesOut[p];
+    storedTonnesBalance[p] = Math.max(0, stRunning);
+  }
+
   return {
     revenue, cogs, costIncurred, bioAssets, subsidies, inventoryValue, outputVat,
     receiptTerms, advances, coverPurchaseCost,
+    storageCost, storedTonnesIn, storedTonnesBalance, storageFeeRevenue,
   };
 }
 
@@ -1443,7 +1549,7 @@ export function computeModel(
   // zusätzlich eine Vertragsstrafe auslöst.
   const opex = addArr(
     addArr(addArr(opexAssumptions, personnelCost), workingCapital.advanceSecurityFee),
-    op.coverPurchaseCost,
+    addArr(op.coverPurchaseCost, op.storageCost),
   );
 
   const ebitda = subArr(grossProfit, opex);
@@ -1710,6 +1816,10 @@ export function computeModel(
     state.tax.corporateTaxRateKey,
   );
   referencedKeys.push('quality.reject', 'market.cover_premium', 'infl.output');
+  for (const k of ['store.months', 'store.from_month', 'store.fee_per_t_month',
+                   'store.energy_per_t_month', 'store.handling_per_t', 'store.shrink_per_month']) {
+    if (k in state.assumptions) referencedKeys.push(k);
+  }
   if (state.harvestAdvance?.active) {
     referencedKeys.push(state.harvestAdvance.rateAssumptionKey);
     if (state.harvestAdvance.costRateAssumptionKey) referencedKeys.push(state.harvestAdvance.costRateAssumptionKey);
@@ -1817,6 +1927,8 @@ export function computeModel(
       grossProfit: makeLine('pnl.gross_profit', 'Rohertrag', 'money', grossProfit, ['pnl.revenue', 'pnl.subsidies', 'pnl.cogs']),
       opex: makeLine('pnl.opex', 'OpEx / SG&A', 'money', opex),
       coverPurchase: makeLine('pnl.cover_purchase', 'davon: Deckungskauf (Untererfüllung Kontrakt)', 'money', op.coverPurchaseCost),
+      storageCost: makeLine('pnl.storage_cost', 'davon: Lagerbetrieb (Energie, Ein-/Auslagerung)', 'money', op.storageCost),
+      storageFeeRevenue: makeLine('pnl.storage_fee', 'nachrichtlich: Lageraufschlag im Umsatz', 'money', op.storageFeeRevenue),
       ebitda: makeLine('pnl.ebitda', 'EBITDA', 'money', ebitda, ['pnl.gross_profit', 'pnl.opex']),
       depreciation: makeLine('pnl.depreciation', 'Abschreibung (bilanziell)', 'money', depCommercial),
       fairValueChangeBio: makeLine('pnl.fv_bio', 'FV-Änderung biol. Vermögen', 'money', fvBio),

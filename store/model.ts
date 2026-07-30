@@ -1332,7 +1332,11 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("mprice.maehdr", "mprice.maehdr", "Mähdrescher JD S7 900 + Bandschneidwerk HD40X 12,19 m (Liste; JD-Angebot)", "money", 85877800),
   A("mprice.transport", "mprice.transport", "Kipper/Anhänger (Transport)", "money", 4000000),
   A("mprice.irrig_perha", "mprice.irrig_perha", "Bewässerung/Pivot €/ha", "money_per_ha", 200000),
-  A("mprice.store_pert", "mprice.store_pert", "Lager/Packhaus €/t", "money_per_tonne", 12000),
+  // Lager €/t GETRENNT: Hülle/Bau und Technik. Summe bleibt bei 120 €/t wie zuvor — die
+  //  Aufteilung folgt der CAPEX-Taxonomie (Bau: Schüttlager + Hülle rund 11,2 Mio €,
+  //  Technik: Kühl-/CA-Lager + Curing + Packlinien rund 12,4 Mio €), also etwa hälftig.
+  A("mprice.store_pert", "mprice.store_pert", "Lager/Packhaus Hülle & Bau €/t", "money_per_tonne", 6000),
+  A("mprice.store_tech_pert", "mprice.store_tech_pert", "Lager/Packhaus Technik €/t", "money_per_tonne", 6000),
   // Absatz-/Kapazitätsgrenzen: Verarbeitungskapazität des kontrahierten Tomatenwerks (t/Kampagne).
   //  Mittelgroßes EU-Werk ≈ 100–250 kt/Kampagne (2.000–4.000 t/Tag × 60–80 Tage). Advisor warnt darüber.
   A("market.tomate_cap_t", "market.tomate_cap_t", "Tomatenwerk-Kapazität (t/Kampagne)", "count", 150000),
@@ -1341,6 +1345,30 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("store.share.kartoffel_pommes", "store.share.kartoffel_pommes", "Einlagerungsquote Kartoffel Pommes", "rate", 1.0),
   A("store.share.kartoffel_chips", "store.share.kartoffel_chips", "Einlagerungsquote Kartoffel Chips", "rate", 1.0),
   A("store.share.zwiebel_moehre", "store.share.zwiebel_moehre", "Einlagerungsquote Zwiebel/Möhre", "rate", 1.0),
+
+  /* --- Lagerkanal: Planungsannahmen statt Einzelverträge -------------------
+   * Die Planung ist bewusst von den Bestandsverträgen gelöst (die galten für 2025 und sind
+   * nur noch Beleg). Gerechnet wird mit zwei Vermarktungskanälen je Kultur: die Tonnage, die
+   * DIREKT ab Feld weggeht, und die Tonnage, die EINGELAGERT wird. Die Einlagerungsquote
+   * oben steuert diesen Split — sie ist damit die folgenreichste Planungsannahme im Modell,
+   * weil sie zugleich Preis, Umsatzzeitpunkt, Kapitalbindung und Lager-CAPEX treibt. */
+  // Durchschnittliche Lagerdauer. Global; je Kultur über `store.months.<cropId>` überschreibbar.
+  A("store.months", "store.months", "Lagerdauer Ø (Monate)", "months", 4, 3, 6),
+  // Ab welchem Planmonat kann überhaupt eingelagert werden. HEUTE GIBT ES KEIN LAGER — es muss
+  //  erst gebaut werden. Vorher geht die gesamte Ernte direkt ab Feld weg. Standard 12 = ab
+  //  Jahr 2, passend zur CAPEX-Phasierung (Anschaffung Jahr 0/1).
+  A("store.from_month", "store.from_month", "Lager verfügbar ab Planmonat", "count", 12),
+  // DER Verhandlungswert: Aufschlag, den der Abnehmer für Lagerware zahlt, je Tonne und Monat.
+  // VERHANDLUNGSANNAHME — kein vorliegender Vertrag sagt ihn zu; PepsiCo verlangt Lagerung
+  // heute ausdrücklich auf Kosten NEOTERRAs. Kalibrierung: die reine Kapitalbindung kostet bei
+  // 5,8 % Revolver-Satz und 235 €/t rund 1,15 €/t·Monat, die Energie nochmal rund 2 €/t·Monat.
+  // Ein Satz unter etwa 3,50 €/t·Monat deckt die Selbstkosten nicht.
+  A("store.fee_per_t_month", "store.fee_per_t_month", "Lageraufschlag (€/t·Monat)", "money_per_tonne", 400, 600, 200),
+  // Betriebskosten der Lagerung — Literaturkalibrierung, bis technische Daten der Anlage vorliegen.
+  A("store.energy_per_t_month", "store.energy_per_t_month", "Lagerenergie (€/t·Monat)", "money_per_tonne", 200, 150, 300),
+  A("store.handling_per_t", "store.handling_per_t", "Ein-/Auslagerung (€/t Durchsatz)", "money_per_tonne", 600, 500, 800),
+  A("store.shrink_per_month", "store.shrink_per_month", "Schwund je Lagermonat", "rate", 0.008, 0.005, 0.015),
+
 
   // --- Personal (headcount / Bruttomonatsgehalt CENT) — Referenz D, Stufe 1 ---
   // Kopfzahlen skaliert der Composer mit stageFactor.
@@ -2033,10 +2061,22 @@ const MACHINE_CATALOG: MachineType[] = [
     category: "Bewässerung", manufacturer: "Valley / Reinke / Bauer", productName: "Pivot-Bewässerung",
     mode: "perHa", driver: { kind: "irrigated" }, assetClass: "irrigation",
     afaFiscalYears: 14, afaCommercialYears: 15, insurancePct: 0.008 },
-  { id: "store", label: "Lager/Packhaus", unitPriceKey: "mprice.store_pert",
-    category: "Gebäude & Infrastruktur", manufacturer: "—", productName: "Lager / Packhaus",
+  // Lager GETRENNT nach Hülle und Technik. Vorher lief beides als ein Posten mit
+  //  assetClass 'buildings' und 20/25 Jahren. Das war in drei Punkten falsch:
+  //  (1) Kältetechnik und Pack-/Sortierlinien sind nach 8–15 Jahren erneuerungsbedürftig,
+  //      nicht nach 25 — die Ersatzinvestition wurde um über ein Jahrzehnt zu spät geplant;
+  //  (2) sie sind `echipamente tehnologice` und qualifizieren damit für die RO-Reinvestitions-
+  //      befreiung (Art. 22), die nur für machinery/irrigation greift — als 'buildings' ging
+  //      die Steuerbefreiung verloren;
+  //  (3) Hülle und Technik skalieren unterschiedlich (Bau je m², Technik je t).
+  { id: "store", label: "Lager/Packhaus — Hülle & Bau", unitPriceKey: "mprice.store_pert",
+    category: "Gebäude & Infrastruktur", manufacturer: "—", productName: "Lager / Packhaus (Bau)",
     mode: "perTonne", driver: { kind: "crops", ids: STORAGE_CROP_IDS }, assetClass: "buildings",
     afaFiscalYears: 20, afaCommercialYears: 25, insurancePct: 0.008 },
+  { id: "store_tech", label: "Lager/Packhaus — Technik", unitPriceKey: "mprice.store_tech_pert",
+    category: "Gebäude & Infrastruktur", manufacturer: "—", productName: "Kälte · Belüftung · Sortier-/Packlinien",
+    mode: "perTonne", driver: { kind: "crops", ids: STORAGE_CROP_IDS }, assetClass: "machinery",
+    afaFiscalYears: 10, afaCommercialYears: 12, insurancePct: 0.008 },
 ];
 
 /* --------------------------------------------------------------------------
@@ -2391,7 +2431,7 @@ const FINANCING_CONTRACTS: LeasingContract[] = [
     id: "fc-invest-bewaesserung", name: "Investitionskredit · Bewässerung & Lager",
     lessor: "Bank (offen)", contractNo: "", supplier: "diverse (AFIR-kofinanziert)",
     kind: "loan",
-    objectIds: ["irrig", "store", "spray_gz", "spray_sf"],
+    objectIds: ["irrig", "store", "store_tech", "spray_gz", "spray_sf"],
     drawPeriod: 0, avansRate: 0.20, residualRate: 0.0, termMonths: 120,
     rateBasis: "floating", referenceRateKey: "macro.euribor", floatingSpread: 0.032,
     frequency: "monthly", repayment: "annuity",
@@ -2669,7 +2709,7 @@ export const OFFTAKE_SEED: OfftakeContract[] = [
     id: "ot-viaagro",
     buyer: "VIA AGRO S.R.L.",
     cropId: "kartoffel_pommes",
-    active: true,
+    active: false,   // Vertrag 2025 — Beleg, nicht Planungsgrundlage
     volumeMode: "share",
     share: 0.10,
     priceCentPerTonne: 23500,
@@ -2690,7 +2730,7 @@ export const OFFTAKE_SEED: OfftakeContract[] = [
     id: "ot-pepsico",
     buyer: "STAR FOODS E.M. S.R.L. (PepsiCo)",
     cropId: "kartoffel_chips",
-    active: true,
+    active: false,  // Vertrag 2025 — Beleg, nicht Planungsgrundlage
     volumeMode: "tonnes",
     tonnesPerYear: 1000,
     priceCentPerTonne: 22000,
@@ -2708,7 +2748,7 @@ export const OFFTAKE_SEED: OfftakeContract[] = [
     id: "ot-pestova",
     buyer: "Pestova shpk (XK)",
     cropId: "kartoffel_chips",
-    active: true,
+    active: false,  // Vertrag 2025 — Beleg, nicht Planungsgrundlage
     volumeMode: "tonnes",
     tonnesPerYear: 1015.2,
     priceCentPerTonne: 24000,
@@ -3582,7 +3622,7 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
   const out: DerivedCapex[] = [];
   for (const m of domain.machineCatalog) {
     if (m.id === "irrig" && planActive.bewaesserung) continue;
-    if (m.id === "store" && planActive.lager) continue;
+    if ((m.id === "store" || m.id === "store_tech") && planActive.lager) continue;
     const unitPrice = machineUnitPriceCent(domain, m, scenarioId);
     let count: number;
     let amount: number;
@@ -5179,7 +5219,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       for (const id of objs) {
         const base = capexBaseAmt.get(`cx-${id}`) ?? 0;
         if (base <= 0 || id === "irrig") continue;
-        s += base * (id === "store" ? dStoreScale[y] : dMachOf(id)[y]);
+        s += base * ((id === "store" || id === "store_tech") ? dStoreScale[y] : dMachOf(id)[y]);
       }
       return s;
     };
@@ -5377,8 +5417,18 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       const y = Math.max(0, Math.min(years - 1, Math.round(it.jahr || 0)));
       const inf = iCap(y);
       // Kategorie (explizit) schlägt Block-Ableitung: maschinen→machinery, iot→other, bewässerung→irrigation.
+      // Anlagenklasse: explizite Kategorie schlägt alles. Sonst Block-Ableitung — ABER innerhalb
+      //  der Bau-Blöcke (lager/packhaus/gebaeude) entscheidet die `anlagenklasse`: Technik und
+      //  Elektronik sind `echipamente tehnologice` (machinery) und qualifizieren für die
+      //  RO-Reinvestitionsbefreiung, Bau und Infrastruktur nicht. Vorher wurde alles in diesen
+      //  Blöcken pauschal zu 'buildings' — die Kühl-/CA-Anlage und die Packlinien verloren
+      //  dadurch die Steuerbefreiung.
       const kat = it.kategorie ?? (it.block === "bewaesserung" ? "bewaesserung" : it.block === "maschinen" ? "maschinen" : "gebaeude");
-      const ac: AssetClass = kat === "bewaesserung" ? "irrigation" : kat === "maschinen" ? "machinery" : kat === "iot" ? "other" : "buildings";
+      const techLike = it.anlagenklasse === "technik" || it.anlagenklasse === "elektronik";
+      const ac: AssetClass = kat === "bewaesserung" ? "irrigation"
+        : kat === "maschinen" ? "machinery"
+        : kat === "iot" ? "other"
+        : techLike ? "machinery" : "buildings";
       const life = Math.max(1, Math.round(it.afaYears || 15)) * 12;
       const amt = Math.round(net * inf);
       const salv = Math.round(net * clamp01(it.restwertPct || 0) * inf);
@@ -5539,7 +5589,7 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "mprice.zug_8rx", "mprice.ops_6r", "mprice.radlader", "mprice.shuttle", "mprice.fieldloader",
     "mprice.tompflanz", "mprice.tomernte", "mprice.gem_schwad", "mprice.gem_lader", "mprice.gem_moehre", "mprice.maehdr", "mprice.transport",
     "mprice.spray_gz", "mprice.spray_sf",
-    "mprice.irrig_perha", "mprice.store_pert",
+    "mprice.irrig_perha", "mprice.store_pert", "mprice.store_tech_pert",
   ]},
   { group: "Spritzstrategie (fenstergetrieben)", keys: [
     "spray.appl_lha", "spray.window_days", "spray.boom_m", "spray.speed_kmh", "spray.refill_min",
@@ -5569,6 +5619,11 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
   { group: "Working Capital", keys: ["wc.dso", "wc.dpo", "wc.inv"] },
   { group: "Anzahlungen Off-taker (Annahme)", keys: ["advance.rate", "advance.cost_rate", "advance.aval_fee"] },
   { group: "Downside (Zurückweisung & Deckungskauf)", keys: ["quality.reject", "market.cover_premium"] },
+  { group: "Lagerkanal (Feld vs. Lager)", keys: [
+    "store.share.kartoffel_pommes", "store.share.kartoffel_chips", "store.share.zwiebel_moehre",
+    "store.months", "store.from_month", "store.fee_per_t_month", "store.energy_per_t_month",
+    "store.handling_per_t", "store.shrink_per_month",
+  ] },
   { group: "Subventionen", keys: ["subsidy.per_ha", "subsidy.coupled_freilandgemuese", "rev.gerste_zweitfrucht"] },
   { group: "Covenants", keys: ["covenant.dscr_min", "covenant.leverage_max"] },
 ];
