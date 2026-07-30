@@ -35,6 +35,7 @@ type Store = {
   setLang: (l: Lang) => void;
   setStage: (stage: StageSel) => void;
   setScope: (scope: "full" | "valueOnly") => void;
+  setEntityView: (entityId: string) => void;
   loadDomain: (domain: Domain) => void;
   patch: (mutator: (draft: Domain) => void) => void;
 };
@@ -70,6 +71,8 @@ export const useModelStore = create<Store>((set) => ({
     }),
   setScope: (scope) =>
     set((s) => { const d = structuredClone(s.domain); (d as any).scope = scope; return { domain: d, recalcTick: s.recalcTick + 1 }; }),
+  setEntityView: (entityId) =>
+    set((s) => { const d = structuredClone(s.domain); (d as any).entityView = entityId; return { domain: d, recalcTick: s.recalcTick + 1 }; }),
   loadDomain: (domain) => set((s) => ({ domain, recalcTick: s.recalcTick + 1 })),
   patch: (mutator) =>
     set((s) => {

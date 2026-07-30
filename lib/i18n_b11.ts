@@ -73,6 +73,10 @@ const B11: Record<string, string> = {
   "außerh. Benchmark": "outside benchmark",
   "Agronomie-Wächter OK (alle Pflicht-Maßnahmen je Kultur vorhanden)":
     "Agronomy guard OK (all mandatory operations present per crop)",
+  "Entity": "Entity",
+  "Kombiniert": "Combined",
+  "Gesellschaft, für die alles gerechnet wird (Vollkosten-Standalone) — NEOTERRA (Gemüse) · Isolde (Cash Crops) · Kombiniert":
+    "Entity for which everything is computed (full-cost standalone) — NEOTERRA (vegetables) · Isolde (cash crops) · Combined",
   "Gemietet": "Rented",
   "Intercompany-Miete (z. B. von Isolde): gemietete Einheiten, kein CAPEX — stundenbasierte Miet-OPEX":
     "Intercompany rental (e.g. from Isolde): rented units, no CAPEX — hours-based rental OPEX",
