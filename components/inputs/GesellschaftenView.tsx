@@ -2,6 +2,8 @@
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import type { Entity, EntityRole } from "../../core/types";
+import { CROP_NAME, entityOfEntry } from "../../store/model";
+import { fmtNumber } from "../../design/format";
 import { TextInput, NumberInput } from "./NumberInput";
 import { lookupCui } from "../../lib/anaf";
 import { KonsolidierungPanel } from "./KonsolidierungPanel";
@@ -85,6 +87,8 @@ export function GesellschaftenView() {
         </div>
       </div>
 
+      <KulturEntitySplit />
+
       {entities.map((e) => {
         const st = lk[e.id] ?? {};
         return (
@@ -163,6 +167,73 @@ export function GesellschaftenView() {
 
       {/* Konsolidierung — direkt ans Register gekoppelt (opt-in). */}
       <KonsolidierungPanel />
+    </div>
+  );
+}
+
+/** Kultur → Gesellschaft (Entity-Split) — explizite Zuordnung je Anbau-Eintrag.
+ *  Ohne Zuordnung greift die Ableitung: Wertkulturen → NEOTERRA-OpCo, Cash/Trockenrotation → Isolde.
+ *  Setzt entry.entityId; die Entity-Ansicht (Header) rechnet dann exakt diese Zuordnung durch. */
+function KulturEntitySplit() {
+  const domain = useModelStore((s) => s.domain);
+  const patch = useModelStore((s) => s.patch);
+  const entities = domain.entities ?? [];
+  const plan = domain.anbauplan ?? [];
+
+  const setEntity = (entryId: string, entityId: string) =>
+    patch((d) => { const e = (d.anbauplan ?? []).find((x) => x.id === entryId); if (e) e.entityId = entityId; });
+
+  // Flächen-Summe je Gesellschaft (aktuelle Zuordnung inkl. Ableitung).
+  const haByEntity: Record<string, number> = {};
+  for (const a of plan) { const id = entityOfEntry(a); haByEntity[id] = (haByEntity[id] ?? 0) + (a.areaHa || 0); }
+  const nameOf = (id: string) => entities.find((e) => e.id === id)?.name ?? id;
+
+  return (
+    <div className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
+        <h2 className="text-[14px] font-semibold">{t("Kultur → Gesellschaft · Entity-Split")}</h2>
+        <span className="caption text-[10.5px] text-nx-text-muted">
+          {Object.entries(haByEntity).map(([id, ha]) => `${nameOf(id)}: ${fmtNumber(ha)} ha`).join("  ·  ")}
+        </span>
+      </div>
+      <div className="px-4 py-2.5 text-[12px] text-nx-text-secondary">
+        {t("Jede Kultur einer Gesellschaft zuordnen. Ohne Zuordnung gilt die Ableitung:")} <b>{t("Wertkulturen → NEOTERRA")}</b>, <b>{t("Cash-/Trockenrotation → Isolde")}</b>. {t("Die Entity-Ansicht im Header rechnet dann diese Zuordnung als Vollkosten-Standalone durch.")}
+      </div>
+      <div className="overflow-x-auto px-2 pb-3">
+        <table className="w-full text-[12.5px]" style={{ borderCollapse: "collapse" }}>
+          <thead>
+            <tr className="text-nx-text-muted" style={{ borderBottom: "1px solid var(--nx-border)" }}>
+              <th className="text-left font-medium px-2 py-1.5">{t("Kultur")}</th>
+              <th className="text-left font-medium px-2 py-1.5">{t("Pool")}</th>
+              <th className="text-right font-medium px-2 py-1.5">{t("Fläche (ha)")}</th>
+              <th className="text-left font-medium px-2 py-1.5">{t("Gesellschaft")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.map((a) => {
+              const dry = a.pool === "dryland";
+              return (
+                <tr key={a.id} style={{ borderBottom: "1px solid var(--nx-border-divider)" }}>
+                  <td className="px-2 py-1.5">{t((CROP_NAME as Record<string, string>)[a.cropId] ?? a.cropId)}</td>
+                  <td className="px-2 py-1.5">
+                    <span className="rounded-control px-1.5 py-0.5 text-[10px] font-semibold"
+                      style={{ background: dry ? "var(--nx-surface-sunken)" : "var(--nx-brand-tint)", color: dry ? "var(--nx-text-muted)" : "var(--nx-brand-lift)" }}>
+                      {dry ? t("Trocken") : t("Beregnet")}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right num">{fmtNumber(a.areaHa || 0)}</td>
+                  <td className="px-2 py-1.5">
+                    <select className="rounded-control border px-2 text-[12px]" style={selStyle}
+                      value={entityOfEntry(a)} onChange={(ev) => setEntity(a.id, ev.target.value)}>
+                      {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

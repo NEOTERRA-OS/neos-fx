@@ -141,5 +141,18 @@ const B11: Record<string, string> = {
     ". The fleet flows via the TCO path into CAPEX/balance sheet. All operating figures under \"Prices & drivers → spraying strategy\".",
   "€/ha): Wertkulturen binden mehr Kapital (Spezialtechnik, Lager) und mehr Arbeit, erwirtschaften je Hektar aber ein Vielfaches. Der reine Ackerbau (Stufe 1) ist der faire, effiziente Vergleichsmaßstab — kein „Schlechtrechnen\", sondern der belastbare Boden, auf dem der Wertkultur-Aufschlag steht.":
     "€/ha): value crops tie up more capital (specialized machinery, storage) and more labor, but earn a multiple per hectare. Pure arable farming (stage 1) is the fair, efficient benchmark — not \"talking it down\", but the solid ground on which the value-crop premium stands.",
+
+  // Kultur → Gesellschaft (Entity-Split-Zuordnung)
+  "Kultur → Gesellschaft · Entity-Split": "Crop → entity · entity split",
+  "Jede Kultur einer Gesellschaft zuordnen. Ohne Zuordnung gilt die Ableitung:":
+    "Assign each crop to an entity. Without an assignment, the default derivation applies:",
+  "Wertkulturen → NEOTERRA": "value crops → NEOTERRA",
+  "Cash-/Trockenrotation → Isolde": "cash / dryland rotation → Isolde",
+  "Die Entity-Ansicht im Header rechnet dann diese Zuordnung als Vollkosten-Standalone durch.":
+    "The entity view in the header then computes this assignment as a full-cost standalone.",
+  "Gesellschaft": "Entity",
+  "Pool": "Pool",
+  "Trocken": "Dryland",
+  "Beregnet": "Irrigated",
 };
 export default B11;
