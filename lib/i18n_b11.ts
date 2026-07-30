@@ -81,6 +81,7 @@ const B11: Record<string, string> = {
   "Intercompany-Miete (z. B. von Isolde): gemietete Einheiten, kein CAPEX — stundenbasierte Miet-OPEX":
     "Intercompany rental (e.g. from Isolde): rented units, no CAPEX — hours-based rental OPEX",
   "Maschinen-Miete (Intercompany) /Monat": "Machinery rental (intercompany) /month",
+  "Maschinen-Miet-Ertrag (Intercompany) /Monat": "Machinery rental income (intercompany) /month",
   "Miet-Aufschlag Intercompany (auf Stundenkosten)": "Rental markup intercompany (on hourly cost)",
   "Gesellschafts-Case ableiten": "Derive entity case",
   "→ NEOTERRA (Value Crops) ableiten": "→ Derive NEOTERRA (Value Crops)",

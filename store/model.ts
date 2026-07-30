@@ -1096,6 +1096,8 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("opex.machines", "opex.machines", "Maschinen-Wartung/Service /Monat", "money", 0),
   // opex.machine_rent: Intercompany-Maschinenmiete (gemietete Einheiten × Stunden × €/h). Composer-gesetzt.
   A("opex.machine_rent", "opex.machine_rent", "Maschinen-Miete (Intercompany) /Monat", "money", 0),
+  // opex.machine_rent_income: Miet-ERTRAG des Verleihers (negativ in OpEx → hebt EBITDA). Composer-gesetzt.
+  A("opex.machine_rent_income", "opex.machine_rent_income", "Maschinen-Miet-Ertrag (Intercompany) /Monat", "money", 0),
   // Aufschlag auf die Stundenkosten (AfA/h + Service/h) für die Intercompany-Miete (z. B. +15 % Isolde-Marge).
   A("machine.rent_markup", "machine.rent_markup", "Miet-Aufschlag Intercompany (auf Stundenkosten)", "rate", 0.15),
   // opex.fix: Pacht + Overhead je Kultur — wird im Composer je Build aus dem Anbauplan
@@ -4266,7 +4268,12 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // Entity-Sicht (Header) zuerst: auf die gewählte Gesellschaft filtern (Vollkosten-Standalone) —
   //  danach greifen Scope/Stage auf dem gefilterten Modell. 'combined'/leer → Gesamtmodell.
   const entityView = domainIn.entityView;
-  const domainE: Domain = (entityView && entityView !== "combined") ? scopeToEntity(domainIn, entityView) : domainIn;
+  const isCombined = !entityView || entityView === "combined";
+  // Kombiniert: Intercompany-Maschinenmiete ELIMINIEREN — gemietete Einheiten als EIGEN behandeln
+  //  (rentedUnits→0), da Verleiher & Mieter dieselbe Gruppe sind. In den Entity-Sichten bleibt die Miete.
+  const domainE: Domain = isCombined
+    ? { ...domainIn, machineCatalog: domainIn.machineCatalog.map((m) => (m.rentedUnits ? { ...m, rentedUnits: 0 } : m)) }
+    : scopeToEntity(domainIn, entityView!);
   const scope = domainE.scope ?? "full";
   // Zwei-Pool: der Beregnungs-Ramp (scale/usedArea) bezieht sich NUR auf die beregneten Kulturen.
   //  Dryland-Einträge (pool:"dryland") skalieren separat (totalByYear − areaByYear) und dürfen den
@@ -4556,6 +4563,11 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   const baseFixMonthly = Math.round((annualFixEur * 100) / 12);
   const baseMachMonthly = Math.round(machineServiceAnnualCent(domain, scenarioId) / 12);
   const baseRentMonthly = Math.round(machineRentAnnualCent(domain, scenarioId) / 12);
+  // Intercompany-Miet-ERTRAG: nur in der Verleiher-Sicht (Default-Verleiher = Isolde). Die gemieteten
+  //  Maschinen laufen bei der MIETER-Gesellschaft (NEOTERRA) → aus der VOLLEN Domäne (domainIn) gerechnet.
+  //  Negativ in OpEx → hebt EBITDA des Verleihers. In 'combined' 0 (eliminiert). Konsistent zur Mieter-OPEX.
+  const rentIncomeCent = (!isCombined && entityView === ENTITY_ISOLDE) ? machineRentAnnualCent(domainIn, scenarioId) : 0;
+  const baseRentIncomeMonthly = Math.round(-rentIncomeCent / 12);
   const baseTransMonthly = Math.round(transportTotalCent / 12);
   const baseSgaMonthly = Math.round(overheadMonthly * scopeFactor);
   // OPEX-Fix KULTURSCHARF: Overhead je Kultur × Politik-Flächenkurve (statt pauschal × Gesamtfläche —
@@ -4569,6 +4581,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   setScaled("opex.fix", baseFixMonthly, (y) => fixFactor(y) * iIn(y));
   setScaled("opex.machines", baseMachMonthly, (y) => scale[y] * iIn(y));
   setScaled("opex.machine_rent", baseRentMonthly, (y) => scale[y] * iIn(y));
+  setScaled("opex.machine_rent_income", baseRentIncomeMonthly, (y) => scale[y] * iIn(y));
   setScaled("opex.transport", baseTransMonthly, (y) => scale[y] * iIn(y));
   setScaled("opex.sga", baseSgaMonthly, (y) => sgaDamp(y) * iWage(y));
   // Pacht: Dritt-Pacht (bewirtschaftete Fläche − Eigentum, skaliert, input-inflationiert) +
