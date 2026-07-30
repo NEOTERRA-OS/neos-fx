@@ -521,6 +521,46 @@ export interface OfftakeContract {
   note?: string;
 }
 
+/**
+ * Anzahlungen der Off-taker (Paket B) — bewusst NICHT am Einzelvertrag, sondern am
+ * GEPLANTEN ANBAU festgemacht: Bemessungsgrundlage ist der geplante Erntewert
+ * (Fläche × Ertrag × Mischpreis) der einbezogenen Kulturen. Jeder Vertrag ist
+ * individuell verhandelt; eine Quote je Vertrag würde das Modell an eine
+ * Momentaufnahme des Abnehmermixes fesseln. Über den Anbauplan skaliert die
+ * Anzahlung dagegen automatisch mit Wachstumsszenarien (mehr Hektar → mehr
+ * Vorfinanzierung), ohne dass Verträge nachgepflegt werden müssen.
+ *
+ * ACHTUNG — Verhandlungsannahme, KEINE Vertragslage: Keiner der drei geprüften
+ * Verträge sagt eine Anzahlung zu. PepsiCo formuliert ausdrücklich, dass Vorschüsse
+ * gegen die ersten Lieferungen verrechnet werden und KEIN Vorschuss zugesagt ist;
+ * VIA AGRO liefert Pflanzgut gegen Vorausrechnung und ein bilet la ordin als
+ * Sicherheit. Die Quote ist in der Oberfläche als Annahme zu kennzeichnen.
+ *
+ * Buchung (IFRS 15 Vertragsverbindlichkeit / HGB „erhaltene Anzahlungen auf
+ * Bestellungen"): Der Zufluss erhöht Kasse UND Verbindlichkeiten — KEIN Umsatz.
+ * GuV-Wirkung entsteht erst mit der Lieferung; dann läuft die Anzahlung gegen die
+ * entstehende Forderung. Siehe computeWorkingCapital.
+ */
+export interface HarvestAdvancePolicy {
+  /** false → keine Anzahlungswirkung (Rückfall auf das Verhalten vor Paket B). */
+  active: boolean;
+  /** Assumption-Key der Quote (Anteil des geplanten Erntewerts, 0..1) — Szenarioband. */
+  rateAssumptionKey: string;
+  /** Kalendermonat des Zuflusses, 1–12 (typisch bei/kurz vor dem Legen, lange vor der Ernte). */
+  month: number;
+  /** Verrechnung gegen die ersten Lieferungen (Regelfall) oder gegen die Schlussrechnung. */
+  settlement: 'firstDeliveries' | 'finalInvoice';
+  /** Assumption-Key für den Preis des Gelds: Skonto/Zins p. a. → Finanzaufwand. */
+  costRateAssumptionKey?: string;
+  /** Assumption-Key der Avalprovision p. a. auf die besicherte Summe → OpEx. */
+  securityFeeRateAssumptionKey?: string;
+  /** Geforderte Sicherheit (dokumentarisch; Kostenwirkung über securityFeeRateAssumptionKey). */
+  security?: 'none' | 'bilet la ordin' | 'Bankaval';
+  /** Kulturen, für die vorfinanziert wird (cropIds). Leer/fehlt → alle Kulturen. */
+  cropIds?: string[];
+  note?: string;
+}
+
 /* --------------------------------------------------------------------------
  * 8. ModelState — der vollständige, editierbare Eingabezustand
  * ------------------------------------------------------------------------ */
@@ -550,6 +590,8 @@ export interface ModelState {
   subsidies: Subsidy[];
   /** Abnahmeverträge je Kultur. Fehlt/leer → Umsatz komplett zum Kulturpreis (Spot). */
   offtake?: OfftakeContract[];
+  /** Anzahlungen der Off-taker, bemessen am geplanten Erntewert. Fehlt/inaktiv → keine. */
+  harvestAdvance?: HarvestAdvancePolicy;
   biologicalAssets: BiologicalAssetPolicy;
   /** Personalplanung (RO-Standard). Optional; Arbeitgeberaufwand fließt in OpEx. */
   personnel?: PersonnelPlan;
@@ -622,6 +664,8 @@ export interface BalanceSheet {
   /** USt-Forderung (TVA de recuperat) — Vorsteuer-Überhang, noch nicht erstattet. */
   vatReceivable?: LineItem;
   payables: LineItem;
+  /** Erhaltene Anzahlungen von Abnehmern (IFRS 15 Vertragsverbindlichkeit). Kein Umsatz. */
+  customerAdvances?: LineItem;
   debt: LineItem;
   revolver: LineItem;
   deferredTaxLiability: LineItem;
@@ -639,6 +683,9 @@ export interface CashFlowStatement {
   addBackDepreciation: LineItem;
   addBackFvBio: LineItem;
   changeInWorkingCapital: LineItem;
+  /** Nachrichtlich: „davon" aus der ΔWC-Zeile — Anzahlungszufluss(+) und Verrechnung(−).
+   *  NICHT zusätzlich addieren; die Wirkung steckt bereits in changeInWorkingCapital. */
+  customerAdvanceMovement?: LineItem;
   cfo: LineItem;                      // operativ
   capex: LineItem;
   /** Verkaufserlöse aus Ausmusterung (Anlagenabgang) — Teil des investiven Cashflows. */

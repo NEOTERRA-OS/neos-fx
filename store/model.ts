@@ -60,10 +60,11 @@ import type {
   OpeningBalance,
   BiologicalAssetPolicy,
   OfftakeContract,
+  HarvestAdvancePolicy,
   UUID,
   CheckResult,
 } from "../core/types";
-export type { OfftakeContract } from "../core/types";
+export type { OfftakeContract, HarvestAdvancePolicy } from "../core/types";
 import { DEFAULT_PRODUCTS, type CatalogProduct } from "./productCatalog";
 export type { CatalogProduct } from "./productCatalog";
 
@@ -357,6 +358,9 @@ export type Domain = {
   /** Abnahmeverträge (Off-taker) je Kultur — kontraktspezifischer Preis statt Punktwert.
    *  Fehlt/leer → Umsatz rechnet unverändert mit dem Kulturpreis aus den Annahmen. */
   offtake?: OfftakeContract[];
+  /** Anzahlungen der Off-taker — Quote auf den GEPLANTEN ERNTEWERT (Fläche × Ertrag × Preis),
+   *  nicht je Vertrag. Fehlt/inaktiv → keine Anzahlungswirkung. */
+  harvestAdvance?: HarvestAdvancePolicy;
 };
 
 /** Kommentar-Thread an einem Ziel (z. B. Annahme, Maßnahme). Nachrichten chronologisch. */
@@ -1141,6 +1145,19 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("wc.dso", "wc.dso", "DSO (Forderungstage)", "days", 45),
   A("wc.dpo", "wc.dpo", "DPO (Verb.-Tage)", "days", 30),
   A("wc.inv", "wc.inv", "Lagertage", "days", 60),
+  // --- Anzahlungen der Off-taker (Paket B) ---
+  // VERHANDLUNGSANNAHME, keine Vertragslage: keiner der drei geprüften Verträge sagt eine
+  // Anzahlung zu (PepsiCo: Vorschüsse werden gegen die ersten Lieferungen verrechnet, KEIN
+  // Vorschuss zugesagt). Bemessung am geplanten Erntewert, nicht am Einzelvertrag — damit
+  // skaliert die Vorfinanzierung mit dem Anbauplan und mit Wachstumsszenarien.
+  // Base 20 % konservativ · Best 30 % · Worst 0 (im Stressfall zahlt niemand vor).
+  A("advance.rate", "advance.rate", "Anzahlungsquote Off-taker (Anteil geplanter Erntewert)", "rate", 0.20, 0.30, 0),
+  // Preis des Gelds: Skonto/Zins p. a. auf den ausstehenden Anzahlungsbetrag → Finanzaufwand.
+  // 0, solange keine Konditionen vorliegen. ACHTUNG: 0 stellt die Anzahlung als Gratisgeld dar —
+  // Benchmark wäre der Revolver-Satz (EURIBOR 2,6 % + 3,2 % Spread ≈ 5,8 %).
+  A("advance.cost_rate", "advance.cost_rate", "Preis der Vorfinanzierung p. a. (Skonto/Zins)", "rate", 0),
+  // Avalprovision p. a. auf die besicherte Summe → Betriebsaufwand (EBITDA-wirksam).
+  A("advance.aval_fee", "advance.aval_fee", "Avalprovision Anzahlung p. a.", "rate", 0),
   // --- Förderung ---
   A("subsidy.per_ha", "subsidy.per_ha", "GAP/CAP-Basisprämie €/ha (alle)", "money_per_ha", 20500),
   A("subsidy.coupled_freilandgemuese", "subsidy.coupled_freilandgemuese", "Gekoppelte Stützung Tomate + Zwiebel/Möhre €/ha", "money_per_ha", 161200),
@@ -2352,6 +2369,25 @@ const WORKING_CAPITAL: WorkingCapitalPolicy = {
   inventoryDaysAssumptionKey: "wc.inv",
 };
 
+/* Anzahlungen der Off-taker — bemessen am GEPLANTEN ANBAU (Fläche × Ertrag × Mischpreis),
+ * nicht am Einzelvertrag: jeder Vertrag ist individuell verhandelt, und über den Anbauplan
+ * skaliert die Vorfinanzierung automatisch mit Wachstumsszenarien.
+ * Zufluss im März — beim Legen, lange vor der Ernte: genau in das Liquiditätsloch, das die
+ * Direktkosten von Februar bis September aufreißen.
+ * Kulturen: die beiden Kartoffelkulturen, für die Abnahmeverträge vorliegen. Wird cropIds
+ * geleert, gilt die Quote für ALLE Kulturen (Getreide wird real spot verkauft — bewusst aus). */
+const HARVEST_ADVANCE: HarvestAdvancePolicy = {
+  active: true,
+  rateAssumptionKey: "advance.rate",
+  month: 3,
+  settlement: "firstDeliveries",
+  costRateAssumptionKey: "advance.cost_rate",
+  securityFeeRateAssumptionKey: "advance.aval_fee",
+  security: "bilet la ordin",
+  cropIds: ["kartoffel_pommes", "kartoffel_chips"],
+  note: "Verhandlungsannahme, keine Vertragslage: keiner der drei geprüften Verträge sagt eine Anzahlung zu. PepsiCo verrechnet Vorschüsse gegen die ersten Lieferungen und sagt keinen Vorschuss zu; VIA AGRO verlangt ein bilet la ordin. Quote, Zeitpunkt und Preis der Vorfinanzierung sind bei PepsiCo und Bayer Strada anzufordern.",
+};
+
 const TAX: TaxPolicy = { corporateTaxRateKey: "tax.rate", lossCarryforward: true };
 
 /* USt / TVA Rumänien (Stand 2026): Regelsatz 21 % (seit 08/2025), ermäßigt 11 %
@@ -2740,6 +2776,7 @@ export const SEED: Domain = {
     scenarios: [],
   },
   offtake: OFFTAKE_SEED,
+  harvestAdvance: HARVEST_ADVANCE,
 };
 
 /* --------------------------------------------------------------------------
@@ -5410,6 +5447,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     subsidies,
     // Abnahmeverträge: nur aktive, und nur solche mit einer Kultur im Katalog.
     offtake: (domain.offtake ?? []).filter((c) => c.active !== false && domain.catalog.some((k) => k.cropId === c.cropId)),
+    harvestAdvance: domain.harvestAdvance,
     biologicalAssets: domain.biologicalAssets,
     personnel: domain.personnel,
     holding: domain.holding,
@@ -5483,6 +5521,7 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "market.contract_share", "market.spot_delta", "market.brix_premium", "market.potato_grade", "market.tomate_cap_t",
   ]},
   { group: "Working Capital", keys: ["wc.dso", "wc.dpo", "wc.inv"] },
+  { group: "Anzahlungen Off-taker (Annahme)", keys: ["advance.rate", "advance.cost_rate", "advance.aval_fee"] },
   { group: "Subventionen", keys: ["subsidy.per_ha", "subsidy.coupled_freilandgemuese", "rev.gerste_zweitfrucht"] },
   { group: "Covenants", keys: ["covenant.dscr_min", "covenant.leverage_max"] },
 ];

@@ -247,10 +247,42 @@ export interface WorkingCapitalResult {
   receivables: number[];
   inventory: number[];
   payables: number[];
-  nwc: number[];         // Netto-Umlaufvermögen = Vorräte + Forderungen − Verbindl.
+  /** Erhaltene Anzahlungen (Vertragsverbindlichkeit) — Passivum, mindert das NWC. */
+  customerAdvances: number[];
+  /** Nachrichtlich: Anzahlungszufluss(+) − Verrechnung gegen Forderung(−) je Periode. */
+  advanceMovement: number[];
+  /** Skonto/Zins auf ausstehende Anzahlungen → Finanzaufwand (nicht EBITDA-wirksam). */
+  advanceCost: number[];
+  /** Avalprovision auf besicherte Anzahlungen → Betriebsaufwand (EBITDA-wirksam). */
+  advanceSecurityFee: number[];
+  /** Zahlungseingänge aus Forderungen je Periode (nachrichtlich, für Analyse/Ansicht). */
+  collections: number[];
+  nwc: number[];         // Netto-Umlaufvermögen = Vorräte + Forderungen − Verbindl. − Anzahlungen
   wcChange: number[];    // ΔNWC je Periode (Cash-Bindung, wenn positiv)
 }
 
+/**
+ * Working Capital mit echtem Forderungs-Rollforward (Paket B).
+ *
+ * Vorher wurden die Forderungen als Kennzahl aus dem Fluss der LAUFENDEN Periode
+ * gebildet (annualisierter Umsatz × DSO/365). Bei Ernteumsatz in einem einzigen Monat
+ * entstanden die Forderungen IM Erntemonat und fielen im Folgemonat auf null — das
+ * Gegenteil eines Zahlungsziels. Jetzt gilt:
+ *
+ *   Forderungen[p] = Forderungen[p−1] + fakturiert[p] − eingegangen[p] − verrechnete Anzahlung[p]
+ *
+ * Fällig wird ein Strom `dsoDays` Kalendertage nach der Faktura; das kontraktspezifische
+ * Zahlungsziel kommt aus dem Abnahmevertrag (47 / 28 / 14 Tage), Spot- und Zweitfrucht-
+ * erlöse tragen den globalen DSO aus `wc.dsoAssumptionKey`. Fällt ein Zahlungsziel
+ * zwischen zwei Perioden, wird linear auf die beiden Nachbarperioden aufgeteilt, statt
+ * auf eine ganze Periode zu runden. Zahlungen jenseits des Horizonts bleiben als
+ * offene Forderung stehen — richtig für einen abgeschnittenen Planungszeitraum.
+ *
+ * Vorräte und Verbindlichkeiten laufen bewusst WEITER über die Tages-Kennzahl: die
+ * Umstellung von DPO und Lagertagen auf einen echten Rollforward ist ein eigener
+ * Schritt (siehe Handover), sonst wären die Ankerverschiebungen nicht mehr eindeutig
+ * dem Zahlungs-Timing der Erlösseite zuzuordnen.
+ */
 function computeWorkingCapital(
   state: ModelState,
   chain: UUID[],
@@ -258,6 +290,8 @@ function computeWorkingCapital(
   ppy: number,
   revenue: number[],
   cogs: number[],
+  receiptTerms: ReceiptTerm[],
+  advanceFlows: AdvanceFlow[],
 ): WorkingCapitalResult {
   const wc = state.workingCapital;
   const dso = resolveAssumption(state, wc.dsoAssumptionKey, chain, n, ppy);
@@ -267,23 +301,106 @@ function computeWorkingCapital(
   const receivables = zeros(n);
   const inventory = zeros(n);
   const payables = zeros(n);
+  const customerAdvances = zeros(n);
+  const advanceMovement = zeros(n);
+  const advanceCost = zeros(n);
+  const advanceSecurityFee = zeros(n);
+  const collections = zeros(n);
   const nwc = zeros(n);
   const wcChange = zeros(n);
 
-  // Tage -> Periodenanteil: annualisierter Fluss × Tage/365.
   const ob = state.openingBalance;
+  // Eröffnungsforderungen gelten in Periode 0 als eingegangen — genau die Wirkung, die
+  // die frühere Formel über openingNwc in wcChange[0] hatte (Verhalten unverändert).
   const openingNwc = (ob?.inventory ?? 0) + (ob?.receivables ?? 0) - (ob?.payables ?? 0);
 
+  // --- Fälligkeiten planen ---------------------------------------------------
+  const daysPerPeriod = 365 / ppy;
+  const billedNet = zeros(n);
+  const advanceIn = zeros(n);
+  const advanceApplied = zeros(n);
+
+  const termsByPeriod: ReceiptTerm[][] = Array.from({ length: n }, () => []);
+  for (const t of receiptTerms) {
+    if (t.period >= 0 && t.period < n) termsByPeriod[t.period].push(t);
+  }
+  const advByPeriod: AdvanceFlow[][] = Array.from({ length: n }, () => []);
+  for (const a of advanceFlows) {
+    if (a.period >= 0 && a.period < n) advByPeriod[a.period].push(a);
+  }
+  // Konditionen gelten für den gepoolten Saldo — eine Policy, nicht je Vertrag.
+  const advSettlement = advanceFlows[0]?.settlement ?? 'firstDeliveries';
+  const advCostRate = advanceFlows[0]?.costRate ?? 0;
+  const advFeeRate = advanceFlows[0]?.securityFeeRate ?? 0;
+  // Für 'finalInvoice': letzte anrechenbare Fakturaperiode je Jahr.
+  const lastBill = new Map<number, number>();
+  for (const t of receiptTerms) {
+    if (!t.advanceEligible || t.period < 0 || t.period >= n) continue;
+    const y = Math.floor(t.period / ppy);
+    const cur = lastBill.get(y);
+    if (cur === undefined || t.period > cur) lastBill.set(y, t.period);
+  }
+
+  /** Betrag `dsoDays` nach Periode `p` fällig stellen; Zwischenlage linear aufteilen. */
+  const schedule = (p: number, amount: number, dsoDays: number | undefined) => {
+    const days = Math.max(0, dsoDays ?? dso[p] ?? 0);
+    const lag = days / daysPerPeriod;
+    const k = Math.floor(lag);
+    const frac = lag - k;
+    const first = round(amount * (1 - frac));
+    if (p + k < n) collections[p + k] += first;
+    const second = amount - first;
+    if (second !== 0 && p + k + 1 < n) collections[p + k + 1] += second;
+  };
+
+  let advBal = 0;
   for (let p = 0; p < n; p++) {
-    const annualRev = revenue[p] * ppy;
+    // (a) Zins/Skonto und Avalprovision auf den Stand des Vorperiodenendes (wie beim Revolver).
+    if (advBal > 0) {
+      advanceCost[p] = round((advBal * advCostRate) / ppy);
+      advanceSecurityFee[p] = round((advBal * advFeeRate) / ppy);
+    }
+    // (b) Anzahlungszufluss: Kasse hoch, Vertragsverbindlichkeit hoch — KEIN Umsatz.
+    for (const a of advByPeriod[p]) {
+      advBal += a.amount;
+      advanceIn[p] += a.amount;
+    }
+    // (c) Faktura: Anzahlung gegen die entstehende Forderung verrechnen, Rest fällig stellen.
+    for (const t of termsByPeriod[p]) {
+      let amt = t.amount;
+      if (t.advanceEligible && amt > 0 && advBal > 0) {
+        const eligible = advSettlement === 'finalInvoice'
+          ? lastBill.get(Math.floor(p / ppy)) === p
+          : true;
+        if (eligible) {
+          const use = Math.min(advBal, amt);
+          advBal -= use;
+          amt -= use;
+          advanceApplied[p] += use;
+        }
+      }
+      if (amt !== 0) schedule(p, amt, t.dsoDays);
+      billedNet[p] += amt;
+    }
+    customerAdvances[p] = advBal;
+    advanceMovement[p] = advanceIn[p] - advanceApplied[p];
+  }
+
+  // --- Rollforward und NWC --------------------------------------------------
+  let recRunning = 0;   // Eröffnungsforderungen stecken in openingNwc (s. o.)
+  for (let p = 0; p < n; p++) {
+    recRunning += billedNet[p] - collections[p];
+    receivables[p] = recRunning;
     const annualCogs = cogs[p] * ppy;
-    receivables[p] = (annualRev * dso[p]) / 365;
     payables[p] = (annualCogs * dpo[p]) / 365;
     inventory[p] = (annualCogs * invDays[p]) / 365;
-    nwc[p] = inventory[p] + receivables[p] - payables[p];
+    nwc[p] = inventory[p] + receivables[p] - payables[p] - customerAdvances[p];
     wcChange[p] = nwc[p] - (p === 0 ? openingNwc : nwc[p - 1]);
   }
-  return { receivables, inventory, payables, nwc, wcChange };
+  return {
+    receivables, inventory, payables, customerAdvances, advanceMovement,
+    advanceCost, advanceSecurityFee, collections, nwc, wcChange,
+  };
 }
 
 /** Standalone-Sicht fürs 13-Wochen-/Saison-Cash-Modul. */
@@ -295,7 +412,7 @@ export function computeWorkingCapitalSchedule(
   const ppy = periodsPerYear(state.timeline.baseGranularity);
   const chain = scenarioChain(state, scenarioId);
   const op = computeOperating(state, chain, n, ppy);
-  return computeWorkingCapital(state, chain, n, ppy, op.revenue, op.cogs);
+  return computeWorkingCapital(state, chain, n, ppy, op.revenue, op.cogs, op.receiptTerms, op.advances);
 }
 
 /**
@@ -478,12 +595,51 @@ export function consolidateGroup(
   };
 }
 
+/** Ein fakturierter Erlösstrom mit eigenem Zahlungsziel (Paket B).
+ *  Σ aller Terme einer Periode == revenue[p] (exakt, Restbetrag im letzten Term). */
+export interface ReceiptTerm {
+  /** Periode der Rechnungsstellung (= Ernte-/Lieferperiode). */
+  period: number;
+  /** Betrag in CENT. */
+  amount: number;
+  /** Zahlungsziel in Kalendertagen. undefined → globaler DSO aus wc.dsoAssumptionKey. */
+  dsoDays?: number;
+  /** Kultur, aus der der Strom stammt (Zweitfrucht: die der Hauptkultur). */
+  cropId?: string;
+  /** Vertrag, aus dem der Strom stammt. undefined → Spot/Restmenge oder Zweitfrucht. */
+  contractId?: string;
+  /** true → Bonustranche (separat fakturiert, eigenes verzögertes Zahlungsziel). */
+  isBonus?: boolean;
+  /** true → gegen diesen Strom darf eine erhaltene Anzahlung verrechnet werden. */
+  advanceEligible?: boolean;
+}
+
+/** Ein Anzahlungszufluss (Paket B). Kein Umsatz — Kasse + Vertragsverbindlichkeit.
+ *  Bemessen am geplanten Erntewert der einbezogenen Kulturen, nicht am Einzelvertrag. */
+export interface AdvanceFlow {
+  /** Periode des Zuflusses. */
+  period: number;
+  /** Betrag in CENT = geplanter Erntewert des Jahres × Quote. */
+  amount: number;
+  /** Erntejahr, auf das sich die Anzahlung bezieht. */
+  year: number;
+  settlement: 'firstDeliveries' | 'finalInvoice';
+  /** Skonto/Zins p. a. auf den ausstehenden Betrag → Finanzaufwand. */
+  costRate: number;
+  /** Avalprovision p. a. auf die besicherte Summe → OpEx. */
+  securityFeeRate: number;
+}
+
 interface OperatingResult {
   revenue: number[];
   cogs: number[];
   subsidies: number[];
   inventoryValue: number[]; // Ende-Bestand geernteter, noch nicht verkaufter Ware
   outputVat: number[];      // Ausgangs-USt (TVA colectată) je Periode — 0 bei Reverse-Charge/Export
+  /** Fakturierte Erlösströme mit Zahlungsziel — Grundlage des Forderungs-Rollforwards. */
+  receiptTerms: ReceiptTerm[];
+  /** Anzahlungszuflüsse je Vertrag und Jahr. */
+  advances: AdvanceFlow[];
 }
 
 function computeOperating(
@@ -556,14 +712,19 @@ function computeOperating(
   //  ein Einjahresvertrag über acht Jahre fortgeschrieben wird — ein Artefakt, keine Aussage.
   const inflOutSeries = resolveAssumption(state, "infl.output", chain, n, ppy);
   const offtakeIdx = (y: number) => Math.pow(1 + (inflOutSeries[Math.min(y * ppy, n - 1)] ?? 0), y);
+  /** Ein Vertragsanteil eines Kultur-Jahres, nach Kürzung bei Übervergabe.
+   *  Basis- und Bonuspreis bleiben GETRENNT, weil sie unterschiedliche Zahlungsziele
+   *  tragen (VIA AGRO: Bonus separat fakturiert, frühestens ab 01.12.) — Paket B. */
+  interface MixPart { c: OfftakeContract; s: number; base: number; bonus: number }
   /** cropId → je Jahr { share: kontrahierter Mengenanteil, price: mengengewichteter Kontraktpreis }. */
-  const mix = new Map<string, { share: number; price: number }[]>();
+  const mix = new Map<string, { share: number; price: number; parts: MixPart[] }[]>();
   for (const [cropId, list] of byCrop) {
     const tons = tonnesByCropYear.get(cropId);
     mix.set(cropId, Array.from({ length: years }, (_, y) => {
       const total = tons ? tons[y] : 0;
       const idx = offtakeIdx(y);
       let share = 0, valued = 0;
+      const parts: MixPart[] = [];
       for (const c of list) {
         const s = c.volumeMode === 'tonnes'
           ? (total > 0 ? Math.min(1, (c.tonnesPerYear ?? 0) / total) : 0)
@@ -571,16 +732,43 @@ function computeOperating(
         if (s <= 0) continue;
         // Realisierter Kontraktpreis: (Basis + erwarteter Bonus/Malus) × Indexierung,
         // gemindert um die erwartete Zurückweisungsquote am Werkstor.
-        const eff = (c.priceCentPerTonne + (c.bonusCentPerTonne ?? 0)) * idx * (1 - (c.rejectRate ?? 0));
+        const keep = idx * (1 - (c.rejectRate ?? 0));
+        const base = c.priceCentPerTonne * keep;
+        const bonus = (c.bonusCentPerTonne ?? 0) * keep;
+        const eff = base + bonus;
         share += s; valued += s * eff;
+        parts.push({ c, s, base, bonus });
       }
       // Übervergabe (Σ > 100 %): es gibt nur eine Ernte → proportional kürzen.
-      if (share > 1) { valued /= share; share = 1; }
-      return { share, price: share > 0 ? valued / share : 0 };
+      if (share > 1) {
+        for (const pt of parts) pt.s /= share;
+        valued /= share; share = 1;
+      }
+      return { share, price: share > 0 ? valued / share : 0, parts };
     }));
   }
 
+  // --- Anzahlungen der Off-taker: Quote auf den GEPLANTEN ERNTEWERT ----------
+  // Bemessungsgrundlage ist nicht der Einzelvertrag, sondern der geplante Erntewert
+  // (Fläche × Ertrag × Mischpreis) der einbezogenen Kulturen — siehe HarvestAdvancePolicy.
+  // Damit skaliert die Vorfinanzierung automatisch mit dem Anbauplan und damit mit
+  // Wachstumsszenarien. Der Erntewert je Jahr wird in Durchgang 2 aufsummiert.
+  const advPolicy = state.harvestAdvance;
+  const advActive = !!advPolicy && advPolicy.active !== false;
+  const advCropIds = advPolicy?.cropIds && advPolicy.cropIds.length
+    ? new Set(advPolicy.cropIds) : null;                 // null → alle Kulturen
+  const advEligible = (cropId: string) => advActive && (!advCropIds || advCropIds.has(cropId));
+  const advRate = advActive
+    ? resolveAssumption(state, advPolicy!.rateAssumptionKey, chain, n, ppy) : null;
+  const advCostRate = advActive && advPolicy!.costRateAssumptionKey
+    ? resolveAssumption(state, advPolicy!.costRateAssumptionKey, chain, n, ppy) : null;
+  const advFeeRate = advActive && advPolicy!.securityFeeRateAssumptionKey
+    ? resolveAssumption(state, advPolicy!.securityFeeRateAssumptionKey, chain, n, ppy) : null;
+  /** Geplanter Erntewert je Jahr über die einbezogenen Kulturen (CENT). */
+  const advBaseByYear = new Array(years).fill(0);
+
   // --- Durchgang 2: Umsatz, Zweitfrucht, Produktionskosten ------------------
+  const receiptTerms: ReceiptTerm[] = [];
   for (const calc of calcs) {
     const plan = calc.plan;
     const mixYears = mix.get(plan.cropId);
@@ -595,6 +783,40 @@ function computeOperating(
       const rev = round(calc.netT[p] * blended * calc.qual[p]);     // €/t in Minor-Units
       revenue[p] += rev;
       outputVat[p] += round(rev * outRate(plan.cropId));           // Ausgangs-USt (0 bei Reverse-Charge)
+
+      // Zahlungs-Timing (Paket B): denselben Umsatz nach Preisgewichten in Ströme mit
+      // eigenem Zahlungsziel zerlegen. Σ Terme == rev EXAKT — der Restbetrag aus der
+      // Rundung landet im Spot-Term, damit der Forderungs-Rollforward nicht driftet.
+      if (rev !== 0) {
+        const elig = advEligible(plan.cropId) || undefined;
+        if (elig) advBaseByYear[Math.floor(p / ppy)] += rev;
+        const weights: { w: number; dsoDays?: number; contractId?: string; isBonus?: boolean }[] = [];
+        if (m && m.share > 0 && blended > 0) {
+          for (const pt of m.parts) {
+            if (pt.base !== 0) weights.push({ w: pt.s * pt.base, dsoDays: pt.c.dsoDays, contractId: pt.c.id });
+            // Bonustranche: eigenes, verzögertes Zahlungsziel (DSO + Bonusverzug).
+            if (pt.bonus !== 0) weights.push({
+              w: pt.s * pt.bonus,
+              dsoDays: pt.c.dsoDays + (pt.c.bonusDelayDays ?? 0),
+              contractId: pt.c.id,
+              isBonus: true,
+            });
+          }
+        }
+        let allocated = 0;
+        for (const wt of weights) {
+          const amount = round((rev * wt.w) / blended);
+          if (amount === 0) continue;
+          allocated += amount;
+          receiptTerms.push({
+            period: p, amount, dsoDays: wt.dsoDays, cropId: plan.cropId,
+            contractId: wt.contractId, isBonus: wt.isBonus, advanceEligible: elig,
+          });
+        }
+        // Spot-/Restmenge trägt den globalen DSO (dsoDays undefined) und den Rundungsrest.
+        const rest = rev - allocated;
+        if (rest !== 0) receiptTerms.push({ period: p, amount: rest, cropId: plan.cropId, advanceEligible: elig });
+      }
     }
 
     // Zweitfrucht (Doppelfruchtsystem): zusätzlicher Umsatz + Inputkosten auf gleicher Fläche.
@@ -609,6 +831,8 @@ function computeOperating(
         const rev2 = round(netT * p2[hp]);
         revenue[hp] += rev2;
         outputVat[hp] += round(rev2 * outRate(plan.cropId));
+        // Zweitfrucht läuft ohne Abnahmevertrag → globaler DSO, keine Vorfinanzierung.
+        if (rev2 !== 0) receiptTerms.push({ period: hp, amount: rev2, cropId: plan.cropId });
         cogs[hp] += round(s2.extraCostPerHaCent * plan.areaHa);         // Zweitfrucht-Betriebsmittel
       }
     }
@@ -642,8 +866,33 @@ function computeOperating(
     }
   }
 
+  // --- Anzahlungsplan: Quote × geplanter Erntewert, Zufluss im Policy-Monat --
+  // Der Zufluss liegt VOR der Ernte desselben Jahres (typisch beim Legen) — genau in das
+  // Liquiditätsloch, das die Direktkosten von Februar bis September aufreißen.
+  const advances: AdvanceFlow[] = [];
+  if (advActive && advRate) {
+    // Kalendermonat 1–12 → Periodenindex innerhalb des Jahres (granularitätsfest).
+    const m0 = Math.min(12, Math.max(1, Math.round(advPolicy!.month || 3))) - 1;
+    const off = Math.min(ppy - 1, Math.floor((m0 * ppy) / 12));
+    for (let y = 0; y < years; y++) {
+      const period = y * ppy + off;
+      if (period < 0 || period >= n) continue;
+      const rate = advRate[period] ?? 0;
+      const amount = round(advBaseByYear[y] * rate);
+      if (amount <= 0) continue;
+      advances.push({
+        period,
+        amount,
+        year: y,
+        settlement: advPolicy!.settlement ?? 'firstDeliveries',
+        costRate: advCostRate ? (advCostRate[period] ?? 0) : 0,
+        securityFeeRate: advFeeRate ? (advFeeRate[period] ?? 0) : 0,
+      });
+    }
+  }
+
   // TODO: Vorratsbewertung Ernte-auf-Lager (saisonaler WC-Swing) — hier 0-Default
-  return { revenue, cogs, subsidies, inventoryValue, outputVat };
+  return { revenue, cogs, subsidies, inventoryValue, outputVat, receiptTerms, advances };
 }
 
 /* --------------------------------------------------------------------------
@@ -933,7 +1182,17 @@ export function computeModel(
   // Fester Personalaufwand (RO-Standard) als SG&A-Überkopf; Feldlohn steckt
   // separat in den COGS-opLines (LABOR) und wird hier NICHT doppelt gezählt.
   const personnelCost = computePersonnel(state, scenarioId).totalEmployerCost.values;
-  const opex = addArr(opexAssumptions, personnelCost);
+
+  // --- Working Capital (L3): Forderungs-Rollforward + Anzahlungen -----------
+  // Muss VOR dem EBITDA stehen, weil die Avalprovision auf erhaltene Anzahlungen ein
+  // Betriebsaufwand ist. Bei Satz 0 (Standardkalibrierung) ist die Reihe null und das
+  // EBITDA bleibt unverändert.
+  const workingCapital = computeWorkingCapital(
+    state, chain, n, ppy, op.revenue, op.cogs, op.receiptTerms, op.advances,
+  );
+  const wcChange = workingCapital.wcChange;
+
+  const opex = addArr(addArr(opexAssumptions, personnelCost), workingCapital.advanceSecurityFee);
 
   const ebitda = subArr(grossProfit, opex);
 
@@ -951,10 +1210,6 @@ export function computeModel(
 
   // --- 4) Debt Schedule -----------------------------------------------------
   const debt = computeDebtSchedule(state, chain, n, ppy);
-
-  // --- Working Capital (L3): NWC aus DSO/DPO/Lagertagen, ΔNWC in den CFO -----
-  const workingCapital = computeWorkingCapital(state, chain, n, ppy, op.revenue, op.cogs);
-  const wcChange = workingCapital.wcChange;
 
   // --- USt / TVA (RO): Ausgangs-/Vorsteuer, CAPEX-Erstattung, Timing --------
   const vat = computeVat(state, n, ppy, op.outputVat, op.cogs, opex, capexVatable);
@@ -1022,7 +1277,7 @@ export function computeModel(
 
   for (let it = 0; it < maxIter; it++) {
     iterations = it + 1;
-    const interestTotal = addArr(debt.interest, revolverInterest);
+    const interestTotal = addArr(addArr(debt.interest, revolverInterest), workingCapital.advanceCost);
     const pbt = subArr(ebit, interestTotal);              // bilanzielles Ergebnis v. St.
     const taxableFiscal = subArr(ebitFiscal, interestTotal); // steuerliche Bemessung
     // Zahlungswirksame Steuer: JAHRES-Bemessung + Verlustvortrag + Reinvestitions-Befreiung.
@@ -1085,7 +1340,7 @@ export function computeModel(
   }
 
   // --- 6) Statements zusammensetzen ----------------------------------------
-  const interestTotal = addArr(debt.interest, revolverInterest);
+  const interestTotal = addArr(addArr(debt.interest, revolverInterest), workingCapital.advanceCost);
   const pbt = subArr(ebit, interestTotal);
   const taxableFiscal = subArr(ebitFiscal, interestTotal);
   const currentTax = annualCurrentTax(taxableFiscal);
@@ -1129,6 +1384,10 @@ export function computeModel(
   const inventory = workingCapital.inventory;
   const receivables = workingCapital.receivables;
   const payables = workingCapital.payables;
+  // Erhaltene Anzahlungen: Passivum (IFRS 15 Vertragsverbindlichkeit), KEIN Umsatz.
+  // Im NWC steckt die Position mit negativem Vorzeichen — die Bilanzgleichung schließt
+  // damit genauso wie bei den Verbindlichkeiten aus Lieferungen.
+  const customerAdvances = workingCapital.customerAdvances;
   const bioAssets = zeros(n);
   const shareCapital = new Array(n).fill(state.openingBalance?.shareCapital ?? 0);
 
@@ -1140,7 +1399,7 @@ export function computeModel(
   const totalLiab = addArr(
     addArr(addArr(addArr(payables, debtBalance), revolverBalance),
       deferredTaxLiability),
-    vat.vatPayable,             // USt-Verbindlichkeit (TVA de plată)
+    addArr(vat.vatPayable, customerAdvances),   // USt-Verbindlichkeit + erhaltene Anzahlungen
   );
   const totalEquity = addArr(shareCapital, retainedEarnings);
   const liabAndEquity = addArr(totalLiab, totalEquity);
@@ -1195,6 +1454,11 @@ export function computeModel(
     state.workingCapital.inventoryDaysAssumptionKey,
     state.tax.corporateTaxRateKey,
   );
+  if (state.harvestAdvance?.active) {
+    referencedKeys.push(state.harvestAdvance.rateAssumptionKey);
+    if (state.harvestAdvance.costRateAssumptionKey) referencedKeys.push(state.harvestAdvance.costRateAssumptionKey);
+    if (state.harvestAdvance.securityFeeRateAssumptionKey) referencedKeys.push(state.harvestAdvance.securityFeeRateAssumptionKey);
+  }
   for (const s of state.subsidies) if (s.amountAssumptionKey) referencedKeys.push(s.amountAssumptionKey);
   for (const t of state.debt) if (t.referenceRateKey) referencedKeys.push(t.referenceRateKey);
   if (state.revolver.referenceRateKey) referencedKeys.push(state.revolver.referenceRateKey);
@@ -1307,6 +1571,7 @@ export function computeModel(
       vatReceivable: makeLine('bs.vat_receivable', 'USt-Forderung (TVA de recuperat)', 'money', vat.vatReceivable),
       totalAssets: makeLine('bs.total_assets', 'Summe Aktiva', 'money', totalAssets),
       payables: makeLine('bs.payables', 'Verbindlichkeiten', 'money', payables),
+      customerAdvances: makeLine('bs.customer_advances', 'Erhaltene Anzahlungen (Abnehmer)', 'money', customerAdvances),
       debt: makeLine('bs.debt', 'Finanzverbindlichkeiten', 'money', debtBalance),
       revolver: makeLine('bs.revolver', 'Betriebsmittellinie', 'money', revolverBalance),
       deferredTaxLiability: makeLine('bs.deferred_tax', 'Latente Steuern', 'money', deferredTaxLiability),
@@ -1322,6 +1587,8 @@ export function computeModel(
       addBackDepreciation: makeLine('cf.dep', '+ Abschreibung', 'money', depCommercial),
       addBackFvBio: makeLine('cf.fv_bio', '+ latente Steuer / − FV biol.', 'money', subArr(deferredTax, fvBio)),
       changeInWorkingCapital: makeLine('cf.wc', '− Δ Working Capital', 'money', scaleArr(wcChange, -1)),
+      // Nachrichtlich („davon"): steckt bereits in der ΔWC-Zeile — nicht zusätzlich addieren.
+      customerAdvanceMovement: makeLine('cf.advance', 'davon: Anzahlungen Abnehmer (Zufluss/Verrechnung)', 'money', workingCapital.advanceMovement),
       cfo: makeLine('cf.cfo', 'Operativer Cashflow', 'money',
         subArr(addArr(addArr(netIncome, depCommercial), deferredTax), addArr(wcChange, disposalGainLoss))),
       capex: makeLine('cf.capex', '− CapEx', 'money', scaleArr(capexOut, -1)),

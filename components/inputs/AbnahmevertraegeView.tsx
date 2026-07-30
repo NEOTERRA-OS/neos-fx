@@ -113,6 +113,32 @@ export function AbnahmevertraegeView() {
     });
   });
 
+  /* --- Anzahlungen: Quote auf den geplanten Erntewert je einbezogener Kultur ---
+   * Identisch zur Engine (computeOperating): Bemessungsgrundlage ist Fläche × Ertrag ×
+   * Mischpreis, NICHT der Kontraktwert — damit skaliert die Vorfinanzierung mit dem
+   * Anbauplan und damit mit Wachstumsszenarien. */
+  const adv = domain.harvestAdvance;
+  const advOn = !!adv && adv.active !== false;
+  const advRate = advOn ? resolveScalar(domain, adv!.rateAssumptionKey, sc) : 0;
+  const advCost = advOn && adv!.costRateAssumptionKey ? resolveScalar(domain, adv!.costRateAssumptionKey, sc) : 0;
+  const advFee = advOn && adv!.securityFeeRateAssumptionKey ? resolveScalar(domain, adv!.securityFeeRateAssumptionKey, sc) : 0;
+  const advRows = React.useMemo(() => {
+    if (!advOn) return [] as { cropId: string; value: number; advance: number }[];
+    const only = adv!.cropIds && adv!.cropIds.length ? new Set(adv!.cropIds) : null;
+    const out: { cropId: string; value: number; advance: number }[] = [];
+    for (const [cropId, tons] of tonnesByCrop) {
+      if (only && !only.has(cropId)) continue;
+      const cat = domain.catalog.find((k) => k.cropId === cropId);
+      if (!cat) continue;
+      // Preis je t = Mischpreis, wenn Verträge vorliegen, sonst Spot.
+      const price = mix.get(cropId)?.blended ?? resolveScalar(domain, cat.priceKey, sc);
+      const value = tons * price;
+      if (value <= 0) continue;
+      out.push({ cropId, value, advance: value * advRate });
+    }
+    return out;
+  }, [advOn, adv, tonnesByCrop, domain, sc, mix, advRate]);
+
   const unconfirmed = contracts.filter((c) => c.active && !c.priceConfirmed);
   const th = "px-2 py-1.5 caption text-[10px] text-nx-text-muted text-left";
   const sel = "rounded-control border px-1 text-[11.5px]";
@@ -155,7 +181,7 @@ export function AbnahmevertraegeView() {
         <div className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
           <div className="px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
             <h3 className="text-[13px] font-semibold">{t("Mischpreis & Zahlungsziel je Kultur")}</h3>
-            <p className="caption mt-0.5 text-[10.5px] text-nx-text-muted">{t("Erntemenge des ersten Planjahrs im aktuellen Szenario.")}</p>
+            <p className="caption mt-0.5 text-[10.5px] text-nx-text-muted">{t("Erntemenge des ersten Planjahrs im aktuellen Szenario. Das Zahlungsziel wirkt seit Paket B zahlungswirksam: die Forderung entsteht mit der Lieferung und läuft erst nach dem kontraktspezifischen Ziel als Kasse zu.")}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
@@ -168,6 +194,7 @@ export function AbnahmevertraegeView() {
                 <th className={th}>{t("Mischpreis")}</th>
                 <th className={th}>{t("Δ vs. Spot")}</th>
                 <th className={th}>{t("Zahlungsziel Ø")}</th>
+                <th className={th}>{t("Zahlungswirkung")}</th>
               </tr></thead>
               <tbody>
                 {Array.from(mix.entries()).map(([cropId, m]) => {
@@ -184,6 +211,9 @@ export function AbnahmevertraegeView() {
                         {Math.abs(d) < 1 ? "—" : (d > 0 ? "+" : "−") + fmtMoney(Math.abs(d), currency)}
                       </td>
                       <td className="px-2 py-1.5 num">{fmtNumber(m.dso, 0)} {t("Tage")}</td>
+                      <td className="px-2 py-1.5 caption text-[10.5px] text-nx-text-muted">
+                        {t("Forderung läuft ")}{fmtNumber(m.dso / 30.42, 1)}{t(" Monate nach der Ernte aus")}
+                      </td>
                     </tr>
                   );
                 })}
@@ -192,6 +222,123 @@ export function AbnahmevertraegeView() {
           </div>
         </div>
       )}
+
+      {/* --- Anzahlungen der Off-taker ------------------------------------- */}
+      <div className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
+          <div>
+            <h3 className="text-[13px] font-semibold">{t("Anzahlungen der Off-taker")}</h3>
+            <p className="caption mt-0.5 text-[10.5px] text-nx-text-muted">
+              {t("Quote auf den geplanten Erntewert — nicht je Vertrag, damit sie mit dem Anbauplan skaliert.")}
+            </p>
+          </div>
+          <label className="inline-flex items-center gap-1.5 text-[12px]">
+            <input type="checkbox" checked={adv?.active ?? false} disabled={readOnly}
+              onChange={(e) => patch((d) => {
+                if (!d.harvestAdvance) return;
+                d.harvestAdvance.active = e.target.checked;
+              })} />
+            {adv?.active ? t("aktiv") : t("inaktiv")}
+          </label>
+        </div>
+
+        <div className="mx-4 mt-3 flex items-start gap-2 rounded-control border px-3 py-2 text-[11.5px]"
+          style={{ borderColor: "var(--nx-warn, #C9A227)", background: "color-mix(in srgb, var(--nx-warn, #C9A227) 12%, transparent)", color: "var(--nx-warn, #C9A227)" }}>
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+          <span>
+            <b>{t("Verhandlungsannahme, keine Vertragslage")}</b>{t(": Keiner der geprüften Verträge sagt eine Anzahlung zu. PepsiCo verrechnet Vorschüsse ausdrücklich gegen die ersten Lieferungen und sagt keinen Vorschuss zu; VIA AGRO verlangt ein bilet la ordin als Sicherheit. Quote, Zeitpunkt und Preis der Vorfinanzierung sind bei den Abnehmern anzufordern.")}
+          </span>
+        </div>
+
+        <div className="px-4 py-2 text-[12px] text-nx-text-secondary">
+          {t("Eine Anzahlung ist kein Umsatz, sondern eine Vertragsverbindlichkeit (IFRS 15): sie erhöht Kasse und Passiva und wird bei Lieferung gegen die entstehende Forderung verrechnet. Die Wirkung sitzt nicht im EBITDA, sondern im Liquiditätsverlauf — niedrigerer Revolver-Höchststand, geringerer Zinsaufwand, besserer DSCR im Anlaufjahr.")}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 px-4 py-3">
+          <Field label={t("Quote (Anteil geplanter Erntewert)")}>
+            <div className="flex h-[34px] items-center gap-2">
+              <span className="num text-[13px] font-semibold">{fmtNumber(advRate * 100, 1)} %</span>
+              <span className="caption text-[10px] text-nx-text-muted">{t("Annahme advance.rate")}</span>
+            </div>
+          </Field>
+          <Field label={t("Preis der Vorfinanzierung")}>
+            <div className="flex h-[34px] items-center gap-2">
+              {/* Null explizit als 0,00 % zeigen — ein „–" liest sich als „nicht modelliert". */}
+              <span className="num text-[13px]">{(advCost * 100).toFixed(2).replace(".", ",")} % {t("p. a.")}</span>
+              <span className="caption text-[10px] text-nx-text-muted">
+                {advCost > 0 ? t("advance.cost_rate") : t("unbelegt — Benchmark Revolver ≈ 5,8 %")}
+              </span>
+            </div>
+          </Field>
+          <Field label={t("Avalprovision")}>
+            <div className="flex h-[34px] items-center gap-2">
+              <span className="num text-[13px]">{(advFee * 100).toFixed(2).replace(".", ",")} % {t("p. a.")}</span>
+              <span className="caption text-[10px] text-nx-text-muted">
+                {advFee > 0 ? t("advance.aval_fee") : t("unbelegt — EBITDA bleibt unberührt")}
+              </span>
+            </div>
+          </Field>
+          <Field label={t("Zuflussmonat")}>
+            <NumberInput value={adv?.month ?? 3} width={64}
+              onCommit={(v) => patch((d) => {
+                if (d.harvestAdvance) d.harvestAdvance.month = Math.min(12, Math.max(1, Math.round(v)));
+              })} />
+          </Field>
+          <Field label={t("Verrechnung")}>
+            <select className={sel} style={selStyle} value={adv?.settlement ?? "firstDeliveries"} disabled={readOnly || !adv}
+              onChange={(e) => patch((d) => {
+                if (d.harvestAdvance) d.harvestAdvance.settlement = e.target.value as "firstDeliveries" | "finalInvoice";
+              })}>
+              <option value="firstDeliveries">{t("gegen die ersten Lieferungen")}</option>
+              <option value="finalInvoice">{t("gegen die Schlussrechnung")}</option>
+            </select>
+          </Field>
+          <Field label={t("Sicherheit")}>
+            <select className={sel} style={selStyle} value={adv?.security ?? "none"} disabled={readOnly || !adv}
+              onChange={(e) => patch((d) => {
+                if (d.harvestAdvance) d.harvestAdvance.security = e.target.value as "none" | "bilet la ordin" | "Bankaval";
+              })}>
+              <option value="none">{t("keine")}</option>
+              <option value="bilet la ordin">bilet la ordin</option>
+              <option value="Bankaval">{t("Bankaval")}</option>
+            </select>
+          </Field>
+        </div>
+
+        <div className="border-t px-4 py-2.5 text-[11.5px]" style={{ borderColor: "var(--nx-border)" }}>
+          <table className="w-full text-[12px]">
+            <thead><tr className="border-b" style={{ borderColor: "var(--nx-border)" }}>
+              <th className={th}>{t("Vorfinanzierte Kultur")}</th>
+              <th className={th}>{t("Geplanter Erntewert (Jahr 1)")}</th>
+              <th className={th}>{t("Anzahlung")}</th>
+            </tr></thead>
+            <tbody>
+              {advRows.map((r) => (
+                <tr key={r.cropId} className="border-b" style={{ borderColor: "var(--nx-border)" }}>
+                  <td className="px-2 py-1.5 font-medium">{cropName[r.cropId] ?? r.cropId}</td>
+                  <td className="px-2 py-1.5 num">{fmtMoney(r.value, currency)}</td>
+                  <td className="px-2 py-1.5 num font-semibold">{fmtMoney(r.advance, currency)}</td>
+                </tr>
+              ))}
+              {advRows.length === 0 && (
+                <tr><td className="px-2 py-2 text-nx-text-muted" colSpan={3}>
+                  {adv?.active ? t("Keine Kultur einbezogen — der Erntewert der ausgewählten Kulturen ist null.") : t("Anzahlungen sind inaktiv — das Modell rechnet ohne Vorfinanzierung.")}
+                </td></tr>
+              )}
+              {advRows.length > 1 && (
+                <tr>
+                  <td className="px-2 py-1.5 font-semibold">{t("Summe")}</td>
+                  <td className="px-2 py-1.5 num font-semibold">{fmtMoney(advRows.reduce((a, r) => a + r.value, 0), currency)}</td>
+                  <td className="px-2 py-1.5 num font-semibold">{fmtMoney(advRows.reduce((a, r) => a + r.advance, 0), currency)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <p className="caption mt-2 text-[10.5px] text-nx-text-muted">
+            {t("Einbezogene Kulturen und die Quote sind unter Preise & Treiber (Gruppe „Anzahlungen Off-taker\") bzw. im Szenario-Studio verstellbar. Worst Case steht auf 0 — im Stressfall zahlt niemand vor.")}
+          </p>
+        </div>
+      </div>
 
       {/* --- Verträge ------------------------------------------------------ */}
       <div className="space-y-3">
@@ -261,6 +408,10 @@ export function AbnahmevertraegeView() {
                 <Field label={t("Zahlungsziel")}>
                   <NumberInput value={c.dsoDays} width={70} suffix={t("Tage")}
                     onCommit={(v) => upd(c.id, (x) => { x.dsoDays = v; })} />
+                </Field>
+                <Field label={t("Bonus-Verzug")}>
+                  <NumberInput value={c.bonusDelayDays ?? 0} width={70} suffix={t("Tage")}
+                    onCommit={(v) => upd(c.id, (x) => { x.bonusDelayDays = v; })} />
                 </Field>
                 <Field label={t("Zurückweisung")}>
                   <NumberInput value={(c.rejectRate ?? 0) * 100} width={70} suffix="%"

@@ -285,5 +285,48 @@ const B12: Record<string, string> = {
   "kein Lager": "no storage",
   "auf eigene Kosten, ohne Prämie": "at own cost, no premium",
   "Lagerbonus": "Storage bonus",
+
+  // --- Paket B: Zahlungs-Timing und Anzahlungen der Off-taker ---
+  "Bonus-Verzug": "Bonus delay",
+  "Zahlungswirkung": "Cash effect",
+  "Forderung läuft ": "Receivable clears ",
+  " Monate nach der Ernte aus": " months after harvest",
+  "Erntemenge des ersten Planjahrs im aktuellen Szenario. Das Zahlungsziel wirkt seit Paket B zahlungswirksam: die Forderung entsteht mit der Lieferung und läuft erst nach dem kontraktspezifischen Ziel als Kasse zu.":
+    "Harvest volume of the first plan year in the current scenario. Payment terms are now cash-effective: the receivable arises on delivery and only converts to cash after the contract-specific term.",
+  "Anzahlungen der Off-taker": "Off-taker advances",
+  "Quote auf den geplanten Erntewert — nicht je Vertrag, damit sie mit dem Anbauplan skaliert.":
+    "Share of the planned harvest value — not per contract, so it scales with the cropping plan.",
+  "inaktiv": "inactive",
+  "Verhandlungsannahme, keine Vertragslage": "Negotiation assumption, not contractual",
+  ": Keiner der geprüften Verträge sagt eine Anzahlung zu. PepsiCo verrechnet Vorschüsse ausdrücklich gegen die ersten Lieferungen und sagt keinen Vorschuss zu; VIA AGRO verlangt ein bilet la ordin als Sicherheit. Quote, Zeitpunkt und Preis der Vorfinanzierung sind bei den Abnehmern anzufordern.":
+    ": None of the reviewed contracts grants an advance. PepsiCo explicitly offsets any advance against the first deliveries and commits to none; VIA AGRO requires a bilet la ordin as security. Rate, timing and the price of the prefinancing must be requested from the buyers.",
+  "Eine Anzahlung ist kein Umsatz, sondern eine Vertragsverbindlichkeit (IFRS 15): sie erhöht Kasse und Passiva und wird bei Lieferung gegen die entstehende Forderung verrechnet. Die Wirkung sitzt nicht im EBITDA, sondern im Liquiditätsverlauf — niedrigerer Revolver-Höchststand, geringerer Zinsaufwand, besserer DSCR im Anlaufjahr.":
+    "An advance is not revenue but a contract liability (IFRS 15): it raises cash and liabilities alike and is offset against the receivable on delivery. The effect sits in liquidity, not EBITDA — lower peak revolver, lower interest expense, better DSCR in the ramp-up year.",
+  "Quote (Anteil geplanter Erntewert)": "Rate (share of planned harvest value)",
+  "Annahme advance.rate": "assumption advance.rate",
+  "Preis der Vorfinanzierung": "Price of the prefinancing",
+  "p. a.": "p.a.",
+  "advance.cost_rate": "advance.cost_rate",
+  "unbelegt — Benchmark Revolver ≈ 5,8 %": "not evidenced — revolver benchmark ≈ 5.8 %",
+  "unbelegt — EBITDA bleibt unberührt": "not evidenced — EBITDA unaffected",
+  "Avalprovision": "Guarantee fee",
+  "advance.aval_fee": "advance.aval_fee",
+  "Zuflussmonat": "Inflow month",
+  "Verrechnung": "Settlement",
+  "gegen die ersten Lieferungen": "against first deliveries",
+  "gegen die Schlussrechnung": "against final invoice",
+  "Sicherheit": "Security",
+  "keine": "none",
+  "Bankaval": "bank guarantee",
+  "Vorfinanzierte Kultur": "Prefinanced crop",
+  "Geplanter Erntewert (Jahr 1)": "Planned harvest value (year 1)",
+  "Anzahlung": "Advance",
+  "Summe": "Total",
+  "Keine Kultur einbezogen — der Erntewert der ausgewählten Kulturen ist null.":
+    "No crop included — the harvest value of the selected crops is zero.",
+  "Anzahlungen sind inaktiv — das Modell rechnet ohne Vorfinanzierung.":
+    "Advances are inactive — the model computes without prefinancing.",
+  "Einbezogene Kulturen und die Quote sind unter Preise & Treiber (Gruppe „Anzahlungen Off-taker\") bzw. im Szenario-Studio verstellbar. Worst Case steht auf 0 — im Stressfall zahlt niemand vor.":
+    "Included crops and the rate are adjustable under Prices & Drivers (group \"Off-taker advances\") or in the Scenario Studio. Worst case is set to 0 — under stress nobody pays up front.",
 };
 export default B12;

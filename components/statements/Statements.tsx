@@ -25,7 +25,9 @@ function balanceRows(c: ComputedModel): GridRow[] {
     ...(b.vatReceivable ? [{ item: b.vatReceivable }] : []),
     { item: b.biologicalAssets }, { item: b.land }, { item: b.ppeNet },
     { item: b.totalAssets, emphasis: true },
-    { item: b.payables }, { item: b.debt }, { item: b.revolver }, { item: b.deferredTaxLiability },
+    { item: b.payables },
+    ...(b.customerAdvances ? [{ item: b.customerAdvances }] : []),
+    { item: b.debt }, { item: b.revolver }, { item: b.deferredTaxLiability },
     ...(b.vatPayable ? [{ item: b.vatPayable }] : []),
     { item: b.totalLiabilities, emphasis: true },
     { item: b.shareCapital }, { item: b.retainedEarnings },
@@ -37,7 +39,9 @@ function cashflowRows(c: ComputedModel): GridRow[] {
   const cf = c.cashFlow;
   return [
     { item: cf.netIncome }, { item: cf.addBackDepreciation }, { item: cf.addBackFvBio },
-    { item: cf.changeInWorkingCapital }, { item: cf.cfo, emphasis: true },
+    { item: cf.changeInWorkingCapital },
+    ...(cf.customerAdvanceMovement ? [{ item: cf.customerAdvanceMovement }] : []),
+    { item: cf.cfo, emphasis: true },
     { item: cf.capex }, { item: cf.cfi, emphasis: true },
     { item: cf.debtDrawdowns }, { item: cf.debtRepayments }, { item: cf.revolverMovement },
     { item: cf.equityMovement }, { item: cf.interestPaid }, { item: cf.cff, emphasis: true },
