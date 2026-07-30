@@ -246,6 +246,9 @@ export type AnbauEntry = {
   /** Wasserregime des Eintrags: beregnet (Default) vs. unberegnete Trockenrotation.
    *  Steuert die Zwei-Pool-Flächenskalierung (irrigated → areaByYear, dryland → total − areaByYear). */
   pool?: "irrigated" | "dryland";
+  /** Gesellschaft, der diese Kultur zugeordnet ist (Entity-Split). Fehlt → aus Value/Cash abgeleitet
+   *  (Value Crops → NEOTERRA-OpCo, Cash/Trockenrotation → Isolde). Referenziert Entity.id. */
+  entityId?: string;
 };
 export type DerivedCapex = {
   machineId: string;
@@ -280,6 +283,9 @@ export type Domain = {
   stage: Stage;
   /** Scope: volle 6-Feld-Rotation ('full') vs. nur Wertkulturen stand-alone ('valueOnly'). */
   scope?: "full" | "valueOnly";
+  /** Entity-Sicht (Header): Gesellschaft, für die ALLES gerechnet wird (Vollkosten-Standalone).
+   *  Fehlt / 'combined' → kombiniertes Gesamtmodell. Referenziert Entity.id (z. B. 'ent-opco'/'ent-isolde'). */
+  entityView?: string;
   timeline: Timeline;
   scenarios: Scenario[];
   baseScenarioId: string;
@@ -1983,7 +1989,8 @@ export function migrateDomain(d: Domain): Domain {
   const DRY_IDS: CropId[] = ["weizen_dry", "gerste_dry", "raps_dry"];
   const hasDryland = d.anbauplan.some((a) => a.pool === "dryland");
   const hasAllCandidateData = CANDIDATE_IDS.every((id) => d.catalog.some((c) => c.cropId === id));
-  if (hasDryland && hasAllCandidateData) return d; // bereits migriert
+  const hasIsolde = Array.isArray(d.entities) && d.entities.some((e) => e.id === ENTITY_ISOLDE);
+  if (hasDryland && hasAllCandidateData && hasIsolde) return d; // bereits migriert
 
   // (1) Katalog: fehlende Kandidaten-Einträge aus SEED.
   const catalog = [...d.catalog];
@@ -2013,7 +2020,13 @@ export function migrateDomain(d: Domain): Domain {
     });
     anbauplan = [...d.anbauplan, mkDry("weizen_dry", wDry), mkDry("gerste_dry", gDry), mkDry("raps_dry", rDry)];
   }
-  return { ...d, catalog, arbeitsgaenge, assumptions, anbauplan };
+  // (5) Entity-Register: Isolde (Cash-Crop-Gesellschaft) nachziehen, falls sie fehlt.
+  const entities = Array.isArray(d.entities) && d.entities.length ? [...d.entities] : ENTITIES.slice();
+  if (!entities.some((e) => e.id === ENTITY_ISOLDE)) {
+    const seedIsolde = ENTITIES.find((e) => e.id === ENTITY_ISOLDE);
+    if (seedIsolde) entities.push(seedIsolde);
+  }
+  return { ...d, catalog, arbeitsgaenge, assumptions, anbauplan, entities };
 }
 
 /* --------------------------------------------------------------------------
@@ -2259,7 +2272,22 @@ const ENTITIES: Entity[] = [
   { id: "ent-holding", name: "NEOS Holding Ltd", role: "holding", country: "CY", ownershipPct: 100, cui: "", note: "Konzernmutter · Management & Control (Substanz CY)" },
   { id: "ent-opco", name: "NEOTERRA SRL", role: "opco", country: "RO", ownershipPct: 100, cui: "", note: "Betriebsgesellschaft · Anbau & Vermarktung (Măceșu de Jos)" },
   { id: "ent-propco", name: "NEOTERRA Land SRL", role: "propco", country: "RO", ownershipPct: 100, cui: "", note: "Besitzgesellschaft · Eigentumsflächen (Pacht an OpCo)" },
+  { id: "ent-isolde", name: "Isolde Farms SRL", role: "opco", country: "RO", ownershipPct: 100, cui: "", note: "Betriebsgesellschaft · Cash-Crop-/Trockenrotation (Getreide/Raps/Sonnenblume)" },
 ];
+
+/** Operative Anbau-Entities (Kultur-Split). NEOTERRA-OpCo = Wertkulturen (Hauptentity),
+ *  Isolde = Cash-/Trockenrotation. Default-Zuordnung, im Register frei überschreibbar. */
+export const ENTITY_NEOTERRA = "ent-opco";
+export const ENTITY_ISOLDE = "ent-isolde";
+/** Standard-Gesellschaft einer Kultur (falls kein explizites entityId gesetzt): Value → NEOTERRA,
+ *  Cash/Trockenrotation → Isolde. */
+export function defaultEntityOf(cropId: string): string {
+  return VALUE_CROP_IDS.includes(cropId) ? ENTITY_NEOTERRA : ENTITY_ISOLDE;
+}
+/** Effektive Entity einer Anbauplan-Zeile (explizit oder abgeleitet). */
+export function entityOfEntry(e: AnbauEntry): string {
+  return e.entityId ?? defaultEntityOf(e.cropId);
+}
 
 // HINWEIS (Engine-Limit): computeModel liest openingBalance.debt NICHT — bs.debt
 // wird ausschließlich aus dem in-Model-Tilgungsplan (state.debt) gespeist. Damit die
@@ -3998,6 +4026,34 @@ function scopeToValueOnly(domain: Domain): Domain {
   return { ...domain, anbauplan, machineCatalog };
 }
 
+/** Entity-Sicht: filtert das Kombimodell auf EINE Gesellschaft (Vollkosten-Standalone) — nur ihre
+ *  Kulturen (entityOfEntry), nur die davon genutzten Maschinen, Wachstum flach auf die Entity-Fläche
+ *  (Zwei-Pool: beregnet + trocken erhalten). Die Engine rechnet daraus ALLE Sektionen voll (P&L,
+ *  Bilanz, Cashflow, Liquidität, Demand). Read-only-Transform (mutiert die gespeicherte Domäne nicht). */
+export function scopeToEntity(domain: Domain, entityId: string): Domain {
+  const anbauplan = domain.anbauplan.filter((a) => entityOfEntry(a) === entityId);
+  if (!anbauplan.length) return domain; // leere Entity → unverändert (Fallback)
+  const usedCropIds = new Set(anbauplan.map((a) => a.cropId));
+  const usedMachineIds = new Set<string>();
+  for (const cid of usedCropIds) for (const g of domain.arbeitsgaenge[cid] ?? []) usedMachineIds.add(g.m);
+  const machineCatalog = domain.machineCatalog.filter((m) => {
+    if (m.mode !== "fixedFleet") return true;
+    if (m.cEff) return usedMachineIds.has(m.id);
+    if (m.serviceHoursLike) return usedMachineIds.has(m.serviceHoursLike);
+    return true;
+  });
+  const irrHa = anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0) || 1;
+  const totHa = anbauplan.reduce((s, a) => s + a.areaHa, 0) || irrHa;
+  const years = Math.max(1, domain.growth?.years ?? 1);
+  const growth = domain.growth ? {
+    ...domain.growth, stage: "s1" as const,
+    areaByYear: Array.from({ length: years }, () => irrHa),
+    totalByYear: Array.from({ length: years }, () => totHa),
+    startIrrigatedHa: irrHa, startTotalHa: totHa, drylandRotation: [], acquisitions: [],
+  } : domain.growth;
+  return { ...domain, anbauplan, machineCatalog, growth, scope: "full", stage: 1 };
+}
+
 /** Leitet aus dem Kombimodell (Isolde = Cash/Trocken · neoterra = Value Crops) einen EIGENSTÄNDIGEN
  *  neoterra-Value-Crop-Case ab, der als separates Modell gespeichert werden kann:
  *   · Anbauplan nur Wertkulturen (Isolde-Cash/Trockenrotation entfällt),
@@ -4070,9 +4126,12 @@ function scopeToCashOnly(domain: Domain): Domain {
  *  direkte Ableitungen (Dashboard-Kultur-Karten: Anbaustruktur, Contribution, Stufen-Board)
  *  bei Stufe 1 (nur Ackerbau) bzw. Scope valueOnly konsistent zur GuV rechnen. */
 export function scopedDomain(domain: Domain): Domain {
-  if (domain.growth?.stage === "s1a") return scopeToCashOnly(domain);
-  if ((domain.scope ?? "full") === "valueOnly") return scopeToValueOnly(domain);
-  return domain;
+  // Entity-Sicht zuerst (Vollkosten-Standalone der Gesellschaft), dann Stage/Scope darauf.
+  const ev = domain.entityView;
+  const d = (ev && ev !== "combined") ? scopeToEntity(domain, ev) : domain;
+  if (d.growth?.stage === "s1a") return scopeToCashOnly(d);
+  if ((d.scope ?? "full") === "valueOnly") return scopeToValueOnly(d);
+  return d;
 }
 
 /* --------------------------------------------------------------------------
@@ -4204,16 +4263,20 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // Scope 'valueOnly': Anbauplan auf Wertkulturen filtern und Maschinen, die NUR Break Crops
   // nutzen (z. B. Mähdrescher, Getreidedrille), aus der Flotte nehmen. Alle Downstream-Rechnungen
   // (Fläche, Flotte/CAPEX, opex.fix, Beregnung/Lager, P&L) laufen dann auf `domain`.
-  const scope = domainIn.scope ?? "full";
+  // Entity-Sicht (Header) zuerst: auf die gewählte Gesellschaft filtern (Vollkosten-Standalone) —
+  //  danach greifen Scope/Stage auf dem gefilterten Modell. 'combined'/leer → Gesamtmodell.
+  const entityView = domainIn.entityView;
+  const domainE: Domain = (entityView && entityView !== "combined") ? scopeToEntity(domainIn, entityView) : domainIn;
+  const scope = domainE.scope ?? "full";
   // Zwei-Pool: der Beregnungs-Ramp (scale/usedArea) bezieht sich NUR auf die beregneten Kulturen.
   //  Dryland-Einträge (pool:"dryland") skalieren separat (totalByYear − areaByYear) und dürfen den
   //  Beregnungs-scale nicht verwässern. Solange kein Dryland im Plan steht, ist der Filter ein No-Op.
   const isIrr = (a: AnbauEntry) => a.pool !== "dryland";
-  const fullArea = domainIn.anbauplan.filter(isIrr).reduce((s, a) => s + a.areaHa, 0);
+  const fullArea = domainE.anbauplan.filter(isIrr).reduce((s, a) => s + a.areaHa, 0);
   // Stufe 1a (nur Ackerbau) hat Vorrang vor dem Scope: reine Cash-Crop-Rotation, kein Gemüse.
-  const cashOnly = domainIn.growth?.stage === "s1a";
-  const domain: Domain = cashOnly ? scopeToCashOnly(domainIn)
-    : scope === "valueOnly" ? scopeToValueOnly(domainIn) : domainIn;
+  const cashOnly = domainE.growth?.stage === "s1a";
+  const domain: Domain = cashOnly ? scopeToCashOnly(domainE)
+    : scope === "valueOnly" ? scopeToValueOnly(domainE) : domainE;
   const usedArea = domain.anbauplan.filter(isIrr).reduce((s, a) => s + a.areaHa, 0);
   // Personal skaliert mit der genutzten Fläche (bevorzugt); die verbleibende Flotte bleibt
   // je Typ konservativ voll (Spitzenmonat-Sizing skaliert nicht linear) — nur Break-only-
