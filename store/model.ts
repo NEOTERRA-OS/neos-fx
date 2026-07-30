@@ -1383,11 +1383,19 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  0 = EIGENLAGER: Die Ware bleibt unser Eigentum und wird erst bei der Auslagerung verkauft.
   //  Der Unterschied ist erheblich — siehe Kommentar in computeOperating.
   A("store.service_mode", "store.service_mode", "Lager als Dienstleistung (1) statt Eigenlager (0)", "count", 1),
-  // Lagergebühr je Tonne und Monat. Entscheidung Benedikt: mindestens 10, angesetzt 15.
-  //  Marktüblich sind für temperaturgeführte Lagerung mit Handling rund 8–20 €/t·Monat.
-  //  Break-even des eigenen Lagers liegt bei rund 6 €/t·Monat (Dienstleistungsmodell, ohne
-  //  Kapitalbindung der Ware) bzw. 7,15 (Eigenlager).
-  A("store.fee_per_t_month", "store.fee_per_t_month", "Lagergebühr (€/t·Monat)", "money_per_tonne", 1500, 1800, 1000),
+  /* Lagergebühr je Tonne und Monat — Kalibrierung Benedikt nach der Cold-Storage-Rechnung:
+   *   Base  20,00   Best  22,00   Worst  11,70 = GENAU DER BREAK-EVEN
+   *
+   * Der Worst-Case-Wert ist bewusst der Break-even: im Stressfall trägt sich das Lager
+   * gerade eben und verdient nichts. Der Break-even ist dort SKALENINVARIANT (11,70 bei
+   * 25 % wie bei 50 % Einlagerung), weil CAPEX und Betriebskosten linear mit der Kapazität
+   * skalieren — er hängt nur an Lagerdauer, Schwund und Baukosten je Tonne.
+   *
+   * ACHTUNG: Im Worst Case steht die Einlagerungsquote auf 0 (Entscheidung Benedikt beim
+   * Szenarioband). Solange das so bleibt, wird dort nichts eingelagert und die Gebühr ist
+   * wirkungslos — sie greift erst, wenn die Quote im Worst Case über 0 gezogen wird.
+   * Der Base-Break-even liegt bei 13,44 (kürzere Lagerdauer, niedrigerer Schwund). */
+  A("store.fee_per_t_month", "store.fee_per_t_month", "Lagergebühr (€/t·Monat)", "money_per_tonne", 2000, 2200, 1170),
   // Betriebskosten der Lagerung — Literaturkalibrierung, bis technische Daten der Anlage vorliegen.
   A("store.energy_per_t_month", "store.energy_per_t_month", "Lagerenergie (€/t·Monat)", "money_per_tonne", 200, 150, 300),
   A("store.handling_per_t", "store.handling_per_t", "Ein-/Auslagerung (€/t Durchsatz)", "money_per_tonne", 600, 500, 800),
@@ -1395,7 +1403,10 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Im Dienstleistungsmodell ist das keine Erlösminderung, sondern eine Ersatzpflicht zum
   //  Warenwert: die Ware gehört bereits dem Abnehmer, wir sind Verwahrer. Eine vertragliche
   //  Schwundtoleranz würde den Posten deckeln — heute bewusst ungedeckelt angesetzt.
-  A("store.loss_rate", "store.loss_rate", "Lagerverlust (Anteil der eingelagerten Menge)", "rate", 0.05, 0.03, 0.08),
+  //  Kalibrierung Benedikt: Base 3 %. Best 2 %, Worst 8 % als Band. Der Schwund ist der
+  //  wirksamste Hebel auf den Break-even — die Senkung von 5 auf 3 % drückte ihn im Base
+  //  Case um 2,71 €/t·Monat (16,15 → 13,44).
+  A("store.loss_rate", "store.loss_rate", "Lagerverlust (Anteil der eingelagerten Menge)", "rate", 0.03, 0.02, 0.08),
 
 
   // --- Personal (headcount / Bruttomonatsgehalt CENT) — Referenz D, Stufe 1 ---
