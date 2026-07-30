@@ -142,7 +142,7 @@ export type CatalogEntry = {
 export type MachineDriver =
   | { kind: "crop"; cropId: string }
   | { kind: "valueCrops" }
-  | { kind: "crops"; ids: string[] }
+  | { kind: "crops"; ids: string[]; /** true → nicht Jahresdurchsatz, sondern gleichzeitige Spitzenbelegung. */ peakConcurrent?: boolean }
   | { kind: "irrigated" }   // nur beregnete Fläche (pool !== "dryland") — z. B. Beregnung/Pivot-CAPEX
   | { kind: "total" };
 export type MachineType = {
@@ -894,7 +894,7 @@ type CropId =
  *  (Saatgut-/Herbstkosten Sep/Okt — konsistent mit SOW_MONTH des Maßnahmenkatalogs), Düngung/
  *  PSM/Beregnung im FRÜHJAHR (optionale explizite Monate dueng/psm/bereg; fehlen sie → plant+1/2/3).
  *  Steady-State je Modelljahr: Herbstsaat (für Folgejahr) + Sommerernte (Vorjahressaat) im selben Jahr. */
-const CROP_CAL: Record<CropId, { plant: number; harvest: number[]; dueng?: number; psm?: number; bereg?: number }> = {
+export const CROP_CAL: Record<CropId, { plant: number; harvest: number[]; dueng?: number; psm?: number; bereg?: number }> = {
   weizen:            { plant: 9, harvest: [6], dueng: 1, psm: 3, bereg: 4 },  // Saat Okt · N1 Feb · PSM Apr · Beregnung Mai
   gerste_zw:         { plant: 9, harvest: [6], dueng: 1, psm: 3, bereg: 4 },  // Saat Okt (Winterung)
   soja_luzerne:      { plant: 3, harvest: [8] },
@@ -1335,8 +1335,11 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Lager €/t GETRENNT: Hülle/Bau und Technik. Summe bleibt bei 120 €/t wie zuvor — die
   //  Aufteilung folgt der CAPEX-Taxonomie (Bau: Schüttlager + Hülle rund 11,2 Mio €,
   //  Technik: Kühl-/CA-Lager + Curing + Packlinien rund 12,4 Mio €), also etwa hälftig.
-  A("mprice.store_pert", "mprice.store_pert", "Lager/Packhaus Hülle & Bau €/t", "money_per_tonne", 6000),
-  A("mprice.store_tech_pert", "mprice.store_tech_pert", "Lager/Packhaus Technik €/t", "money_per_tonne", 6000),
+  // Cold Storage: Baukosten 350–400 €/t Kapazität (Vorgabe Benedikt; deckt sich mit der
+  //  CAPEX-Taxonomie, die Kühl-/CA-Lager mit 250–550 €/t führt). Angesetzt 375 €/t, geteilt
+  //  in Hülle/Bau und Technik. BEZUGSGRÖSSE IST DIE SPITZENBELEGUNG, nicht der Jahresdurchsatz.
+  A("mprice.store_pert", "mprice.store_pert", "Cold Storage Hülle & Bau €/t Kapazität", "money_per_tonne", 17500),
+  A("mprice.store_tech_pert", "mprice.store_tech_pert", "Cold Storage Technik €/t Kapazität", "money_per_tonne", 20000),
   // Absatz-/Kapazitätsgrenzen: Verarbeitungskapazität des kontrahierten Tomatenwerks (t/Kampagne).
   //  Mittelgroßes EU-Werk ≈ 100–250 kt/Kampagne (2.000–4.000 t/Tag × 60–80 Tage). Advisor warnt darüber.
   A("market.tomate_cap_t", "market.tomate_cap_t", "Tomatenwerk-Kapazität (t/Kampagne)", "count", 150000),
@@ -1388,7 +1391,11 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Betriebskosten der Lagerung — Literaturkalibrierung, bis technische Daten der Anlage vorliegen.
   A("store.energy_per_t_month", "store.energy_per_t_month", "Lagerenergie (€/t·Monat)", "money_per_tonne", 200, 150, 300),
   A("store.handling_per_t", "store.handling_per_t", "Ein-/Auslagerung (€/t Durchsatz)", "money_per_tonne", 600, 500, 800),
-  A("store.shrink_per_month", "store.shrink_per_month", "Schwund je Lagermonat", "rate", 0.008, 0.005, 0.015),
+  // Lagerverlust auf die GESAMTE eingelagerte Menge (nicht je Monat) — Vorgabe Benedikt.
+  //  Im Dienstleistungsmodell ist das keine Erlösminderung, sondern eine Ersatzpflicht zum
+  //  Warenwert: die Ware gehört bereits dem Abnehmer, wir sind Verwahrer. Eine vertragliche
+  //  Schwundtoleranz würde den Posten deckeln — heute bewusst ungedeckelt angesetzt.
+  A("store.loss_rate", "store.loss_rate", "Lagerverlust (Anteil der eingelagerten Menge)", "rate", 0.05, 0.03, 0.08),
 
 
   // --- Personal (headcount / Bruttomonatsgehalt CENT) — Referenz D, Stufe 1 ---
@@ -2092,11 +2099,11 @@ const MACHINE_CATALOG: MachineType[] = [
   //  (3) Hülle und Technik skalieren unterschiedlich (Bau je m², Technik je t).
   { id: "store", label: "Lager/Packhaus — Hülle & Bau", unitPriceKey: "mprice.store_pert",
     category: "Gebäude & Infrastruktur", manufacturer: "—", productName: "Lager / Packhaus (Bau)",
-    mode: "perTonne", driver: { kind: "crops", ids: STORAGE_CROP_IDS }, assetClass: "buildings",
+    mode: "perTonne", driver: { kind: "crops", ids: STORAGE_CROP_IDS, peakConcurrent: true }, assetClass: "buildings",
     afaFiscalYears: 20, afaCommercialYears: 25, insurancePct: 0.008 },
   { id: "store_tech", label: "Lager/Packhaus — Technik", unitPriceKey: "mprice.store_tech_pert",
     category: "Gebäude & Infrastruktur", manufacturer: "—", productName: "Kälte · Belüftung · Sortier-/Packlinien",
-    mode: "perTonne", driver: { kind: "crops", ids: STORAGE_CROP_IDS }, assetClass: "machinery",
+    mode: "perTonne", driver: { kind: "crops", ids: STORAGE_CROP_IDS, peakConcurrent: true }, assetClass: "machinery",
     afaFiscalYears: 10, afaCommercialYears: 12, insurancePct: 0.008 },
 ];
 
@@ -3613,7 +3620,39 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
     const k = `store.share.${cropId}`;
     return domain.assumptions[k] ? Math.max(0, Math.min(1, resolveScalar(domain, k, scenarioId))) : 1;
   };
+  /* Gleichzeitige SPITZENBELEGUNG eines gemeinsamen Lagers (t).
+   * Kartoffel, Zwiebel/Möhre, Süßkartoffel, Knollensellerie und Knoblauch teilen sich
+   * dieselbe Halle. Zu bauen ist deshalb NICHT die Summe der Jahresmengen, sondern die
+   * höchste Menge, die GLEICHZEITIG darin liegt. Wer die Jahresmenge baut, überinvestiert
+   * um genau den Betrag, den die zeitliche Staffelung der Ernten einspart.
+   *
+   * Belegungskurve zyklisch über zwölf Monate im eingeschwungenen Zustand: eine Kultur
+   * belegt die Monate ab ihrer Ernte für die Dauer der Lagerung. Läuft die Lagerung über
+   * den Jahreswechsel, greift die zyklische Rechnung das korrekt ab. */
+  const storePeakConcurrentT = (ids: string[]): number => {
+    const monthsRaw = domain.assumptions["store.months"]
+      ? Math.round(resolveScalar(domain, "store.months", scenarioId)) : 0;
+    const months = Math.max(0, Math.min(12, monthsRaw));
+    if (months <= 0) return 0;
+    const occ = new Array(12).fill(0);
+    for (const a of domain.anbauplan) {
+      if (!ids.includes(a.cropId)) continue;
+      const yk = yieldKeyOf(a.cropId);
+      if (!yk) continue;
+      const tons = a.areaHa * resolveScalar(domain, yk, scenarioId) * storeShare(a.cropId);
+      if (tons <= 0) continue;
+      const hs = ((CROP_CAL as Record<string, { harvest: number[] }>)[a.cropId]?.harvest ?? []).filter((h: number) => h >= 0);
+      if (!hs.length) continue;
+      const per = tons / hs.length;
+      for (const h of hs) {
+        for (let k = 0; k < months; k++) occ[(h + k) % 12] += per;
+      }
+    }
+    return occ.reduce((m, v) => Math.max(m, v), 0);
+  };
+
   const driverTonnes = (drv: MachineDriver): number => {
+    if (drv.kind === "crops" && drv.peakConcurrent) return storePeakConcurrentT(drv.ids);
     let t = 0;
     for (const a of domain.anbauplan) {
       if (drv.kind === "crops" && !drv.ids.includes(a.cropId)) continue;
@@ -4975,7 +5014,23 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // Kulturscharfe Vintage-Treiber: Lager folgt Lager-Tonnage, Maschinen ihren Nutzer-Kulturen.
   const yieldOfCropMY = (cid: string) => { const yk = domain.catalog.find((c) => c.cropId === cid)?.yieldKey; return yk ? resolveScalar(domain, yk, scenarioId) : 0; };
   const shareOfStoreMY = (cid: string) => { const k = `store.share.${cid}`; return domain.assumptions[k] ? Math.max(0, Math.min(1, resolveScalar(domain, k, scenarioId))) : 1; };
-  const storeTMY = (y: number) => STORAGE_CROP_IDS.reduce((s, cid) => s + (cropAreasMY.areas[cid]?.[y] ?? 0) * yieldOfCropMY(cid) * shareOfStoreMY(cid), 0);
+  /** Spitzenbelegung des gemeinsamen Lagers im Jahr y (t) — die zu bauende Kapazität.
+   *  Analog zu storePeakConcurrentT, aber auf den Mehrjahres-Flächenkurven. */
+  const storeMonthsMY = Math.max(0, Math.min(12, domain.assumptions["store.months"]
+    ? Math.round(resolveScalar(domain, "store.months", scenarioId)) : 0));
+  const storeTMY = (y: number) => {
+    if (storeMonthsMY <= 0) return 0;
+    const occ = new Array(12).fill(0);
+    for (const cid of STORAGE_CROP_IDS) {
+      const tons = (cropAreasMY.areas[cid]?.[y] ?? 0) * yieldOfCropMY(cid) * shareOfStoreMY(cid);
+      if (tons <= 0) continue;
+      const hs = ((CROP_CAL as Record<string, { harvest: number[] }>)[cid]?.harvest ?? []).filter((h: number) => h >= 0);
+      if (!hs.length) continue;
+      const per = tons / hs.length;
+      for (const h of hs) for (let k = 0; k < storeMonthsMY; k++) occ[(h + k) % 12] += per;
+    }
+    return occ.reduce((m, v) => Math.max(m, v), 0);
+  };
   const storeBaseTMY = storeTMY(0);
   const storeScaleMY = Array.from({ length: years }, (_, y) => storeBaseTMY > 0 ? storeTMY(y) / storeBaseTMY : scale[y]);
   const dStoreScale = storeScaleMY.map((s, y) => s - (y > 0 ? storeScaleMY[y - 1] : 0));
@@ -5644,7 +5699,7 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "store.share.kartoffel_pommes", "store.share.kartoffel_chips", "store.share.zwiebel_moehre",
     "store.share.suesskartoffel", "store.share.knoblauch", "store.share.knollensellerie",
     "store.months", "store.from_month", "store.service_mode", "store.fee_per_t_month", "store.energy_per_t_month",
-    "store.handling_per_t", "store.shrink_per_month",
+    "store.handling_per_t", "store.loss_rate",
   ] },
   { group: "Subventionen", keys: ["subsidy.per_ha", "subsidy.coupled_freilandgemuese", "rev.gerste_zweitfrucht"] },
   { group: "Covenants", keys: ["covenant.dscr_min", "covenant.leverage_max"] },

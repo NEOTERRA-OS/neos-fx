@@ -31,6 +31,7 @@ import { PachtView } from "../inputs/PachtView";
 import { AnbaustrategieView } from "../inputs/AnbaustrategieView";
 import { WertkulturenHebelView } from "../inputs/WertkulturenHebelView";
 import { AbnahmevertraegeView } from "../inputs/AbnahmevertraegeView";
+import { LagerKostenstelleView } from "../inputs/LagerKostenstelleView";
 import { CapexScenarienView } from "../inputs/CapexScenarienView";
 import { ContributionView } from "../inputs/ContributionView";
 import { OverheadView } from "../inputs/OverheadView";
@@ -189,6 +190,7 @@ export function AppShell() {
                 : view === "einsatz" ? <EinsatzView />
                 : view === "studio" ? <ScenarioStudioView />
                 : view === "abnahme" ? <AbnahmevertraegeView />
+                : view === "lagerkst" ? <LagerKostenstelleView />
                 : view === "bewertung" ? <BewertungView />
                 : view === "shareholder" ? <ShareholderView />
                 : view === "pacht" ? <PachtView />

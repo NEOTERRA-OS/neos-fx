@@ -451,6 +451,112 @@ function computeWorkingCapital(
   };
 }
 
+/* --------------------------------------------------------------------------
+ * Kostenstelle Lager & Packhaus — Deckungsbeitragsrechnung
+ * --------------------------------------------------------------------------
+ * Das Lager ist seit dem Dienstleistungsmodell ein Profit Center mit EXTERNEM
+ * Erlös: die Ware wird bei der Ernte verkauft, das Eigentum geht über, die
+ * Einlagerung wird separat berechnet. Diese Funktion stellt Erlös und Kosten
+ * gegenüber und leitet die beiden Zahlen ab, um die es wirtschaftlich geht:
+ *
+ *   Break-even-Gebühr    ab welchem €/t·Monat trägt sich die Anlage?
+ *   Break-even-Belegung  wie weit darf die Belegung fallen, bis sie es nicht mehr tut?
+ *
+ * Rein, deterministisch, ohne Seiteneffekte — wie computeHolding.
+ * ------------------------------------------------------------------------ */
+export interface StorageResult {
+  feeRevenue: number[];
+  energyCost: number[];
+  handlingCost: number[];
+  lossCost: number[];
+  depreciation: number[];
+  /** Ergebnis der Kostenstelle je Periode = Gebühr − Betrieb − Verlust − AfA. */
+  result: number[];
+  /** Eingelagerte Menge je Periode (Zugang, t). */
+  storedIn: number[];
+  /** Belegung zum Periodenende (t). */
+  balanceT: number[];
+  /** Höchste Belegung über den Horizont (t) — die Kapazität, die gebaut werden muss. */
+  peakT: number;
+  serviceMode: boolean;
+  /** Angesetzte Gebühr in CENT je Tonne und Monat. */
+  feePerTonneMonth: number;
+  /** Gebühr, ab der sich die Anlage trägt (CENT je Tonne und Monat). */
+  breakEvenFee: number;
+  /** Belegung, ab der sich die Anlage trägt (t Jahresdurchsatz). */
+  breakEvenTonnes: number;
+  /** Dieselbe Schwelle als Anteil der geplanten Belegung (0..1). */
+  breakEvenOccupancy: number;
+  /** Referenzjahr der Break-even-Rechnung (0-basiert) — das letzte volle Jahr. */
+  referenceYear: number;
+}
+
+export function computeStorage(state: ModelState, scenarioId: UUID): StorageResult {
+  const n = state.timeline.periodCount;
+  const ppy = periodsPerYear(state.timeline.baseGranularity);
+  const chain = scenarioChain(state, scenarioId);
+  const op = computeOperating(state, chain, n, ppy);
+
+  // AfA der Lager-CAPEX, linear ab Anschaffung. Erfasst sowohl die abgeleiteten Träger
+  // (cx-store, cx-store_tech) als auch die Detailplanzeilen der Blöcke lager/packhaus.
+  const isStorageCapex = (id: string) =>
+    id.startsWith('cx-store') || id.startsWith('cx-plan-lg-') || id.startsWith('cx-plan-pk-');
+  const depreciation = zeros(n);
+  for (const c of state.capex) {
+    if (!isStorageCapex(c.id)) continue;
+    const life = Math.max(1, c.usefulLifeMonths);
+    const base = c.amount - (c.salvageValue ?? 0);
+    for (let p = Math.max(0, c.purchasePeriod); p < Math.min(n, c.purchasePeriod + life); p++) {
+      depreciation[p] += base / life;
+    }
+  }
+
+  const result = zeros(n);
+  for (let p = 0; p < n; p++) {
+    result[p] = op.storageFeeRevenue[p] - op.storageEnergyCost[p]
+              - op.storageHandlingCost[p] - op.storageLossCost[p] - depreciation[p];
+  }
+
+  const peakT = op.storedTonnesBalance.reduce((m, v) => Math.max(m, v), 0);
+  const serviceMode = (state.assumptions['store.service_mode']
+    ? (resolveAssumption(state, 'store.service_mode', chain, n, ppy)[0] ?? 1) : 1) >= 0.5;
+  const feePerTonneMonth = state.assumptions['store.fee_per_t_month']
+    ? (resolveAssumption(state, 'store.fee_per_t_month', chain, n, ppy)[0] ?? 0) : 0;
+
+  /* Break-even auf einem eingeschwungenen Jahr — das letzte VOLLE Jahr des Horizonts.
+   * Das erste Jahr taugt nicht: dort ist das Lager oft noch nicht verfügbar. */
+  const years = Math.max(1, Math.floor(n / ppy));
+  const refY = Math.max(0, years - 1);
+  const yr = (arr: number[]) => {
+    let s = 0;
+    for (let p = refY * ppy; p < Math.min(n, (refY + 1) * ppy); p++) s += arr[p];
+    return s;
+  };
+  const feeY = yr(op.storageFeeRevenue);
+  const varY = yr(op.storageEnergyCost) + yr(op.storageHandlingCost) + yr(op.storageLossCost);
+  const fixY = yr(depreciation);
+  // Gebühr, bei der Erlös = Gesamtkosten. Der Erlös ist linear in der Gebühr.
+  const breakEvenFee = feeY > 0 ? (feePerTonneMonth * (varY + fixY)) / feeY : 0;
+  // Belegung, bei der der Deckungsbeitrag die Fixkosten deckt. Gebühr und variable Kosten
+  // skalieren beide mit der Menge, die AfA nicht.
+  const tonnesY = yr(op.storedTonnesIn);
+  const contribPerT = tonnesY > 0 ? (feeY - varY) / tonnesY : 0;
+  const breakEvenTonnes = contribPerT > 0 ? fixY / contribPerT : 0;
+  const breakEvenOccupancy = tonnesY > 0 ? breakEvenTonnes / tonnesY : 0;
+
+  return {
+    feeRevenue: op.storageFeeRevenue,
+    energyCost: op.storageEnergyCost,
+    handlingCost: op.storageHandlingCost,
+    lossCost: op.storageLossCost,
+    depreciation, result,
+    storedIn: op.storedTonnesIn,
+    balanceT: op.storedTonnesBalance,
+    peakT, serviceMode, feePerTonneMonth,
+    breakEvenFee, breakEvenTonnes, breakEvenOccupancy, referenceYear: refY,
+  };
+}
+
 /** Standalone-Sicht fürs 13-Wochen-/Saison-Cash-Modul. */
 export function computeWorkingCapitalSchedule(
   state: ModelState,
@@ -702,8 +808,12 @@ interface OperatingResult {
   advances: AdvanceFlow[];
   /** Deckungskauf-Aufwand bei Untererfüllung kontrahierter Mengen (Paket C) — Betriebsaufwand. */
   coverPurchaseCost: number[];
-  /** Betriebskosten der Lagerung (Energie, Ein-/Auslagerung) — Betriebsaufwand. */
+  /** Betriebskosten der Lagerung gesamt (Energie + Handling + Verlust) — Betriebsaufwand. */
   storageCost: number[];
+  storageEnergyCost: number[];
+  storageHandlingCost: number[];
+  /** Wert der Lagerverluste: Ersatzpflicht (Dienstleistung) bzw. Mengenverlust (Eigenlager). */
+  storageLossCost: number[];
   /** Eingelagerte Tonnage je Periode (Zugang) — für Belegung und Kostenstelle. */
   storedTonnesIn: number[];
   /** Lagerbestand in Tonnen zum Periodenende — Belegungskurve. */
@@ -859,9 +969,11 @@ function computeOperating(
     ? resolveAssumption(state, "store.energy_per_t_month", chain, n, ppy) : null;
   const handlingSeries = has("store.handling_per_t")
     ? resolveAssumption(state, "store.handling_per_t", chain, n, ppy) : null;
-  const shrinkSeries = has("store.shrink_per_month")
-    ? resolveAssumption(state, "store.shrink_per_month", chain, n, ppy) : null;
-  const storageCost = zeros(n);
+  const lossSeries = has("store.loss_rate")
+    ? resolveAssumption(state, "store.loss_rate", chain, n, ppy) : null;
+  const storageEnergyCost = zeros(n);
+  const storageHandlingCost = zeros(n);
+  const storageLossCost = zeros(n);
   const storedTonnesIn = zeros(n);
   const storedTonnesOut = zeros(n);
   const storageFeeRevenue = zeros(n);
@@ -955,13 +1067,14 @@ function computeOperating(
         // jenseits des Horizonts liegt.
         storedTonnesIn[p] += storedT;
         const handling = handlingSeries ? (handlingSeries[p] ?? 0) : 0;
-        storageCost[p] += round(storedT * handling);              // Ein-/Auslagerung, Durchsatz
+        storageHandlingCost[p] += round(storedT * handling);      // Ein-/Auslagerung, Durchsatz
         const energy = energySeries ? (energySeries[p] ?? 0) : 0;
         for (let q = p + 1; q <= Math.min(outP, n - 1); q++) {
-          storageCost[q] += round(storedT * energy);              // Energie je Lagermonat
+          storageEnergyCost[q] += round(storedT * energy);         // Energie je Lagermonat
         }
 
-        const shrink = shrinkSeries ? Math.max(0, shrinkSeries[p] ?? 0) : 0;
+        // Lagerverlust auf die GESAMTE eingelagerte Menge, nicht je Monat.
+        const lossRate = lossSeries ? Math.max(0, Math.min(1, lossSeries[p] ?? 0)) : 0;
 
         if (serviceMode) {
           /* --- Ware bei der Ernte verkauft, Lagerung als Dienstleistung --------------- */
@@ -982,11 +1095,11 @@ function computeOperating(
           // Verwahrerhaftung: Schwund geht zu unseren Lasten — als Ersatzpflicht zum
           // WARENWERT, nicht als entgangener Erlös. Eine vertragliche Schwundtoleranz
           // (marktüblich) würde diesen Posten deckeln; hier bewusst ungedeckelt angesetzt.
-          const lossT = storedT * Math.max(0, shrink * months);
-          storageCost[Math.min(outP, n - 1)] += round(lossT * blended);
+          const lossT = storedT * lossRate;
+          storageLossCost[Math.min(outP, n - 1)] += round(lossT * blended);
         } else if (outP < n) {
           /* --- Eigenlager: Verkauf erst bei der Auslagerung --------------------------- */
-          const outT = storedT * Math.max(0, 1 - shrink * months); // Schwund mindert die Menge
+          const outT = storedT * Math.max(0, 1 - lossRate);        // Verlust mindert die Menge
           const fee = feeSeries ? (feeSeries[outP] ?? 0) : 0;
           const spotOut = calc.priceEurT[outP] ?? blended;
           const mOut = mixYears?.[Math.floor(outP / ppy)];
@@ -1280,7 +1393,9 @@ function computeOperating(
   return {
     revenue, cogs, costIncurred, bioAssets, subsidies, inventoryValue, outputVat,
     receiptTerms, advances, coverPurchaseCost,
-    storageCost, storedTonnesIn, storedTonnesBalance, storageFeeRevenue,
+    storageCost: addArr(addArr(storageEnergyCost, storageHandlingCost), storageLossCost),
+    storageEnergyCost, storageHandlingCost, storageLossCost,
+    storedTonnesIn, storedTonnesBalance, storageFeeRevenue,
   };
 }
 
@@ -1855,7 +1970,7 @@ export function computeModel(
   );
   referencedKeys.push('quality.reject', 'market.cover_premium', 'infl.output');
   for (const k of ['store.months', 'store.from_month', 'store.service_mode', 'store.fee_per_t_month',
-                   'store.energy_per_t_month', 'store.handling_per_t', 'store.shrink_per_month']) {
+                   'store.energy_per_t_month', 'store.handling_per_t', 'store.loss_rate']) {
     if (k in state.assumptions) referencedKeys.push(k);
   }
   if (state.harvestAdvance?.active) {
