@@ -495,7 +495,10 @@ export interface OfftakeContract {
   tonnesPerYear?: number;
   /** Anteil der Erntemenge 0..1 (nur volumeMode='share'). */
   share?: number;
-  /** Kontrakt-Basispreis in CENT je Tonne. Fix — die Verträge sind NICHT indexiert. */
+  /** Kontrakt-Basispreis in CENT je Tonne — der unterschriebene Preis des ERSTEN Planjahrs.
+   *  Die Verträge selbst enthalten keine Indexklausel, sind aber Jahresverträge: im
+   *  Mehrjahresplan wird jedes Jahr neu kontrahiert, deshalb schreibt die Engine diesen
+   *  Preis ab Jahr 2 mit der Output-Inflation (`infl.output`) fort. Siehe computeOperating. */
   priceCentPerTonne: Money;
   /** false → Basispreis ist ein Platzhalter (im Vertrag nicht befüllt) und wird in der
    *  Oberfläche sichtbar markiert. */
