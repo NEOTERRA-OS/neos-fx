@@ -26,6 +26,11 @@ export function supabaseConfigured(): boolean {
   return !!((env("NEXT_PUBLIC_SUPABASE_URL") && env("NEXT_PUBLIC_SUPABASE_ANON_KEY")) || (TEAM_URL && TEAM_KEY));
 }
 
+/** Projekt-Basis-URL (ohne Pfad). Für Diagnose-Pings (z. B. Auth-Health-Check im Login). */
+export function supabaseBaseUrl(): string {
+  return env("NEXT_PUBLIC_SUPABASE_URL") ?? TEAM_URL;
+}
+
 /** Basis-URL der Edge Functions (…/functions/v1). Für direkte fetch-Aufrufe (z. B. ANAF-Proxy). */
 export function supabaseFnBase(): string {
   return (env("NEXT_PUBLIC_SUPABASE_URL") ?? TEAM_URL) + "/functions/v1";

@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { getSupabase, supabaseConfigured } from "../../lib/supabaseClient";
+import { getSupabase, supabaseConfigured, supabaseBaseUrl, supabaseAnonKey } from "../../lib/supabaseClient";
 import { NeoterraLogo } from "./NeoterraLogo";
 import { t } from "../../lib/i18n";
 
@@ -46,7 +46,12 @@ const CSS = `
 .nfx-inp{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid var(--fx-line);border-radius:11px;padding:11px 12px}
 .nfx-inp:focus-within{border-color:var(--fx-green)}
 .nfx-inp svg{color:#9aa39a;flex:0 0 auto}
-.nfx-inp input{border:0;outline:0;background:transparent;font-size:14.5px;flex:1;font-family:inherit;color:var(--fx-ink);padding:0}
+.nfx-inp input{border:0;outline:0;background:transparent;font-size:14.5px;flex:1;font-family:inherit;color:var(--fx-ink);padding:0;min-width:0}
+.nfx-inp input::-ms-reveal,.nfx-inp input::-ms-clear{display:none}
+.nfx-eye{flex:0 0 auto;background:none;border:0;padding:3px;margin:-3px -3px -3px 0;cursor:pointer;color:#9aa39a;display:grid;place-items:center;border-radius:7px;font-family:inherit}
+.nfx-eye:hover{color:var(--fx-green);background:rgba(44,60,43,.06)}
+.nfx-eye:focus-visible{outline:2px solid var(--fx-green);outline-offset:1px}
+.nfx-inp .nfx-eye svg{color:inherit}
 .nfx-cta{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:4px;background:var(--fx-yellow);color:var(--fx-green);
   border:0;border-radius:10px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit}
 .nfx-cta:disabled{opacity:.55;cursor:default}
@@ -55,6 +60,7 @@ const CSS = `
 .nfx-msg{margin-top:16px;border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.45}
 .nfx-msg.err{background:#FDE8E4;border:1px solid #f3c7bf;color:#8f2c1e}
 .nfx-msg.ok{background:#E7F0E8;border:1px solid #c7e0cd;color:#065f46}
+.nfx-msg.warn{background:#FEF6E0;border:1px solid #f0dfaa;color:#7a5a05}
 .nfx-view{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:12.5px}
 .nfx-view button{background:none;border:0;padding:0;cursor:pointer;color:var(--fx-green);font-weight:700;font-family:inherit;font-size:12.5px;text-decoration:underline;text-underline-offset:2px}
 .nfx-view span{color:var(--fx-muted)}
@@ -72,10 +78,41 @@ const CSS = `
 }
 `;
 
+/** „Failed to fetch"/„Load failed" = der Request hat den Browser nie verlassen bzw. kam nie an.
+ *  Das ist NIE ein falsches Passwort, sondern Netz, Offline-Datei, Adblocker oder Firewall. */
+const isNetworkError = (e: unknown): boolean => {
+  const m = String((e as Error)?.message ?? e ?? "").toLowerCase();
+  return /failed to fetch|load failed|networkerror|network request failed|fetch failed|err_/.test(m);
+};
+
+/** Direkter Ping auf den Auth-Health-Endpoint — trennt „Server/Netz tot" von „nur Login blockiert". */
+async function probeAuth(): Promise<"ok" | "blocked"> {
+  try {
+    const ctl = new AbortController();
+    const to = setTimeout(() => ctl.abort(), 6000);
+    const r = await fetch(supabaseBaseUrl() + "/auth/v1/health", {
+      headers: { apikey: supabaseAnonKey() }, signal: ctl.signal,
+    });
+    clearTimeout(to);
+    return r.ok || r.status < 500 ? "ok" : "blocked";
+  } catch { return "blocked"; }
+}
+
+function networkHint(probe: "ok" | "blocked"): string {
+  const isFile = typeof window !== "undefined" && window.location.protocol === "file:";
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+  if (offline) return t("Keine Internetverbindung — der Browser ist offline.");
+  if (isFile) return t("Diese Datei wurde lokal geöffnet (file://). Der Browser blockiert den Login aus einer lokalen Datei. Bitte fx.neoterra.ag im Browser aufrufen oder den Betrachter-Modus nutzen.");
+  if (probe === "ok") return t("Der Server ist erreichbar, aber der Anmelde-Aufruf wurde blockiert — meist durch eine Browser-Erweiterung (Adblocker/Privacy-Tool) oder ein Firmen-Netzwerk. Bitte im privaten Fenster ohne Erweiterungen erneut versuchen.");
+  return t("Server nicht erreichbar (supabase.co wird blockiert). Bitte Netzwerk/VPN/Firewall prüfen oder ein anderes Netz verwenden.");
+}
+
 function LoginScreen() {
   const [mode, setMode] = React.useState<"in" | "up">("in");
   const [email, setEmail] = React.useState("");
   const [pw, setPw] = React.useState("");
+  const [showPw, setShowPw] = React.useState(false);
+  const isLocalFile = typeof window !== "undefined" && window.location.protocol === "file:";
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState<{ tone: "err" | "ok"; text: string } | null>(null);
 
@@ -95,7 +132,19 @@ function LoginScreen() {
         else setMsg({ tone: "ok", text: t("Registriert — bitte E-Mail bestätigen, dann anmelden.") });
       }
     } catch (e) {
-      setMsg({ tone: "err", text: (e as Error).message ?? t("Anmeldung fehlgeschlagen.") });
+      if (isNetworkError(e)) {
+        setMsg({ tone: "err", text: t("Verbindung wird geprüft …") });
+        const probe = await probeAuth();
+        setMsg({ tone: "err", text: networkHint(probe) });
+      } else {
+        const raw = String((e as Error)?.message ?? "");
+        const nice = /invalid login credentials/i.test(raw) ? t("E-Mail oder Passwort stimmt nicht.")
+          : /email not confirmed/i.test(raw) ? t("E-Mail noch nicht bestätigt — bitte den Bestätigungslink im Postfach öffnen.")
+          : /user already registered/i.test(raw) ? t("Für diese E-Mail existiert bereits ein Konto — bitte anmelden.")
+          : /rate limit|too many/i.test(raw) ? t("Zu viele Versuche — bitte einen Moment warten.")
+          : raw || t("Anmeldung fehlgeschlagen.");
+        setMsg({ tone: "err", text: nice });
+      }
     } finally { setBusy(false); }
   };
 
@@ -132,6 +181,12 @@ function LoginScreen() {
             <h1 className="nfx-h">{mode === "in" ? t("Anmelden") : t("Konto erstellen")}</h1>
             <p className="nfx-sub">{mode === "in" ? t("Melde dich an, um fortzufahren.") : t("Registriere dich mit deiner @neoterra.ag-Adresse.")}</p>
 
+            {isLocalFile && (
+              <div className="nfx-msg warn" style={{ marginTop: 0, marginBottom: 18 }}>
+                {t("Lokale Datei erkannt (file://) — der Browser lässt aus einer lokalen Datei keine Anmeldung zu. Für den Login bitte fx.neoterra.ag aufrufen; hier funktioniert der Betrachter-Modus.")}
+              </div>
+            )}
+
             <div className="nfx-field">
               <label>{t("E-Mail")}</label>
               <div className="nfx-inp">
@@ -143,7 +198,14 @@ function LoginScreen() {
               <label>{t("Passwort")}</label>
               <div className="nfx-inp">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                <input type="password" autoComplete={mode === "in" ? "current-password" : "new-password"} placeholder="••••••••" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={onKey} />
+                <input type={showPw ? "text" : "password"} autoComplete={mode === "in" ? "current-password" : "new-password"} placeholder="••••••••" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={onKey} />
+                <button type="button" className="nfx-eye" tabIndex={-1} onClick={() => setShowPw((v) => !v)}
+                  aria-label={showPw ? t("Passwort verbergen") : t("Passwort anzeigen")}
+                  title={showPw ? t("Passwort verbergen") : t("Passwort anzeigen")}>
+                  {showPw
+                    ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M10.7 5.1A10.9 10.9 0 0 1 12 5c7 0 10 7 10 7a18.5 18.5 0 0 1-2.7 3.9M6.6 6.6A18.5 18.5 0 0 0 2 12s3 7 10 7a10.9 10.9 0 0 0 5.4-1.4" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><path d="m2 2 20 20" /></svg>
+                    : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>}
+                </button>
               </div>
             </div>
 

@@ -159,5 +159,26 @@ const B12: Record<string, string> = {
   "NPV / IRR": "NPV / IRR",
   "Vorbelegung aus dem Modell: Bewässerung €/ha, Lager/Packhaus €/t, EURIBOR + Zinsschock.":
     "Seeded from the model: irrigation €/ha, storage/pack house €/t, EURIBOR + rate shock.",
+
+  // — Login: Passwort-Sichtbarkeit & Fehlermeldungen —
+  "Passwort anzeigen": "Show password",
+  "Passwort verbergen": "Hide password",
+  "Verbindung wird geprüft …": "Checking connection …",
+  "Keine Internetverbindung — der Browser ist offline.":
+    "No internet connection — the browser is offline.",
+  "Diese Datei wurde lokal geöffnet (file://). Der Browser blockiert den Login aus einer lokalen Datei. Bitte fx.neoterra.ag im Browser aufrufen oder den Betrachter-Modus nutzen.":
+    "This file was opened locally (file://). The browser blocks sign-in from a local file. Please open fx.neoterra.ag in your browser or use viewer mode.",
+  "Der Server ist erreichbar, aber der Anmelde-Aufruf wurde blockiert — meist durch eine Browser-Erweiterung (Adblocker/Privacy-Tool) oder ein Firmen-Netzwerk. Bitte im privaten Fenster ohne Erweiterungen erneut versuchen.":
+    "The server is reachable, but the sign-in call was blocked — usually by a browser extension (ad blocker/privacy tool) or a corporate network. Please try again in a private window without extensions.",
+  "Server nicht erreichbar (supabase.co wird blockiert). Bitte Netzwerk/VPN/Firewall prüfen oder ein anderes Netz verwenden.":
+    "Server unreachable (supabase.co is being blocked). Please check network/VPN/firewall or use a different network.",
+  "E-Mail oder Passwort stimmt nicht.": "Email or password is incorrect.",
+  "E-Mail noch nicht bestätigt — bitte den Bestätigungslink im Postfach öffnen.":
+    "Email not confirmed yet — please open the confirmation link in your inbox.",
+  "Für diese E-Mail existiert bereits ein Konto — bitte anmelden.":
+    "An account already exists for this email — please sign in.",
+  "Zu viele Versuche — bitte einen Moment warten.": "Too many attempts — please wait a moment.",
+  "Lokale Datei erkannt (file://) — der Browser lässt aus einer lokalen Datei keine Anmeldung zu. Für den Login bitte fx.neoterra.ag aufrufen; hier funktioniert der Betrachter-Modus.":
+    "Local file detected (file://) — the browser does not allow sign-in from a local file. For login please open fx.neoterra.ag; viewer mode works here.",
 };
 export default B12;
