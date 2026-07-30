@@ -25,6 +25,7 @@ import { SubventionenView } from "../inputs/SubventionenView";
 import { EroeffnungsbilanzView } from "../inputs/EroeffnungsbilanzView";
 import { ArbeitszeitkontoView } from "../inputs/ArbeitszeitkontoView";
 import { SensitivitaetView } from "../inputs/SensitivitaetView";
+import { ScenarioStudioView } from "../inputs/ScenarioStudioView";
 import { BewertungView } from "../inputs/BewertungView";
 import { ShareholderView } from "../inputs/ShareholderView";
 import { PachtView } from "../inputs/PachtView";
@@ -172,6 +173,7 @@ export function AppShell() {
                 : view === "eroeffnung" ? <EroeffnungsbilanzView />
                 : view === "arbeitszeit" ? <ArbeitszeitkontoView />
                 : view === "einsatz" ? <EinsatzView />
+                : view === "studio" ? <ScenarioStudioView />
                 : view === "sensitivitaet" ? <SensitivitaetView />
                 : view === "bewertung" ? <BewertungView />
                 : view === "shareholder" ? <ShareholderView />

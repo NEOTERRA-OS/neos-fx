@@ -1365,6 +1365,38 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("en.combine", "en.combine", "Mähdrescher (Einheiten, Basis)", "count", 2),
   A("en.transp", "en.transp", "Transport/Hakenlift (Einheiten, Basis)", "count", 3),
   A("en.gross_extra", "en.gross_extra", "Großschlepper zusätzlich zur Legekombi", "count", 1),
+
+  /* ------------------------------------------------------------------
+   * SZENARIO-STUDIO — Risiko-, Markt- und Logistik-Treiber.
+   *  ALLE Defaults sind NEUTRAL (Faktor 1 / Delta 0), d. h. das Basismodell rechnet
+   *  exakt wie bisher, solange kein Regler bewegt wird. Der Composer legt sie in
+   *  buildModelState als Overlay ÜBER die bereits inflationierten Kurven.
+   * ---------------------------------------------------------------- */
+  // Klima- & Infrastrukturrisiko — Beregnungsausfall (ANIF-Netzpumpwerk) in der Hitzespitze.
+  //  Ertragsverlust = Ausfalltage × Verlust/Tag, gekappt bei 85 %. Direktentnahme Donau
+  //  (eigene Pumpstation + Druckleitung) puffert den Netzausfall zu `intake_mitigation`.
+  A("risk.irrig_outage_d", "risk.irrig_outage_d", "Beregnungsausfall in der Hitzespitze (Tage)", "count", 0, 0, 10),
+  A("risk.yield_per_outage_d", "risk.yield_per_outage_d", "Ertragsverlust je Ausfalltag (Wertkultur)", "rate", 0.030),
+  A("risk.outage_break_share", "risk.outage_break_share", "Ausfall-Wirkung auf Break Crops (Anteil)", "rate", 0.40),
+  A("farm.intake_direct", "farm.intake_direct", "Direktentnahme Donau aktiv (0/1)", "count", 0),
+  A("risk.intake_mitigation", "risk.intake_mitigation", "Redundanz-Wirkung Direktentnahme (0..1)", "rate", 0.85),
+  A("irrig.norm_scale", "irrig.norm_scale", "Wassernorm-Skalierung (1,0 = Plan-mm)", "rate", 1.0),
+  // Markt & Qualität — Kontrakt vs. Spot. Kontrahierte Menge ist preisfest; nur der
+  //  Spot-Anteil (1 − contract_share) trägt die Spot-Delta. Break Crops sind voll spot-exponiert.
+  A("market.contract_share", "market.contract_share", "Kontraktanteil Wertkulturen (0..1)", "rate", 0.80),
+  A("market.spot_delta", "market.spot_delta", "Spotpreis-Delta (±)", "rate", 0),
+  A("market.brix_premium", "market.brix_premium", "Brix-Prämie/-Abzug Industrietomate (±)", "rate", 0),
+  A("market.potato_grade", "market.potato_grade", "Sortier-/Qualitätsprämie Kartoffel (±)", "rate", 0),
+  // Logistik — Entfernung zum Abnehmer. Der €/t-Speditionssatz ist auf `dist_ref_km`
+  //  kalibriert und skaliert linear mit der tatsächlichen Entfernung.
+  A("transport.distance_km", "transport.distance_km", "Entfernung zum Abnehmer (km)", "count", 120),
+  A("transport.dist_ref_km", "transport.dist_ref_km", "Referenz-Entfernung des €/t-Satzes (km)", "count", 120),
+  // Zinsschock ADDITIV in Basispunkten-Dezimal (0,02 = +200 bps) — multiplikativ auf den
+  //  EURIBOR wäre als Regler unbrauchbar (Vorzeichenwechsel bei Negativzins).
+  A("macro.rate_shock", "macro.rate_shock", "Zinsschock auf EURIBOR (additiv, 0,02 = +200 bp)", "rate", 0),
+  // Pflanzenschutz-Stücksatz — bis hierher teilte sich PSM den Pauschalsatz mit Material und
+  //  Handarbeit, ein PSM-Regler hätte zwei fremde Kostenblöcke mitgezogen. Jetzt eigener Satz.
+  A("psm.per_euro", "psm.per_euro", "Pflanzenschutz-Stücksatz (1 € = 100 ct)", "money", 100),
 ]);
 
 /* --------------------------------------------------------------------------
@@ -1613,7 +1645,7 @@ function buildCropOps(cropId: CropId): OpSeed[] {
   });
   // PSM: je Überfahrt Mittelkosten €/ha (editierbar). Wirkstoffe im Label (EU/RO zugelassen 2025/26).
   const psmLines: OpLineSeed[] = PSM_PROGRAM[cropId].map((p, pi) =>
-    ({ ...L(p.label, "crop_protection", p.eurHa, "price.per_euro", "€/ha (Mittel)"), passes: p.passes ?? 1, mid: `${cropId}::psm::${pi}` }));
+    ({ ...L(p.label, "crop_protection", p.eurHa, "psm.per_euro", "€/ha (Mittel)"), passes: p.passes ?? 1, mid: `${cropId}::psm::${pi}` }));
   return [
     { code: "OP-SAAT",  label: "Saatgut/Pflanzgut",           costPeriods: [clampP(cal.plant)],     lines: [{ ...L(`Saatgut/Pflanzgut (Saatstärke)`, "seed", seed.qty, `seed.${cropId}`, `${seed.unit}/ha`), mid: `${cropId}::saat` }] },
     { code: "OP-DUENG", label: "Düngung (Gaben)",             costPeriods: [clampP(cal.dueng ?? cal.plant + 1)], lines: duengLines },
@@ -1985,7 +2017,155 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
  *  Einträge (~1,5× beregnete Fläche, 40/35/25 %). Idempotent & nicht-destruktiv — bestehende
  *  (evtl. editierte) Nutzerdaten werden NIE überschrieben, nur Fehlendes aus SEED nachgezogen.
  *  Nach dem nächsten Autosave heilt sich der Cloud-Stand dauerhaft. */
-export function migrateDomain(d: Domain): Domain {
+/** Schlüssel des Szenario-Studios (Risiko/Markt/Logistik) + eigener PSM-Stücksatz.
+ *  Werden in Altständen (Cloud-Slots, JSON-Exporte) nachgezogen; Defaults sind neutral. */
+const STUDIO_KEYS: string[] = [
+  "risk.irrig_outage_d", "risk.yield_per_outage_d", "risk.outage_break_share",
+  "farm.intake_direct", "risk.intake_mitigation", "irrig.norm_scale",
+  "market.contract_share", "market.spot_delta", "market.brix_premium", "market.potato_grade",
+  "transport.distance_km", "transport.dist_ref_km", "macro.rate_shock", "psm.per_euro",
+];
+
+/** Zieht die Studio-Keys nach und hängt die PSM-Zeilen vom Pauschal- auf den PSM-Stücksatz um
+ *  (vorher teilten sich PSM, Material und Handarbeit `price.per_euro` — ein PSM-Regler hätte
+ *  zwei fremde Kostenblöcke mitbewegt). Läuft IMMER, auch für sonst fertig migrierte Stände. */
+function migrateStudio(d: Domain): Domain {
+  let assumptions = d.assumptions ?? {};
+  const missing = STUDIO_KEYS.filter((k) => !assumptions[k] && SEED.assumptions[k]);
+  if (missing.length) {
+    assumptions = { ...assumptions };
+    for (const k of missing) assumptions[k] = SEED.assumptions[k];
+  }
+  let touched = false;
+  const catalog = Array.isArray(d.catalog) ? d.catalog.map((c: any) => {
+    if (!Array.isArray(c?.ops)) return c;
+    let hit = false;
+    const ops = c.ops.map((op: any) => {
+      if (op?.code !== "OP-PSM" || !Array.isArray(op.lines)) return op;
+      if (!op.lines.some((l: any) => l?.unitCostKey === "price.per_euro")) return op;
+      hit = true;
+      return { ...op, lines: op.lines.map((l: any) => l?.unitCostKey === "price.per_euro" ? { ...l, unitCostKey: "psm.per_euro" } : l) };
+    });
+    if (!hit) return c;
+    touched = true;
+    return { ...c, ops };
+  }) : d.catalog;
+  if (!missing.length && !touched) return d;
+  return { ...d, assumptions, catalog };
+}
+
+/* --------------------------------------------------------------------------
+ * SZENARIO-STUDIO — Overlay-Faktoren (SSOT).
+ *  EINE Quelle für Risiko-/Markt-Faktoren, damit Composer (buildModelState) und die
+ *  direkten Ableitungen (Umsatz-Split, Charts) garantiert dieselbe Logik rechnen.
+ * ------------------------------------------------------------------------ */
+export type StudioOverlay = {
+  /** Ertragsfaktor je Kultur (Beregnungsausfall; Trockenrotation unbetroffen). */
+  yieldFactor: (cropId: string) => number;
+  /** Preisfaktor je Kultur (Spot-Exposition, Brix-Prämie, Kartoffel-Sortierung). */
+  priceFactor: (cropId: string) => number;
+  /** Skalierung der Wassernorm (kostenwirksam auf irrig.eur_mm). */
+  irrigNormScale: number;
+  /** Additiver Zinsschock auf den EURIBOR (0,02 = +200 bp). */
+  rateShock: number;
+  /** Effektiver Ertragsabschlag der Wertkulturen aus dem Ausfall (0..0,85). */
+  outageHit: number;
+};
+
+export function studioOverlay(domain: Domain, scenarioId: string): StudioOverlay {
+  const S = (k: string, dflt: number): number => {
+    const a = domain.assumptions?.[k]; if (!a) return dflt;
+    const v = resolveScalar(domain, k, scenarioId);
+    return isFinite(v) ? v : dflt;
+  };
+  // Beregnungsausfall: Netzausfall (ANIF-Pumpwerk) × Verlust/Tag, gedämpft durch die
+  //  Direktentnahme Donau (eigene Pumpstation/Druckleitung als Redundanz), Kappung 85 %.
+  const outageD = Math.max(0, S("risk.irrig_outage_d", 0));
+  const intake = Math.max(0, Math.min(1, S("farm.intake_direct", 0)));
+  const mitig = Math.max(0, Math.min(1, S("risk.intake_mitigation", 0.85)));
+  const outageHit = outageD > 0
+    ? Math.min(0.85, Math.max(0, outageD * (1 - intake * mitig) * S("risk.yield_per_outage_d", 0.03)))
+    : 0;
+  const bs = Math.max(0, Math.min(1, S("risk.outage_break_share", 0.40)));
+  const isDry = (cr: string) => cr.endsWith("_dry") || cr === "sonnenblume";
+  const yieldFactor = (cropId: string): number => {
+    if (outageHit <= 0 || isDry(cropId)) return 1;
+    return VALUE_CROP_IDS.includes(cropId) ? 1 - outageHit : 1 - outageHit * bs;
+  };
+  // Markt: kontrahierte Menge ist preisfest, nur (1 − Kontraktanteil) trägt die Spot-Delta.
+  //  Break Crops sind voll spot-exponiert (Börsenware ohne Abnahmevertrag).
+  const spot = S("market.spot_delta", 0);
+  const cs = Math.max(0, Math.min(1, S("market.contract_share", 0.80)));
+  const brix = S("market.brix_premium", 0);
+  const grade = S("market.potato_grade", 0);
+  const priceFactor = (cropId: string): number => {
+    let f = 1;
+    if (spot !== 0) f *= VALUE_CROP_IDS.includes(cropId) ? 1 + (1 - cs) * spot : 1 + spot;
+    if (cropId === "tomate" && brix !== 0) f *= 1 + brix;
+    if ((cropId === "kartoffel_pommes" || cropId === "kartoffel_chips") && grade !== 0) f *= 1 + grade;
+    return f;
+  };
+  const norm = S("irrig.norm_scale", 1);
+  return { yieldFactor, priceFactor, irrigNormScale: norm > 0 ? norm : 1, rateShock: S("macro.rate_shock", 0), outageHit };
+}
+
+/* --------------------------------------------------------------------------
+ * deriveRevenueSplitMY — Umsatz-Segmentierung Wertkulturen vs. Rotation/Break Crops.
+ *  Die ComputedModel-P&L kennt KEINE Kultur-Ebene (revenue ist eine Summe). Der Split
+ *  wird deshalb hier als VERHÄLTNIS aus Fläche × Ertrag × (1−Verlust) × Preis × Qualität
+ *  je Jahr gerechnet und — wenn die Engine-Umsatzkurve übergeben wird — auf diese
+ *  normiert. Damit stimmen Segment-Summe und P&L-Umsatz IMMER überein (kein zweiter,
+ *  driftender Umsatzpfad). Studio-Overlay-Faktoren gehen über studioOverlay ein.
+ * ------------------------------------------------------------------------ */
+export function deriveRevenueSplitMY(
+  domain: Domain,
+  scenarioId: string,
+  revenueCentByYear?: number[],
+): {
+  years: number;
+  valueShare: number[]; valueCent: number[]; breakCent: number[];
+  byCropCent: Record<string, number[]>;
+} {
+  const my = deriveCropAreasMY(domain);
+  const ov = studioOverlay(domain, scenarioId);
+  const years = my.years;
+  const raw: Record<string, number[]> = {};
+  const valueRaw = new Array(years).fill(0);
+  const breakRaw = new Array(years).fill(0);
+  for (const [cropId, areaCurve] of Object.entries(my.areas)) {
+    const yld = resolveScalar(domain, `yield.${cropId}`, scenarioId) * ov.yieldFactor(cropId);
+    const price = resolveScalar(domain, `price.${cropId}`, scenarioId) * ov.priceFactor(cropId);
+    const loss = resolveScalar(domain, `loss.${cropId}`, scenarioId) || 0;
+    const qRaw = resolveScalar(domain, `qual.${cropId}`, scenarioId);
+    const qual = qRaw > 0 ? qRaw : 1;
+    const isValue = VALUE_CROP_IDS.includes(cropId);
+    const curve = new Array(years).fill(0);
+    for (let y = 0; y < years; y++) {
+      const rev = (areaCurve[y] ?? 0) * yld * (1 - loss) * price * qual;
+      curve[y] = rev;
+      if (isValue) valueRaw[y] += rev; else breakRaw[y] += rev;
+    }
+    raw[cropId] = curve;
+  }
+  const valueShare = new Array(years).fill(0);
+  const valueCent = new Array(years).fill(0);
+  const breakCent = new Array(years).fill(0);
+  const byCropCent: Record<string, number[]> = {};
+  for (const id of Object.keys(raw)) byCropCent[id] = new Array(years).fill(0);
+  for (let y = 0; y < years; y++) {
+    const tot = valueRaw[y] + breakRaw[y];
+    valueShare[y] = tot > 0 ? valueRaw[y] / tot : 0;
+    const engine = revenueCentByYear?.[y];
+    const k = engine != null && isFinite(engine) && tot > 0 ? engine / tot : 1;
+    valueCent[y] = Math.round(valueRaw[y] * k);
+    breakCent[y] = Math.round(breakRaw[y] * k);
+    for (const id of Object.keys(raw)) byCropCent[id][y] = Math.round(raw[id][y] * k);
+  }
+  return { years, valueShare, valueCent, breakCent, byCropCent };
+}
+
+export function migrateDomain(dIn: Domain): Domain {
+  const d = dIn && dIn.assumptions ? migrateStudio(dIn) : dIn;
   if (!d || !Array.isArray(d.anbauplan) || !Array.isArray(d.catalog)) return d;
   // Kandidaten mit Kultur-Stammdaten (Katalog/Arbeitsgänge/Assumptions), die aus SEED nachgezogen
   //  werden — inkl. Sonnenblume als Rotations-Kandidat (der Optimierer braucht ihre Kalkulation).
@@ -3868,6 +4048,18 @@ const TRANSPORT_VALUE_CROPS = ["tomate", "kartoffel_pommes", "kartoffel_chips", 
 // Eigenflotte-Parameter (inline-Konstanten, Referenz F).
 const LKW: TransportConfig = TRANSPORT_DEFAULT;
 
+/** Effektiver Speditionssatz €/t (CENT): der kalibrierte €/t-Satz gilt für `dist_ref_km`
+ *  und skaliert linear mit der tatsächlichen Entfernung zum Abnehmer. Fehlen die
+ *  Entfernungs-Keys (Altstände), bleibt es beim reinen €/t-Satz. */
+export function speditionRateCent(domain: Domain, scenarioId: string): number {
+  const base = resolveScalar(domain, "transport.spedition_rate", scenarioId);
+  if (!domain.assumptions["transport.distance_km"] || !domain.assumptions["transport.dist_ref_km"]) return base;
+  const km = resolveScalar(domain, "transport.distance_km", scenarioId);
+  const ref = resolveScalar(domain, "transport.dist_ref_km", scenarioId);
+  if (!isFinite(km) || !isFinite(ref) || ref <= 0 || km <= 0) return base;
+  return base * (km / ref);
+}
+
 export function deriveTransportDecision(
   domain: Domain,
   scenarioId: string,
@@ -3909,7 +4101,7 @@ export function deriveTransportDecision(
   const ownPerTCent = tonnage > 0 ? ownTotalCent / tonnage : 0;
 
   // Spedition.
-  const rateCent = resolveScalar(domain, "transport.spedition_rate", scenarioId);
+  const rateCent = speditionRateCent(domain, scenarioId);
   const spedTotalCent = Math.round(rateCent * tonnage);
 
   return {
@@ -4673,10 +4865,61 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   if (years > 1) {
     for (const cr of CROP_IDS) curveInfl(`price.${cr}`, iOut);
     curveInfl("rev.gerste_zweitfrucht", iOut);
-    for (const k of ["price.per_euro", "price.diesel_l", "irrig.eur_mm",
+    for (const k of ["price.per_euro", "psm.per_euro", "price.diesel_l", "irrig.eur_mm",
       "fert.n", "fert.p", "fert.k", "fert.s", "fert.n_fert", "fert.p_fert", "fert.k_fert"]) curveInfl(k, iIn);
     for (const cr of CROP_IDS) curveInfl(`seed.${cr}`, iIn);
     for (const k of ["rate.labor_h", "pers.leitung.gross", "pers.stamm.gross", "pers.bewaesserung.gross", "pers.lager.gross", "pers.service.gross", "pers.saison.gross", "pers.prakt.gross"]) curveInfl(k, iWage);
+  }
+
+  /* ------------------------------------------------------------------------
+   * Phase 8b — RISIKO- & MARKT-OVERLAY (Szenario-Studio).
+   *  Läuft bewusst NACH curveInfl: die Faktoren multiplizieren die bereits
+   *  inflationierten Kurven, nicht die Nominalwerte des Startjahrs. Alle Treiber
+   *  sind neutral vorbelegt — ohne Reglerbewegung ist dieser Block ein No-op.
+   *  Weil die Treiber selbst normale Assumptions sind, greift das nicht-destruktive
+   *  Perturbations-Muster der Sensitivität (Domain klonen → Profil skalieren) direkt.
+   * ---------------------------------------------------------------------- */
+  {
+    const ov = studioOverlay(domain, scenarioId);
+    /** Skaliert ALLE Szenario-Profile eines Keys (Best/Worst-Spreizung bleibt erhalten). */
+    const scaleAssum = (key: string, f: number) => {
+      if (!isFinite(f) || Math.abs(f - 1) < 1e-12) return;
+      const b = assumptions[key] ?? domain.assumptions[key]; if (!b) return;
+      const profiles: Assumption["scenarioProfiles"] = {};
+      for (const [sid, prof] of Object.entries(b.scenarioProfiles)) {
+        profiles[sid] = (prof as any).kind === "curve"
+          ? { kind: "curve", values: ((prof as any).values as number[]).map((v) => v * f) }
+          : { kind: "constant", value: (prof as any).value * f };
+      }
+      assumptions[key] = { ...b, scenarioProfiles: profiles };
+    };
+    /** Additiver Shift (Zinsen — multiplikativ wäre bei Nahe-Null-Zins unbrauchbar). */
+    const addAssum = (key: string, d: number) => {
+      if (!isFinite(d) || d === 0) return;
+      const b = assumptions[key] ?? domain.assumptions[key]; if (!b) return;
+      const profiles: Assumption["scenarioProfiles"] = {};
+      for (const [sid, prof] of Object.entries(b.scenarioProfiles)) {
+        profiles[sid] = (prof as any).kind === "curve"
+          ? { kind: "curve", values: ((prof as any).values as number[]).map((v) => v + d) }
+          : { kind: "constant", value: (prof as any).value + d };
+      }
+      assumptions[key] = { ...b, scenarioProfiles: profiles };
+    };
+
+    // (1) BEREGNUNGSAUSFALL + (2) MARKT/QUALITÄT — Faktoren kommen aus studioOverlay (SSOT).
+    for (const cr of CROP_IDS) {
+      scaleAssum(`yield.${cr}`, ov.yieldFactor(cr));
+      scaleAssum(`price.${cr}`, ov.priceFactor(cr));
+    }
+    scaleAssum("yield.soja_zw", ov.yieldFactor("soja_luzerne"));      // Zweitfrucht-Soja (secondCrop)
+    scaleAssum("rev.gerste_zweitfrucht", ov.priceFactor("gerste_zw"));
+
+    // (3) WASSERNORM. Die mm/ha je Kultur sind Stammdaten; kostenseitig ist eine höhere
+    //  Norm äquivalent zu einem proportional höheren €/mm·ha-Satz.
+    scaleAssum("irrig.eur_mm", ov.irrigNormScale);
+
+    // (4) ZINSSCHOCK — additiv auf den Referenzzins aller Floating-Verträge und des Revolvers.
+    addAssum("macro.euribor", ov.rateShock);
   }
 
   // Subventionen — je Jahr als Pauschale, Anspruchsfläche KULTURSCHARF (Politik-Kurven), Cap absolut.
@@ -5093,10 +5336,10 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
  * PRICE_GROUPS — für den Preise/Treiber-Screen.
  * ------------------------------------------------------------------------ */
 export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
-  { group: "Makro & Steuer", keys: ["macro.euribor", "tax.rate", "opex.admin"] },
+  { group: "Makro & Steuer", keys: ["macro.euribor", "macro.rate_shock", "tax.rate", "opex.admin"] },
   { group: "Steuer-Optimierung & Finanzierung", keys: ["tax.reinvest_on", "tax.reinvest_share", "finance.capex_selffund"] },
   { group: "Inflation (real ↔ nominal)", keys: ["infl.output", "infl.input", "infl.wage", "infl.capex"] },
-  { group: "Stücksätze (Inputs)", keys: ["price.per_euro", "price.diesel_l", "rate.labor_h"] },
+  { group: "Stücksätze (Inputs)", keys: ["price.per_euro", "psm.per_euro", "price.diesel_l", "rate.labor_h"] },
   { group: "Ertrag (t/ha)", keys: [
     "yield.weizen", "yield.gerste_zw", "yield.soja_luzerne", "yield.winterraps", "yield.mais",
     "yield.tomate", "yield.kartoffel_pommes", "yield.kartoffel_chips", "yield.zwiebel_moehre",
@@ -5146,7 +5389,14 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "pers.service.n", "pers.service.gross", "pers.saison.n", "pers.saison.gross",
     "pers.prakt.n", "pers.prakt.gross",
   ]},
-  { group: "Transport/Logistik", keys: ["transport.spedition_rate", "opex.transport"] },
+  { group: "Transport/Logistik", keys: ["transport.spedition_rate", "transport.distance_km", "transport.dist_ref_km", "opex.transport"] },
+  { group: "Klima- & Infrastrukturrisiko", keys: [
+    "risk.irrig_outage_d", "risk.yield_per_outage_d", "risk.outage_break_share",
+    "farm.intake_direct", "risk.intake_mitigation", "irrig.norm_scale", "irrig.eur_mm",
+  ]},
+  { group: "Markt & Qualität (Kontrakt vs. Spot)", keys: [
+    "market.contract_share", "market.spot_delta", "market.brix_premium", "market.potato_grade", "market.tomate_cap_t",
+  ]},
   { group: "Working Capital", keys: ["wc.dso", "wc.dpo", "wc.inv"] },
   { group: "Subventionen", keys: ["subsidy.per_ha", "subsidy.coupled_freilandgemuese", "rev.gerste_zweitfrucht"] },
   { group: "Covenants", keys: ["covenant.dscr_min", "covenant.leverage_max"] },

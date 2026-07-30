@@ -18,7 +18,8 @@ export type ViewId =
   | "personal" | "arbeitszeit" | "finanzierung" | "subventionen" | "holding" | "eroeffnung" | "kulturkalk" | "investitionen"
   | "einsatz" | "sensitivitaet" | "bewertung" | "contribution" | "overhead" | "verwaltung"
   | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht" | "anbaustrategie" | "hebel"
-  | "gesellschaften" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team";
+  | "gesellschaften" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
+  | "studio";
 
 type Item = { id: string; label: string; view?: ViewId };
 type Group = { title: string; items: Item[] };
@@ -64,6 +65,7 @@ const IA: Group[] = [
   ]},
   { title: "Analyse", items: [
     { id: "contribution", label: "Contribution", view: "contribution" },
+    { id: "studio", label: "Szenario-Studio", view: "studio" },
     { id: "sens", label: "Sensitivität", view: "sensitivitaet" },
     { id: "val", label: "Bewertung (DCF)", view: "bewertung" },
     { id: "shareholder", label: "Equity & Ausschüttung", view: "shareholder" },
@@ -85,7 +87,7 @@ const ICON: Record<string, LucideIcon> = {
   ersatz: RefreshCw, mehrjahr: TrendingUp, personal: Users, overhead: Briefcase, arbeitszeit: Clock,
   finanzierung: Landmark, subventionen: BadgeEuro, gesellschaften: Network, holding: Building2, eroeffnung: BookOpen,
   pacht: ScrollText, preise: SlidersHorizontal, pnl: LineChart, balance: Scale, cashflow: Activity,
-  liquiditaet: Wallet, contribution: PieChart, sens: Tornado, val: Calculator,
+  liquiditaet: Wallet, contribution: PieChart, studio: SlidersHorizontal, sens: Tornado, val: Calculator,
   shareholder: CircleDollarSign, verwaltung: Save, annahmen: ClipboardCheck, kommentare: MessageSquare, team: UserCog,
 };
 
