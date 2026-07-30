@@ -154,5 +154,6 @@ const B11: Record<string, string> = {
   "Pool": "Pool",
   "Trocken": "Dryland",
   "Beregnet": "Irrigated",
+  "Verleiher-Gesellschaft (wer die Maschinen bereitstellt)": "Lessor entity (who provides the machines)",
 };
 export default B11;

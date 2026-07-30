@@ -208,6 +208,10 @@ export type MachineType = {
    *  Kein CAPEX/AfA — stattdessen stundenbasierte Miet-OPEX (gemietete Stück × Stunden/Stück ×
    *  €/h aus Stundenkosten × (1 + machine.rent_markup)). Neu-CAPEX = ⌈benötigt − owned − rented⌉. */
   rentedUnits?: number;
+  /** Verleiher-Gesellschaft der gemieteten Einheiten (Entity.id) — explizite Mietrichtung.
+   *  Fehlt → Default-Verleiher Isolde (ENTITY_ISOLDE). Steuert, welcher Gesellschaft in der
+   *  Entity-Sicht der Miet-ERTRAG gutgeschrieben wird (Mieter zahlt, Verleiher verdient). */
+  rentedFrom?: string;
   /** Durchschnittsalter des Bestands (Jahre) → Restbuchwert = Netto × max(Restwert-%,
    *  1 − (1−Restwert-%) × Verschleiß). Editierbar im Register. */
   ownedAgeYears?: number;
@@ -2990,12 +2994,15 @@ function machineServiceAnnualCent(domain: Domain, scenarioId: string): number {
  *  gemieteten Einheiten NICHT über CAPEX, sondern stundenbasiert als Miet-OPEX.
  *   Miete = gemietete Stück × (Maschinenstunden/Jahr ÷ benötigte Flotte) × Satz€/h;
  *   Satz€/h = (AfA/h + Service/h) × (1 + machine.rent_markup) — Stundenkosten × Aufschlag. */
-export function machineRentAnnualCent(domain: Domain, scenarioId: string): number {
+export function machineRentAnnualCent(domain: Domain, scenarioId: string, lessorId?: string): number {
   const markup = 1 + resolveScalar(domain, "machine.rent_markup", scenarioId);
   let cent = 0;
   for (const m of domain.machineCatalog) {
     const rentedReq = Math.round(m.rentedUnits ?? 0);
     if (m.mode !== "fixedFleet" || rentedReq <= 0) continue;
+    // Verleiher-Filter (explizite Mietrichtung): nur Maschinen zählen, deren rentedFrom == lessorId
+    //  (fehlt → Default-Verleiher Isolde). Ohne lessorId: gesamte Miete (Mieter-Sicht/Elimination).
+    if (lessorId && (m.rentedFrom ?? ENTITY_ISOLDE) !== lessorId) continue;
     const required = machineFleetCount(domain, m, scenarioId);
     const owned = Math.max(0, Math.round(m.ownedUnits ?? 0));
     const rented = Math.max(0, Math.min(rentedReq, Math.max(0, required - owned)));
@@ -4032,6 +4039,32 @@ function scopeToValueOnly(domain: Domain): Domain {
  *  Kulturen (entityOfEntry), nur die davon genutzten Maschinen, Wachstum flach auf die Entity-Fläche
  *  (Zwei-Pool: beregnet + trocken erhalten). Die Engine rechnet daraus ALLE Sektionen voll (P&L,
  *  Bilanz, Cashflow, Liquidität, Demand). Read-only-Transform (mutiert die gespeicherte Domäne nicht). */
+/** Skaliert den KOMBINIERTEN Wachstumspfad proportional auf eine Gesellschaft herunter — die Entity
+ *  folgt damit derselben aktiven Stufe (1a/2b/3c) wie das Gesamtmodell, statt flach zu bleiben:
+ *   · Gesamtfläche der Entity wächst mit dem Footprint-Ramp des Konzerns (totalByYear-Verhältnis),
+ *   · Beregnungsgrad der Entity läuft vom EIGENEN Startwert (irrHa/totHa) auf 100 %, im selben Tempo,
+ *     in dem der Konzern Vollberegnung erreicht (Penetrations-Fortschritt 0→1).
+ *  Die aufgelösten Kurven werden vorgebacken und als s3b zurückgegeben (Physik-Guard area≤total,
+ *  keine erneute s1/s2-Neuberechnung). Keine Konzern-Akquisen (Ramp trägt das Wachstum, kein Doppel). */
+function scaleGrowthToEntity(g: GrowthPlan, irrHa: number, totHa: number): GrowthPlan {
+  const years = Math.max(1, g.years ?? 1);
+  const eff = effectiveGrowth(g)!;                                   // aufgelöste Kurven der aktiven Stufe
+  const cStartIrr = eff.startIrrigatedHa ?? eff.areaByYear?.[0] ?? irrHa;
+  const cStartTot = eff.startTotalHa ?? eff.totalByYear?.[0] ?? totHa;
+  const at = (arr: number[] | undefined, y: number, fb: number) => arr?.[Math.min(y, (arr?.length ?? 1) - 1)] ?? fb;
+  const totRatio = (y: number) => (cStartTot > 0 ? at(eff.totalByYear, y, cStartTot) / cStartTot : 1);
+  const irrShare0 = cStartTot > 0 ? Math.min(1, cStartIrr / cStartTot) : 1;   // Konzern-Startpenetration
+  const irrShareY = (y: number) => { const tt = at(eff.totalByYear, y, cStartTot); return tt > 0 ? Math.min(1, at(eff.areaByYear, y, cStartIrr) / tt) : irrShare0; };
+  const prog = (y: number) => (irrShare0 < 1 ? Math.max(0, Math.min(1, (irrShareY(y) - irrShare0) / (1 - irrShare0))) : 1);
+  const entShare0 = totHa > 0 ? Math.min(1, irrHa / totHa) : 1;      // EIGENE Startpenetration der Entity
+  const totalByYear = Array.from({ length: years }, (_, y) => Math.max(1, Math.round(totHa * totRatio(y))));
+  const areaByYear = Array.from({ length: years }, (_, y) => {
+    const share = entShare0 + prog(y) * (1 - entShare0);
+    return Math.max(1, Math.min(totalByYear[y], Math.round(totalByYear[y] * share)));
+  });
+  return { ...g, years, stage: "s3b", areaByYear, totalByYear, startIrrigatedHa: irrHa, startTotalHa: totHa, acquisitions: [] };
+}
+
 export function scopeToEntity(domain: Domain, entityId: string): Domain {
   const anbauplan = domain.anbauplan.filter((a) => entityOfEntry(a) === entityId);
   if (!anbauplan.length) return domain; // leere Entity → unverändert (Fallback)
@@ -4046,13 +4079,9 @@ export function scopeToEntity(domain: Domain, entityId: string): Domain {
   });
   const irrHa = anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0) || 1;
   const totHa = anbauplan.reduce((s, a) => s + a.areaHa, 0) || irrHa;
-  const years = Math.max(1, domain.growth?.years ?? 1);
-  const growth = domain.growth ? {
-    ...domain.growth, stage: "s1" as const,
-    areaByYear: Array.from({ length: years }, () => irrHa),
-    totalByYear: Array.from({ length: years }, () => totHa),
-    startIrrigatedHa: irrHa, startTotalHa: totHa, drylandRotation: [], acquisitions: [],
-  } : domain.growth;
+  // Per-Entity-Wachstumspfad: proportional zum aktiven Konzern-Ramp (nicht mehr flach) — die
+  //  Gesellschaft rampt in derselben Stufe (2b/3c) wie das Gesamtmodell, auf ihre Basisfläche skaliert.
+  const growth = domain.growth ? scaleGrowthToEntity(domain.growth, irrHa, totHa) : domain.growth;
   return { ...domain, anbauplan, machineCatalog, growth, scope: "full", stage: 1 };
 }
 
@@ -4563,10 +4592,11 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   const baseFixMonthly = Math.round((annualFixEur * 100) / 12);
   const baseMachMonthly = Math.round(machineServiceAnnualCent(domain, scenarioId) / 12);
   const baseRentMonthly = Math.round(machineRentAnnualCent(domain, scenarioId) / 12);
-  // Intercompany-Miet-ERTRAG: nur in der Verleiher-Sicht (Default-Verleiher = Isolde). Die gemieteten
-  //  Maschinen laufen bei der MIETER-Gesellschaft (NEOTERRA) → aus der VOLLEN Domäne (domainIn) gerechnet.
-  //  Negativ in OpEx → hebt EBITDA des Verleihers. In 'combined' 0 (eliminiert). Konsistent zur Mieter-OPEX.
-  const rentIncomeCent = (!isCombined && entityView === ENTITY_ISOLDE) ? machineRentAnnualCent(domainIn, scenarioId) : 0;
+  // Intercompany-Miet-ERTRAG: in der Verleiher-Sicht der Gesellschaft, die die Einheiten verleiht
+  //  (rentedFrom je Maschine, Default Isolde). Gemietete Maschinen laufen beim MIETER → aus der VOLLEN
+  //  Domäne (domainIn) gerechnet, gefiltert auf lessor == aktuelle Entity. Negativ in OpEx → hebt EBITDA
+  //  des Verleihers. In 'combined' 0 (eliminiert). Konsistent zur Mieter-OPEX (Summe über alle Verleiher).
+  const rentIncomeCent = !isCombined ? machineRentAnnualCent(domainIn, scenarioId, entityView!) : 0;
   const baseRentIncomeMonthly = Math.round(-rentIncomeCent / 12);
   const baseTransMonthly = Math.round(transportTotalCent / 12);
   const baseSgaMonthly = Math.round(overheadMonthly * scopeFactor);
