@@ -695,6 +695,9 @@ export interface CashFlowStatement {
   /** Nachrichtlich: „davon" aus der ΔWC-Zeile — Anzahlungszufluss(+) und Verrechnung(−).
    *  NICHT zusätzlich addieren; die Wirkung steckt bereits in changeInWorkingCapital. */
   customerAdvanceMovement?: LineItem;
+  /** Nachrichtlich: „davon" aus der ΔWC-Zeile — Aufbau(+)/Auflösung(−) des Feldbestands.
+   *  NICHT zusätzlich addieren. */
+  bioAssetMovement?: LineItem;
   cfo: LineItem;                      // operativ
   capex: LineItem;
   /** Verkaufserlöse aus Ausmusterung (Anlagenabgang) — Teil des investiven Cashflows. */

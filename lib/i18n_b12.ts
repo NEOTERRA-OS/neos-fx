@@ -113,7 +113,11 @@ const B12: Record<string, string> = {
   "Output-Inflation p.a.": "Output inflation p.a.",
   "DSO — Forderungstage": "DSO — receivable days",
   "DPO — Verbindlichkeitstage": "DPO — payable days",
-  "Lagertage (Vorräte)": "Inventory days",
+  "Lagertage Fertigerzeugnisse": "Inventory days finished goods",
+  "einheitlich für den gesamten Umsatz — Base 14 d ist das Verhandlungsziel":
+    "unified across all revenue — base 14 d is the negotiation target",
+  "ohne Wirkung, solange der Umsatz im Erntemonat gebucht wird — die wachsende Kultur steckt im Feldbestand":
+    "no effect while revenue is booked in the harvest month — the growing crop sits in work in progress",
 
   // — KPI-Band —
   "Umsatz Wertkulturen": "Revenue high-value crops",
@@ -288,6 +292,13 @@ const B12: Record<string, string> = {
 
   // --- Paket B: Zahlungs-Timing und Anzahlungen der Off-taker ---
   "Bonus-Verzug": "Bonus delay",
+  // --- Feldbestand-Aktivierung / Working Capital Kostenseite ---
+  "Feldbestand (wachsende Kultur, zu Herstellungskosten)": "Growing crop (work in progress, at cost)",
+  "davon: Aufbau/Auflösung Feldbestand": "of which: growing-crop build-up / release",
+  "Bei der Ernte aus dem Feldbestand entlastet — nicht bei Kostenentstehung. Der Zahlungsstrom folgt den entstandenen Kosten (Verbindlichkeiten), nicht dieser Zeile.":
+    "Released from the growing crop at harvest, not when the cost is incurred. Cash follows the incurred cost (payables), not this line.",
+  "Zahlungsziel Forderungen (DSO)": "Payment term receivables (DSO)",
+  "Lagertage Fertigerzeugnisse (erst mit Lieferplan wirksam)": "Inventory days finished goods (effective only with a delivery plan)",
   "Zahlungsziel (Plan)": "Payment term (plan)",
   "laut Vertrag Ø": "per contract, avg.",
   "Zahlungsziel laut Vertrag": "Payment term per contract",

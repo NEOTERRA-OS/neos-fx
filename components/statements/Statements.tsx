@@ -41,6 +41,7 @@ function cashflowRows(c: ComputedModel): GridRow[] {
     { item: cf.netIncome }, { item: cf.addBackDepreciation }, { item: cf.addBackFvBio },
     { item: cf.changeInWorkingCapital },
     ...(cf.customerAdvanceMovement ? [{ item: cf.customerAdvanceMovement }] : []),
+    ...(cf.bioAssetMovement ? [{ item: cf.bioAssetMovement }] : []),
     { item: cf.cfo, emphasis: true },
     { item: cf.capex }, { item: cf.cfi, emphasis: true },
     { item: cf.debtDrawdowns }, { item: cf.debtRepayments }, { item: cf.revolverMovement },

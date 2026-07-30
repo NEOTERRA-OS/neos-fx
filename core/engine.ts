@@ -257,7 +257,11 @@ export interface WorkingCapitalResult {
   advanceSecurityFee: number[];
   /** Zahlungseingänge aus Forderungen je Periode (nachrichtlich, für Analyse/Ansicht). */
   collections: number[];
-  nwc: number[];         // Netto-Umlaufvermögen = Vorräte + Forderungen − Verbindl. − Anzahlungen
+  /** Zahlungsausgänge an Lieferanten je Periode (nachrichtlich). */
+  payments: number[];
+  /** Feldbestand (wachsende Kultur) — durchgereicht, Teil des NWC. */
+  bioAssets: number[];
+  nwc: number[];         // = Vorräte + Forderungen + Feldbestand − Verbindl. − Anzahlungen
   wcChange: number[];    // ΔNWC je Periode (Cash-Bindung, wenn positiv)
 }
 
@@ -301,6 +305,8 @@ function computeWorkingCapital(
   ppy: number,
   revenue: number[],
   cogs: number[],
+  costIncurred: number[],
+  bioAssets: number[],
   receiptTerms: ReceiptTerm[],
   advanceFlows: AdvanceFlow[],
 ): WorkingCapitalResult {
@@ -317,6 +323,7 @@ function computeWorkingCapital(
   const advanceCost = zeros(n);
   const advanceSecurityFee = zeros(n);
   const collections = zeros(n);
+  const payments = zeros(n);
   const nwc = zeros(n);
   const wcChange = zeros(n);
 
@@ -398,20 +405,42 @@ function computeWorkingCapital(
     advanceMovement[p] = advanceIn[p] - advanceApplied[p];
   }
 
+  // --- Verbindlichkeiten: Rollforward aus dem ENTSTANDENEN Kostenfluss -------
+  // Bemessungsgrundlage ist `costIncurred`, nicht `cogs`: bezahlt wird der Dünger, wenn
+  // er geliefert wird, nicht wenn die Ernte in die GuV läuft (Feldbestand-Aktivierung).
+  // Bei DPO ≈ einer Periodenlänge liefert der Rollforward dasselbe wie die frühere
+  // Tages-Kennzahl — nachgemessen: Abweichung 0. Er rechnet aber auch dann richtig,
+  // wenn das Zahlungsziel von diesem Zufall abweicht.
+  const dppPay = 365 / ppy;
+  for (let p = 0; p < n; p++) {
+    const amount = costIncurred[p];
+    if (amount === 0) continue;
+    const lag = Math.max(0, dpo[p] ?? 0) / dppPay;
+    const k = Math.floor(lag);
+    const frac = lag - k;
+    const first = round(amount * (1 - frac));
+    if (p + k < n) payments[p + k] += first;
+    const second = amount - first;
+    if (second !== 0 && p + k + 1 < n) payments[p + k + 1] += second;
+  }
+
   // --- Rollforward und NWC --------------------------------------------------
   let recRunning = 0;   // Eröffnungsforderungen stecken in openingNwc (s. o.)
+  let payRunning = 0;   // Eröffnungsverbindlichkeiten ebenso
   for (let p = 0; p < n; p++) {
     recRunning += billedNet[p] - collections[p];
     receivables[p] = recRunning;
-    const annualCogs = cogs[p] * ppy;
-    payables[p] = (annualCogs * dpo[p]) / 365;
-    inventory[p] = (annualCogs * invDays[p]) / 365;
-    nwc[p] = inventory[p] + receivables[p] - payables[p] - customerAdvances[p];
+    payRunning += costIncurred[p] - payments[p];
+    payables[p] = payRunning;
+    // Fertigerzeugnisse: erst mit einem Lieferplan sinnvoll (wc.inv steht auf 0). Die
+    // wachsende Kultur steckt NICHT hier, sondern im Feldbestand — keine Doppelzählung.
+    inventory[p] = (cogs[p] * ppy * invDays[p]) / 365;
+    nwc[p] = inventory[p] + receivables[p] + bioAssets[p] - payables[p] - customerAdvances[p];
     wcChange[p] = nwc[p] - (p === 0 ? openingNwc : nwc[p - 1]);
   }
   return {
     receivables, inventory, payables, customerAdvances, advanceMovement,
-    advanceCost, advanceSecurityFee, collections, nwc, wcChange,
+    advanceCost, advanceSecurityFee, collections, payments, bioAssets, nwc, wcChange,
   };
 }
 
@@ -424,7 +453,10 @@ export function computeWorkingCapitalSchedule(
   const ppy = periodsPerYear(state.timeline.baseGranularity);
   const chain = scenarioChain(state, scenarioId);
   const op = computeOperating(state, chain, n, ppy);
-  return computeWorkingCapital(state, chain, n, ppy, op.revenue, op.cogs, op.receiptTerms, op.advances);
+  return computeWorkingCapital(
+    state, chain, n, ppy, op.revenue, op.cogs, op.costIncurred, op.bioAssets,
+    op.receiptTerms, op.advances,
+  );
 }
 
 /**
@@ -646,7 +678,14 @@ export interface AdvanceFlow {
 
 interface OperatingResult {
   revenue: number[];
+  /** In die GuV ENTLASSENE Produktionskosten — bei der Ernte, nicht bei Kostenentstehung.
+   *  Siehe Feldbestand-Aktivierung unten. */
   cogs: number[];
+  /** Tatsächlich ENTSTANDENE Direktkosten je Periode (Aussaat, Dünger, PSM, Arbeitsgänge).
+   *  Treibt die Verbindlichkeiten und den Zahlungsstrom — NICHT die GuV. */
+  costIncurred: number[];
+  /** Feldbestand (wachsende Kultur) zu Herstellungskosten, Periodenendstand. */
+  bioAssets: number[];
   subsidies: number[];
   inventoryValue: number[]; // Ende-Bestand geernteter, noch nicht verkaufter Ware
   outputVat: number[];      // Ausgangs-USt (TVA colectată) je Periode — 0 bei Reverse-Charge/Export
@@ -663,8 +702,29 @@ function computeOperating(
   ppy: number,
 ): OperatingResult {
   const revenue = zeros(n);
-  const cogs = zeros(n);
+  // Entstandene Direktkosten (nicht die GuV-Zeile!). Die GuV bekommt sie erst bei der
+  // Ernte über die Feldbestand-Aktivierung weiter unten.
+  const costIncurred = zeros(n);
   const subsidies = zeros(n);
+  /** Kostenstrom je (parcelId, cropId): entstandene Kosten und Ernteperioden über den
+   *  Horizont. Der Strom, nicht die einzelne Planzeile, ist die richtige Einheit — bei
+   *  Winterkulturen liegt die Aussaat für die nächste Ernte in derselben Planzeile
+   *  NACH deren Ernte (weizen: Ernte Periode 6, Aussaat Periode 9). */
+  const streamCost = new Map<string, number[]>();
+  const streamHarvest = new Map<string, Set<number>>();
+  const streamOf = (plan: CropPlan) => `${plan.parcelId}|${plan.cropId}`;
+  const addStreamCost = (plan: CropPlan, p: number, amount: number) => {
+    const k = streamOf(plan);
+    let arr = streamCost.get(k);
+    if (!arr) { arr = zeros(n); streamCost.set(k, arr); }
+    arr[p] += amount;
+  };
+  const addStreamHarvest = (plan: CropPlan, p: number) => {
+    const k = streamOf(plan);
+    let set = streamHarvest.get(k);
+    if (!set) { set = new Set<number>(); streamHarvest.set(k, set); }
+    set.add(p);
+  };
   const inventoryValue = zeros(n);
   const outputVat = zeros(n);
   const vat = state.vat;
@@ -849,13 +909,23 @@ function computeOperating(
         outputVat[hp] += round(rev2 * outRate(plan.cropId));
         // Zweitfrucht läuft ohne Abnahmevertrag → globaler DSO, keine Vorfinanzierung.
         if (rev2 !== 0) receiptTerms.push({ period: hp, amount: rev2, cropId: plan.cropId });
-        cogs[hp] += round(s2.extraCostPerHaCent * plan.areaHa);         // Zweitfrucht-Betriebsmittel
+        const c2 = round(s2.extraCostPerHaCent * plan.areaHa);          // Zweitfrucht-Betriebsmittel
+        costIncurred[hp] += c2;
+        addStreamCost(plan, hp, c2);
+        addStreamHarvest(plan, hp);                                     // Zweitfrucht-Ernte
       }
     }
 
     // Produktionskosten: bottom-up (operations) oder Fallback (Punktlast).
+    // ENTSTEHUNG, nicht GuV — die Zuordnung zur Ernte erfolgt über den Feldbestand.
     const { perPeriodPerHa } = cropCostPerHa(plan, state, chain, n, ppy);
-    for (let p = 0; p < n; p++) cogs[p] += round(perPeriodPerHa[p] * plan.areaHa);
+    for (let p = 0; p < n; p++) {
+      const c = round(perPeriodPerHa[p] * plan.areaHa);
+      if (c === 0) continue;
+      costIncurred[p] += c;
+      addStreamCost(plan, p, c);
+    }
+    for (const h of plan.harvestPeriods) if (h >= 0 && h < n) addStreamHarvest(plan, h);
   }
 
   // Subventionen (GAP/CAP etc.) — Inline-Satz > Assumption; Anspruchs-Cap (CRISS erste N ha);
@@ -907,8 +977,81 @@ function computeOperating(
     }
   }
 
-  // TODO: Vorratsbewertung Ernte-auf-Lager (saisonaler WC-Swing) — hier 0-Default
-  return { revenue, cogs, subsidies, inventoryValue, outputVat, receiptTerms, advances };
+  /* --- Feldbestand aktivieren (Matching-Prinzip) ----------------------------
+   * Vorher liefen die Direktkosten in dem Monat in die GuV, in dem sie ENTSTANDEN.
+   * Bei einer Kultur, die von Februar bis August Kosten verursacht und im September
+   * verkauft wird, zeigte der Monatsausweis dadurch sieben Monate Verlust und einen
+   * Gewinnsprung im Erntemonat — Aufwand ohne den zugehörigen Erlös.
+   *
+   * Jetzt wandern die Kosten zunächst als Feldbestand (wachsende Kultur, bewertet zu
+   * Herstellungskosten) in die BILANZ und werden erst bei der Ernte in die GuV entlassen:
+   *
+   *   Feldbestand[p] = Feldbestand[p−1] + entstanden[p] − entlassen[p]
+   *
+   * Entlassen wird je Kostenstrom (parcelId × cropId) bei jeder Ernte alles, was seit
+   * der VORHERIGEN Ernte dieses Stroms aufgelaufen ist. Damit ordnet sich die Herbst-
+   * aussaat einer Winterkultur automatisch der Ernte des Folgejahres zu, obwohl sie in
+   * derselben Planzeile hinter deren Ernte steht.
+   *
+   * GRENZE DIESER HEURISTIK: Die Arbeitsgänge tragen keine Kohorten-Kennung. Fallen in
+   * EINEM Monat die Ernte einer Zweitfrucht und die Aussaat der Folgekultur zusammen
+   * (Gerste/Soja im Oktober), wird beides gemeinsam entlassen — das Modell kann die
+   * beiden Kostenblöcke nicht trennen. Auf das JAHR wirkt das nicht, weil beide im
+   * selben Jahr liegen; im Monatsausweis ist die Trennschärfe dort begrenzt.
+   *
+   * Ein am Horizontende noch nicht entlasteter Rest bleibt bewusst als Feldbestand in
+   * der Bilanz stehen — richtig für einen abgeschnittenen Planungszeitraum.
+   * NICHT zahlungswirksam: der Zahlungsstrom folgt `costIncurred`, nicht `cogs`. */
+  const cogs = zeros(n);
+  /* ERÖFFNUNGS-FELDBESTAND — ohne ihn entsteht ein Modellrand-Artefakt.
+   * Die Kultur, die im Juli des ersten Planjahres geerntet wird, wurde im Herbst DAVOR
+   * gesät — vor Periode 0. Diese Vorkosten stehen nirgends im Modell. Würde man die
+   * Aktivierung ohne Eröffnungsbestand einführen, entlastete Jahr 1 eine Ernte, für die
+   * es nie bezahlt hat: das EBITDA des ersten Jahres stieg um rund 175 T€, ohne dass sich
+   * wirtschaftlich etwas verbessert hätte.
+   *
+   * In-Modell-Proxy: die Herbstarbeit, die im ERSTEN Jahr nach der letzten Ernte dieses
+   * Stroms anfällt — bei Winterweizen genau die Oktoberaussaat. Im stationären Zustand
+   * stand am 1. Januar dasselbe im Boden. Der Proxy ist bewusst abgeleitet und nicht
+   * gesetzt, damit er bei jeder Flächenänderung mitskaliert (Wachstumsszenarien).
+   *
+   * GRENZE: Fallen Ernte einer Zweitfrucht und Herbstaussaat in denselben Monat
+   * (Gerste/Soja, Oktober), erkennt der Proxy die Aussaat nicht und liefert 0 — dann
+   * bleibt Jahr 1 um diesen Block zu günstig. Betroffen ist nur der Gerste-Soja-Strom. */
+  const openingBio = new Map<string, number>();
+  for (const [key, cost] of streamCost) {
+    const hs = [...(streamHarvest.get(key) ?? [])].sort((a, b) => a - b);
+    const inYear1 = hs.filter((h) => h < ppy);
+    let opening = 0;
+    if (inYear1.length > 0) {
+      for (let p = inYear1[inYear1.length - 1] + 1; p < Math.min(n, ppy); p++) opening += cost[p];
+    }
+    if (opening > 0) openingBio.set(key, opening);
+  }
+
+  for (const [key, cost] of streamCost) {
+    const harvest = streamHarvest.get(key);
+    let bucket = openingBio.get(key) ?? 0;
+    for (let p = 0; p < n; p++) {
+      bucket += cost[p];
+      if (harvest?.has(p) && bucket !== 0) { cogs[p] += bucket; bucket = 0; }
+    }
+  }
+  let openingBioTotal = 0;
+  for (const v of openingBio.values()) openingBioTotal += v;
+
+  const bioAssets = zeros(n);
+  let bioRunning = openingBioTotal;
+  for (let p = 0; p < n; p++) {
+    bioRunning += costIncurred[p] - cogs[p];
+    bioAssets[p] = bioRunning;
+  }
+
+  // TODO: Ernte-auf-Lager (Fertigerzeugnisse) — braucht einen Lieferplan, der auch den
+  // Umsatz aus dem Erntemonat in die Liefermonate verschiebt. Bewusst offen; solange der
+  // Umsatz vollständig im Erntemonat gebucht wird, liegt per Konstruktion keine fertige
+  // Ware auf Lager (siehe wc.inv, Standard 0).
+  return { revenue, cogs, costIncurred, bioAssets, subsidies, inventoryValue, outputVat, receiptTerms, advances };
 }
 
 /* --------------------------------------------------------------------------
@@ -1204,7 +1347,8 @@ export function computeModel(
   // Betriebsaufwand ist. Bei Satz 0 (Standardkalibrierung) ist die Reihe null und das
   // EBITDA bleibt unverändert.
   const workingCapital = computeWorkingCapital(
-    state, chain, n, ppy, op.revenue, op.cogs, op.receiptTerms, op.advances,
+    state, chain, n, ppy, op.revenue, op.cogs, op.costIncurred, op.bioAssets,
+    op.receiptTerms, op.advances,
   );
   const wcChange = workingCapital.wcChange;
 
@@ -1404,7 +1548,10 @@ export function computeModel(
   // Im NWC steckt die Position mit negativem Vorzeichen — die Bilanzgleichung schließt
   // damit genauso wie bei den Verbindlichkeiten aus Lieferungen.
   const customerAdvances = workingCapital.customerAdvances;
-  const bioAssets = zeros(n);
+  // Feldbestand (wachsende Kultur zu Herstellungskosten) — steckt im NWC, damit die
+  // Aktivierung zahlungsneutral bleibt: der höhere Jahresüberschuss vor der Ernte wird
+  // durch die Bestandsbildung im ΔWC genau ausgeglichen.
+  const bioAssets = workingCapital.bioAssets;
   const shareCapital = new Array(n).fill(state.openingBalance?.shareCapital ?? 0);
 
   const totalAssets = addArr(
@@ -1562,7 +1709,8 @@ export function computeModel(
     pnl: {
       revenue: makeLine('pnl.revenue', 'Umsatz', 'money', op.revenue, [], 'Σ Fläche×Ertrag×Preis×(1−Verlust)'),
       subsidies: makeLine('pnl.subsidies', 'Subventionen (GAP/CAP)', 'money', op.subsidies),
-      cogs: makeLine('pnl.cogs', 'Produktionskosten (COGS)', 'money', op.cogs),
+      cogs: makeLine('pnl.cogs', 'Produktionskosten (COGS)', 'money', op.cogs, [],
+        'Bei der Ernte aus dem Feldbestand entlastet — nicht bei Kostenentstehung. Der Zahlungsstrom folgt den entstandenen Kosten (Verbindlichkeiten), nicht dieser Zeile.'),
       grossProfit: makeLine('pnl.gross_profit', 'Rohertrag', 'money', grossProfit, ['pnl.revenue', 'pnl.subsidies', 'pnl.cogs']),
       opex: makeLine('pnl.opex', 'OpEx / SG&A', 'money', opex),
       ebitda: makeLine('pnl.ebitda', 'EBITDA', 'money', ebitda, ['pnl.gross_profit', 'pnl.opex']),
@@ -1581,7 +1729,7 @@ export function computeModel(
       cash: makeLine('bs.cash', 'Kasse', 'money', closingCash),
       receivables: makeLine('bs.receivables', 'Forderungen', 'money', receivables),
       inventory: makeLine('bs.inventory', 'Vorräte', 'money', inventory),
-      biologicalAssets: makeLine('bs.bio', 'Biologische Vermögenswerte', 'money', bioAssets),
+      biologicalAssets: makeLine('bs.bio', 'Feldbestand (wachsende Kultur, zu Herstellungskosten)', 'money', bioAssets),
       land: makeLine('bs.land', 'Grund & Boden', 'money', land),
       ppeNet: makeLine('bs.ppe', 'Sachanlagen (netto)', 'money', ppeNet),
       vatReceivable: makeLine('bs.vat_receivable', 'USt-Forderung (TVA de recuperat)', 'money', vat.vatReceivable),
@@ -1605,6 +1753,8 @@ export function computeModel(
       changeInWorkingCapital: makeLine('cf.wc', '− Δ Working Capital', 'money', scaleArr(wcChange, -1)),
       // Nachrichtlich („davon"): steckt bereits in der ΔWC-Zeile — nicht zusätzlich addieren.
       customerAdvanceMovement: makeLine('cf.advance', 'davon: Anzahlungen Abnehmer (Zufluss/Verrechnung)', 'money', workingCapital.advanceMovement),
+      bioAssetMovement: makeLine('cf.bio', 'davon: Aufbau/Auflösung Feldbestand', 'money',
+        bioAssets.map((v, i) => v - (i === 0 ? 0 : bioAssets[i - 1]))),
       cfo: makeLine('cf.cfo', 'Operativer Cashflow', 'money',
         subArr(addArr(addArr(netIncome, depCommercial), deferredTax), addArr(wcChange, disposalGainLoss))),
       capex: makeLine('cf.capex', '− CapEx', 'money', scaleArr(capexOut, -1)),

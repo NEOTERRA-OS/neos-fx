@@ -1152,7 +1152,14 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Bandes — bleibt dieser Vertrag unverändert, ist das Band nach oben zu erweitern.
   A("wc.dso", "wc.dso", "Zahlungsziel Forderungen (DSO)", "days", 14, 7, 28),
   A("wc.dpo", "wc.dpo", "DPO (Verb.-Tage)", "days", 30),
-  A("wc.inv", "wc.inv", "Lagertage", "days", 60),
+  // Fertigerzeugnisse (Ernte auf Lager) — STANDARD 0. Solange der Umsatz vollständig im
+  // Erntemonat gebucht wird, liegt per Konstruktion keine fertige Ware auf Lager; ein Wert
+  // > 0 wäre ein Plug ohne wirtschaftliche Bedeutung (er blähte früher den Erntemonat auf
+  // das Doppelte der Monatskosten auf und stand im November auf null, obwohl dann das
+  // Kartoffellager voll ist). Die WACHSENDE Kultur steckt im Feldbestand (biologicalAssets),
+  // nicht hier. Wirksam wird diese Stellschraube erst mit einem Lieferplan, der den Umsatz
+  // aus dem Erntemonat in die Liefermonate verschiebt.
+  A("wc.inv", "wc.inv", "Lagertage Fertigerzeugnisse (erst mit Lieferplan wirksam)", "days", 0),
   // --- Anzahlungen der Off-taker (Paket B) ---
   // VERHANDLUNGSANNAHME, keine Vertragslage: keiner der drei geprüften Verträge sagt eine
   // Anzahlung zu (PepsiCo: Vorschüsse werden gegen die ersten Lieferungen verrechnet, KEIN

@@ -93,9 +93,9 @@ const DRIVERS: Drv[] = [
   { id: "tax.rate", label: "Körperschaftsteuer (RO)", group: G_FIN, keys: ["tax.rate"], mode: "abs", pct: true, unit: "%", min: 0, max: 35, step: 1, dec: 0 },
   { id: "infl.input", label: "Input-Inflation p.a.", group: G_FIN, keys: ["infl.input"], mode: "abs", pct: true, unit: "%", min: -2, max: 15, step: 0.25, dec: 2 },
   { id: "infl.output", label: "Output-Inflation p.a.", group: G_FIN, keys: ["infl.output"], mode: "abs", pct: true, unit: "%", min: -2, max: 15, step: 0.25, dec: 2 },
-  { id: "wc.dso", label: "DSO — Forderungstage", group: G_FIN, keys: ["wc.dso"], mode: "abs", unit: "d", min: 0, max: 180, step: 5, dec: 0 },
+  { id: "wc.dso", label: "Zahlungsziel Forderungen (DSO)", hint: "einheitlich für den gesamten Umsatz — Base 14 d ist das Verhandlungsziel", group: G_FIN, keys: ["wc.dso"], mode: "abs", unit: "d", min: 0, max: 180, step: 1, dec: 0 },
   { id: "wc.dpo", label: "DPO — Verbindlichkeitstage", group: G_FIN, keys: ["wc.dpo"], mode: "abs", unit: "d", min: 0, max: 180, step: 5, dec: 0 },
-  { id: "wc.inv", label: "Lagertage (Vorräte)", group: G_FIN, keys: ["wc.inv"], mode: "abs", unit: "d", min: 0, max: 270, step: 5, dec: 0 },
+  { id: "wc.inv", label: "Lagertage Fertigerzeugnisse", hint: "ohne Wirkung, solange der Umsatz im Erntemonat gebucht wird — die wachsende Kultur steckt im Feldbestand", group: G_FIN, keys: ["wc.inv"], mode: "abs", unit: "d", min: 0, max: 270, step: 5, dec: 0 },
 
   /* -- aus der früheren Sensitivitäts-Faktorbibliothek übernommen ---------- */
   { id: "yieldValue", label: "Ertrag Wertkulturen (alle)", group: G_YLD, keys: VAL_CROPS.map((c) => `yield.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.45, step: 0.01, dec: 2, hint: "Sammeltreiber über alle Wertkulturen" },
