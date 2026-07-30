@@ -4,7 +4,7 @@ import { NeoterraLogo } from "./NeoterraLogo";
 import { t } from "../../lib/i18n";
 import {
   LayoutDashboard, Sprout, Route, BookOpen, ClipboardList, Tractor, Gauge, CalendarRange, RefreshCw,
-  TrendingUp, Users, Briefcase, Clock, Landmark, BadgeEuro, Building2, Workflow, Tornado, ScrollText,
+  TrendingUp, Users, Briefcase, Clock, Landmark, BadgeEuro, Building2, Workflow, ScrollText,
   SlidersHorizontal, LineChart, Scale, Activity, Wallet, Percent, PieChart, GitCompare, Calculator,
   CircleDollarSign, Save, Circle, Coins, ArrowUpFromDot, Network, FlaskConical, ClipboardCheck, MessageSquare, UserCog, type LucideIcon,
 } from "lucide-react";
@@ -16,7 +16,7 @@ import {
 export type ViewId =
   | "dashboard" | "preise" | "anbauplan" | "maschinen" | "leistung"
   | "personal" | "arbeitszeit" | "finanzierung" | "subventionen" | "holding" | "eroeffnung" | "kulturkalk" | "investitionen"
-  | "einsatz" | "sensitivitaet" | "bewertung" | "contribution" | "overhead" | "verwaltung"
+  | "einsatz" | "bewertung" | "contribution" | "overhead" | "verwaltung"
   | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht" | "anbaustrategie" | "hebel"
   | "gesellschaften" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
   | "studio";
@@ -66,7 +66,6 @@ const IA: Group[] = [
   { title: "Analyse", items: [
     { id: "contribution", label: "Contribution", view: "contribution" },
     { id: "studio", label: "Szenario-Studio", view: "studio" },
-    { id: "sens", label: "Sensitivität", view: "sensitivitaet" },
     { id: "val", label: "Bewertung (DCF)", view: "bewertung" },
     { id: "shareholder", label: "Equity & Ausschüttung", view: "shareholder" },
   ]},
@@ -87,7 +86,7 @@ const ICON: Record<string, LucideIcon> = {
   ersatz: RefreshCw, mehrjahr: TrendingUp, personal: Users, overhead: Briefcase, arbeitszeit: Clock,
   finanzierung: Landmark, subventionen: BadgeEuro, gesellschaften: Network, holding: Building2, eroeffnung: BookOpen,
   pacht: ScrollText, preise: SlidersHorizontal, pnl: LineChart, balance: Scale, cashflow: Activity,
-  liquiditaet: Wallet, contribution: PieChart, studio: SlidersHorizontal, sens: Tornado, val: Calculator,
+  liquiditaet: Wallet, contribution: PieChart, studio: SlidersHorizontal, val: Calculator,
   shareholder: CircleDollarSign, verwaltung: Save, annahmen: ClipboardCheck, kommentare: MessageSquare, team: UserCog,
 };
 

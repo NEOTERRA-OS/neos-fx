@@ -664,8 +664,16 @@ export function pachtIndexFactor(pc: PachtConfig, y: number): number {
   return Math.pow(1 + (pc.indexPct ?? 0), Math.floor(y / Math.max(1, pc.intervalYears ?? 5)));
 }
 
-/** Persistierte Sensitivitäts-/Szenario-Konfiguration (Faktor-IDs referenzieren die Faktor-Bibliothek). */
-export type SensScenario = { id: string; name: string; shifts: Record<string, number> };
+/** Persistierte Sensitivitäts-/Szenario-Konfiguration.
+ *  IDs referenzieren die EINE Treiber-Bibliothek des Szenario-Studios (DRIVERS).
+ *  `vals` = gespeicherter Reglerstand (Rohwert je Treiber, wie im Studio).
+ *  `shifts` = Legacy (relative %-Auslenkung auf alte Faktor-IDs) — wird beim Laden migriert. */
+export type SensScenario = {
+  id: string; name: string; desc?: string;
+  vals?: Record<string, number>;
+  /** @deprecated Legacy-Format vor der Studio-Zusammenführung. */
+  shifts?: Record<string, number>;
+};
 export type SensitivityConfig = { tornado: { id: string; delta: number }[]; scenarios: SensScenario[] };
 
 /** Eine SG&A-/Gemeinkostenposition (Monatswert CENT), gruppiert wie in Corporates üblich. */
@@ -2645,17 +2653,16 @@ export const SEED: Domain = {
     indexSteps: [{ atYear: 5, pct: 0.08 }, { atYear: 10, pct: 0.08 }, { atYear: 15, pct: 0.08 }],
     ifrs16: true, leaseTermYears: 15, discountRate: 0.05,
     payMonths: [{ month: 8, share: 0.6 }, { month: 10, share: 0.4 }] },
+  // Tornado-Zeilen referenzieren die Treiber-Bibliothek des Szenario-Studios.
+  // Trockenjahr / Preisverfall Kartoffel / Zins- & Kostenschock sind dort als
+  // eingebaute Szenarien hinterlegt — hier stehen nur eigene Szenarien.
   sensitivity: {
     tornado: [
-      { id: "price_value", delta: 0.15 }, { id: "yield_value", delta: 0.10 }, { id: "qual_value", delta: 0.08 },
-      { id: "price_cereal", delta: 0.15 }, { id: "diesel", delta: 0.20 }, { id: "fert", delta: 0.20 },
-      { id: "labor", delta: 0.15 }, { id: "euribor", delta: 0.30 }, { id: "subs_coupled", delta: 0.20 },
+      { id: "priceValue", delta: 0.15 }, { id: "yieldValue", delta: 0.10 }, { id: "qualValue", delta: 0.08 },
+      { id: "priceRot", delta: 0.15 }, { id: "price.diesel_l", delta: 0.20 }, { id: "fertAll", delta: 0.20 },
+      { id: "wageAll", delta: 0.15 }, { id: "macro.euribor", delta: 0.30 }, { id: "subsidy.coupled_freilandgemuese", delta: 0.20 },
     ],
-    scenarios: [
-      { id: "s1", name: "Trockenjahr", shifts: { yield_all: -0.15, qual_value: -0.06, water: 0.15 } },
-      { id: "s2", name: "Preisverfall Kartoffel", shifts: { price_kartoffel: -0.25, qual_kartoffel: -0.05 } },
-      { id: "s3", name: "Zins- & Kostenschock", shifts: { euribor: 0.5, diesel: 0.3, fert: 0.25 } },
-    ],
+    scenarios: [],
   },
 };
 

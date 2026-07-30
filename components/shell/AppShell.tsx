@@ -24,7 +24,6 @@ import { FinanzierungView } from "../inputs/FinanzierungView";
 import { SubventionenView } from "../inputs/SubventionenView";
 import { EroeffnungsbilanzView } from "../inputs/EroeffnungsbilanzView";
 import { ArbeitszeitkontoView } from "../inputs/ArbeitszeitkontoView";
-import { SensitivitaetView } from "../inputs/SensitivitaetView";
 import { ScenarioStudioView } from "../inputs/ScenarioStudioView";
 import { BewertungView } from "../inputs/BewertungView";
 import { ShareholderView } from "../inputs/ShareholderView";
@@ -126,7 +125,8 @@ export function AppShell() {
   }, [recalcTick]);
   const annualLabel = annual.timeline.periods[annual.timeline.periods.length - 1]?.label;
   // Verwaltungs-/Governance-Module: keine Kennzahlen-KPIs (kein Finanz-Kontext nötig).
-  const ADMIN_VIEWS: ViewId[] = ["annahmen", "kommentare", "gesellschaften", "team", "verwaltung"];
+  // Szenario-Studio: eigenes KPI-Band mit Δ gegen die Basis → globales Band würde doppeln.
+  const ADMIN_VIEWS: ViewId[] = ["annahmen", "kommentare", "gesellschaften", "team", "verwaltung", "studio"];
   const showKpi = !ADMIN_VIEWS.includes(view);
 
   React.useEffect(() => {
@@ -187,7 +187,6 @@ export function AppShell() {
                 : view === "arbeitszeit" ? <ArbeitszeitkontoView />
                 : view === "einsatz" ? <EinsatzView />
                 : view === "studio" ? <ScenarioStudioView />
-                : view === "sensitivitaet" ? <SensitivitaetView />
                 : view === "bewertung" ? <BewertungView />
                 : view === "shareholder" ? <ShareholderView />
                 : view === "pacht" ? <PachtView />

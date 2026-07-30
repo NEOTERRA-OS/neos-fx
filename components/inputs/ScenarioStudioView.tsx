@@ -3,7 +3,7 @@ import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import {
   buildModelState, deriveRevenueSplitMY, VALUE_CROP_IDS, BREAK_CROP_IDS,
-  type Domain,
+  type Domain, type SensScenario,
 } from "../../store/model";
 import { computeModel } from "../../core/engine";
 import { aggregateComputed } from "../../core/aggregate";
@@ -11,7 +11,7 @@ import { fmtMoney, fmtNumber, fmtPct } from "../../design/format";
 import { Segmented } from "../primitives/Segmented";
 import { StatusPill } from "../primitives/StatusPill";
 import { t, getLang } from "../../lib/i18n";
-import { ChevronDown, ChevronRight, RotateCcw, Download, Droplets, TrendingUp, Factory } from "lucide-react";
+import { ChevronDown, ChevronRight, RotateCcw, Download, Droplets, TrendingUp, Factory, Save, Trash2, Plus, X, Tornado, GitCompare, SlidersHorizontal } from "lucide-react";
 
 /* ============================================================================
  * SZENARIO-STUDIO — interaktive Simulation auf DEM Modell (nicht daneben).
@@ -96,8 +96,32 @@ const DRIVERS: Drv[] = [
   { id: "wc.dso", label: "DSO — Forderungstage", group: G_FIN, keys: ["wc.dso"], mode: "abs", unit: "d", min: 0, max: 180, step: 5, dec: 0 },
   { id: "wc.dpo", label: "DPO — Verbindlichkeitstage", group: G_FIN, keys: ["wc.dpo"], mode: "abs", unit: "d", min: 0, max: 180, step: 5, dec: 0 },
   { id: "wc.inv", label: "Lagertage (Vorräte)", group: G_FIN, keys: ["wc.inv"], mode: "abs", unit: "d", min: 0, max: 270, step: 5, dec: 0 },
+
+  /* -- aus der früheren Sensitivitäts-Faktorbibliothek übernommen ---------- */
+  { id: "yieldValue", label: "Ertrag Wertkulturen (alle)", group: G_YLD, keys: VAL_CROPS.map((c) => `yield.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.45, step: 0.01, dec: 2, hint: "Sammeltreiber über alle Wertkulturen" },
+  { id: "yieldAll", label: "Ertrag alle Kulturen", group: G_YLD, keys: [...VAL_CROPS, ...ROT_CROPS].map((c) => `yield.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.45, step: 0.01, dec: 2, hint: "Trockenjahr-Sammeltreiber" },
+  { id: "priceValue", label: "Preis Wertkulturen (alle)", group: G_PRC, keys: VAL_CROPS.map((c) => `price.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.5, step: 0.01, dec: 2 },
+  { id: "price.zwiebel_moehre", label: "Preis Zwiebel/Möhre", group: G_PRC, keys: ["price.zwiebel_moehre"], mode: "abs", money: true, unit: "€/t", lo: 0.6, hi: 1.5, step: 1, dec: 0 },
+  { id: "qualValue", label: "Kontrakt-Qualität Wertkulturen", group: G_PRC, keys: VAL_CROPS.map((c) => `qual.${c}`), mode: "mult", unit: "×", min: 0.6, max: 1.1, step: 0.01, dec: 2, hint: "realisierter Preis nach Bonus/Malus × akzeptierte Menge" },
+  { id: "qualKart", label: "Qualität Kartoffel (Stärke/Zucker)", group: G_PRC, keys: ["qual.kartoffel_pommes", "qual.kartoffel_chips"], mode: "mult", unit: "×", min: 0.6, max: 1.1, step: 0.01, dec: 2 },
+  { id: "qualTomate", label: "Qualität Tomate (Brix)", group: G_PRC, keys: ["qual.tomate"], mode: "mult", unit: "×", min: 0.6, max: 1.1, step: 0.01, dec: 2 },
+  { id: "wageAll", label: "Löhne gesamt (Stamm + Saison)", group: G_OPX, keys: ["rate.labor_h", "pers.stamm.gross", "pers.saison.gross"], mode: "mult", unit: "×", min: 0.6, max: 2, step: 0.01, dec: 2 },
+  { id: "tcoDiscount", label: "Maschinen-Einkaufsrabatt (TCO)", group: G_OPX, keys: ["tco.discount"], mode: "mult", unit: "×", min: 0, max: 2.5, step: 0.05, dec: 2 },
 ];
 const DBY = new Map(DRIVERS.map((d) => [d.id, d]));
+
+/** Alte Faktor-IDs der separaten Sensitivitäts-Ansicht → Treiber der EINEN Bibliothek.
+ *  Nur für die Migration persistierter Konfigurationen (domain.sensitivity). */
+const LEGACY_FACTOR: Record<string, string> = {
+  price_value: "priceValue", price_tomate: "price.tomate", price_kartoffel: "priceKart",
+  price_zwiebel: "price.zwiebel_moehre", price_cereal: "priceRot",
+  yield_value: "yieldValue", yield_all: "yieldAll",
+  qual_value: "qualValue", qual_kartoffel: "qualKart", qual_tomate: "qualTomate",
+  loss_all: "lossAll", diesel: "price.diesel_l", fert: "fertAll", seed: "seedAll",
+  water: "irrig.eur_mm", labor: "wageAll", tco: "tcoDiscount",
+  euribor: "macro.euribor", tax: "tax.rate", subs_base: "subsidy.per_ha",
+  subs_coupled: "subsidy.coupled_freilandgemuese", infl_out: "infl.output", infl_in: "infl.input",
+};
 
 /* ---- Presets ------------------------------------------------------------- */
 type PVal = number | { m: number };   // absolut ODER Faktor auf den Basiswert
@@ -122,6 +146,22 @@ const PRESETS: Preset[] = [
       "market.brix_premium": 0.12, "market.potato_grade": 0.10, "market.contract_share": 0.90, "market.spot_delta": 0.05,
       "transport.distance_km": 25, "farm.intake_direct": 1, "market.tomate_cap_t": 300000,
     },
+  },
+  /* -- aus dem früheren Szenario-Editor der Sensitivitäts-Ansicht ---------- */
+  {
+    id: "dry", name: "Trockenjahr",
+    desc: "−15 % Ertrag über alle Kulturen, −6 % Kontrakt-Qualität der Wertkulturen, +15 % Bewässerungskosten je mm.",
+    set: { yieldAll: 0.85, qualValue: 0.94, "irrig.eur_mm": { m: 1.15 } },
+  },
+  {
+    id: "potatocrash", name: "Preisverfall Kartoffel",
+    desc: "−25 % Kontraktpreis Kartoffel (Pommes + Chips), −5 % Qualitätserfüllung.",
+    set: { priceKart: 0.75, qualKart: 0.95 },
+  },
+  {
+    id: "rateshock", name: "Zins- & Kostenschock",
+    desc: "+50 % EURIBOR, +30 % Diesel, +25 % Dünger.",
+    set: { "macro.euribor": { m: 1.5 }, "price.diesel_l": { m: 1.3 }, fertAll: 1.25 },
   },
 ];
 
@@ -221,6 +261,55 @@ const levCol = (v: number) => (v <= 3.5 ? "var(--nx-success)" : v <= 4.0 ? "var(
 const dispOf = (d: Drv, v: number) => (d.money ? v / 100 : d.pct ? v * 100 : v);
 const rawOf = (d: Drv, x: number) => (d.money ? x * 100 : d.pct ? x / 100 : x);
 
+/* ---- Szenario-Register (eingebaut + eigene) ------------------------------ */
+type TabId = "sim" | "tornado" | "vergleich";
+type ScenEntry = { id: string; name: string; desc: string; set: Record<string, PVal>; builtin: boolean };
+
+/** Persistierte Szenarien lesen und das Legacy-Format (relative %-Shifts auf alte
+ *  Faktor-IDs) auf den Reglerstand der EINEN Treiber-Bibliothek migrieren. */
+function migrateScenarios(list: SensScenario[] | undefined, baseOfId: (id: string) => number): SensScenario[] {
+  if (!list?.length) return [];
+  const builtinNames = new Set(PRESETS.map((p) => p.name));
+  return list
+    // Alt-Bestand: die drei Szenarien der früheren Sensitivitäts-Ansicht sind
+    // jetzt eingebaut — sonst stünden sie doppelt im Register.
+    .filter((s) => !(!s.vals && builtinNames.has(s.name)))
+    .map((s) => {
+    if (s.vals) return s;
+    const vals: Record<string, number> = {};
+    for (const [fid, pct] of Object.entries(s.shifts ?? {})) {
+      const did = LEGACY_FACTOR[fid] ?? (DBY.has(fid) ? fid : ""); if (!did) continue;
+      const drv = DBY.get(did); if (!drv) continue;
+      vals[did] = drv.mode === "mult" ? 1 + pct : baseOfId(did) * (1 + pct);
+    }
+    return { id: s.id, name: s.name, desc: s.desc, vals };
+  });
+}
+const DEFAULT_TORNADO: { id: string; delta: number }[] = [
+  { id: "priceValue", delta: 0.15 }, { id: "yieldValue", delta: 0.10 }, { id: "qualValue", delta: 0.08 },
+  { id: "priceRot", delta: 0.15 }, { id: "price.diesel_l", delta: 0.20 }, { id: "fertAll", delta: 0.20 },
+  { id: "wageAll", delta: 0.15 }, { id: "macro.euribor", delta: 0.30 }, { id: "subsidy.coupled_freilandgemuese", delta: 0.20 },
+];
+/** Zielgrößen des Tornados. */
+type MetricId = "ebitda" | "ni" | "fcf" | "minCash";
+const METRICS: Record<MetricId, { label: string; pick: (r: Res) => number }> = {
+  ebitda: { label: "EBITDA", pick: (r) => r.ebitda },
+  ni: { label: "Jahresüberschuss", pick: (r) => r.ni },
+  fcf: { label: "Free Cash Flow", pick: (r) => r.fcf },
+  minCash: { label: "min. Liquidität", pick: (r) => r.minCash },
+};
+/** Einen Treiber um ±delta (relativ zum Reglerstand bzw. Modellwert) auslenken. */
+function bump(d: Domain, drv: Drv, sc: string, cur: number | undefined, delta: number): Domain {
+  const out = structuredClone(d);
+  if (drv.mode === "mult") { for (const k of drv.keys) scaleKey(out, k, sc, 1 + delta); return out; }
+  if (drv.mode === "toggle") { for (const k of drv.keys) setAbsKey(out, k, sc, delta > 0 ? 1 : 0); return out; }
+  for (const k of drv.keys) {
+    const b = cur ?? readBase(out, k, sc) ?? 0;
+    setAbsKey(out, k, sc, b * (1 + delta));
+  }
+  return out;
+}
+
 /* ============================================================================
  * View
  * ========================================================================== */
@@ -234,6 +323,7 @@ export function ScenarioStudioView() {
 
   const [vals, setVals] = React.useState<Record<string, number>>({});
   const [preset, setPreset] = React.useState<string>("base");
+  const [tab, setTab] = React.useState<TabId>("sim");
   const [open, setOpen] = React.useState<Record<string, boolean>>({ [G_YLD]: true, [G_PRC]: true, [G_RISK]: true });
 
   const baseOf = React.useCallback((drv: Drv): number => {
@@ -241,18 +331,48 @@ export function ScenarioStudioView() {
     return readBase(domain, drv.keys[0], sc) ?? 0;
   }, [domain, sc]);
 
-  /* Presets → Reglerstand */
-  const applyPreset = (pid: string) => {
-    const p = PRESETS.find((x) => x.id === pid); if (!p) return;
+  /* ---- EIN Szenario-Register: eingebaute Presets + eigene, persistierte ---- */
+  const userScen = React.useMemo(
+    () => migrateScenarios(domain.sensitivity?.scenarios, (id) => { const d = DBY.get(id); return d ? baseOf(d) : 0; }),
+    [domain.sensitivity, baseOf],
+  );
+  const allScen: ScenEntry[] = React.useMemo(() => [
+    ...PRESETS.map((p) => ({ id: p.id, name: p.name, desc: p.desc, set: p.set, builtin: true })),
+    ...userScen.map((s) => ({ id: s.id, name: s.name, desc: s.desc ?? "", set: (s.vals ?? {}) as Record<string, PVal>, builtin: false })),
+  ], [userScen]);
+  const resolveSet = React.useCallback((set: Record<string, PVal>): Record<string, number> => {
     const next: Record<string, number> = {};
-    for (const [id, pv] of Object.entries(p.set)) {
+    for (const [id, pv] of Object.entries(set)) {
       const drv = DBY.get(id); if (!drv) continue;
       next[id] = typeof pv === "number" ? pv : baseOf(drv) * pv.m;
     }
-    setVals(next); setPreset(pid);
+    return next;
+  }, [baseOf]);
+
+  /* Presets → Reglerstand */
+  const applyPreset = (pid: string) => {
+    const p = allScen.find((x) => x.id === pid); if (!p) return;
+    setVals(resolveSet(p.set)); setPreset(pid);
   };
   const setDrv = (id: string, v: number) => { setVals((s) => ({ ...s, [id]: v })); setPreset("custom"); };
   const clearDrv = (id: string) => { setVals((s) => { const n = { ...s }; delete n[id]; return n; }); setPreset("custom"); };
+
+  /* ---- Eigene Szenarien: Reglerstand speichern / löschen ------------------ */
+  const [saveOpen, setSaveOpen] = React.useState(false);
+  const [saveName, setSaveName] = React.useState("");
+  const saveScenario = () => {
+    const nm = saveName.trim(); if (!nm) return;
+    const nid = "usr-" + (1 + userScen.reduce((m, s) => Math.max(m, Number(/^usr-(\d+)$/.exec(s.id)?.[1] ?? 0)), 0));
+    const snapshot = { ...vals };
+    patch((d) => {
+      if (!d.sensitivity) d.sensitivity = { tornado: DEFAULT_TORNADO.map((r) => ({ ...r })), scenarios: [] };
+      if (!d.sensitivity.scenarios) d.sensitivity.scenarios = [];
+      d.sensitivity.scenarios.push({ id: nid, name: nm, desc: `${Object.keys(snapshot).length} ${getLang() === "en" ? "drivers deflected" : "Treiber ausgelenkt"}`, vals: snapshot });
+    });
+    setSaveOpen(false); setSaveName(""); setPreset(nid);
+  };
+  const delScenario = (id: string) =>
+    patch((d) => { if (d.sensitivity?.scenarios) d.sensitivity.scenarios = d.sensitivity.scenarios.filter((s) => s.id !== id); });
 
   /* Rechnung: Basis (unverändert) vs. Szenario (Regler) */
   const base = React.useMemo(() => runStudio(domain, sc), [domain, sc, tick]);
@@ -260,9 +380,43 @@ export function ScenarioStudioView() {
   const res = React.useMemo(() => runStudio(scenDomain, sc), [scenDomain, sc, tick]);
   const dirty = Object.keys(vals).length > 0;
 
+  /* ---- Tornado: ± je Treiber, gerechnet AUF dem aktuellen Reglerstand ----- */
+  const tornRows = domain.sensitivity?.tornado?.length ? domain.sensitivity.tornado : DEFAULT_TORNADO;
+  const setTorn = (fn: (r: { id: string; delta: number }[]) => { id: string; delta: number }[]) =>
+    patch((d) => {
+      if (!d.sensitivity) d.sensitivity = { tornado: DEFAULT_TORNADO.map((r) => ({ ...r })), scenarios: [] };
+      d.sensitivity.tornado = fn(d.sensitivity.tornado?.length ? d.sensitivity.tornado : DEFAULT_TORNADO.map((r) => ({ ...r })));
+    });
+  const tornActive = tab === "tornado";
+  /* Zielgröße des Tornados: EBITDA misst nur das operative Geschäft — Zins und
+   * Steuer wirken erst darunter, deshalb ist der Jahresüberschuss wählbar. */
+  const [metric, setMetric] = React.useState<MetricId>("ebitda");
+  const mBase = METRICS[metric].pick(res);
+  const bars = React.useMemo(() => {
+    if (!tornActive) return [] as Bar[];
+    const pick = METRICS[metric].pick;
+    const out = tornRows.map(({ id, delta }) => {
+      const drv = DBY.get(id); if (!drv) return null;
+      if (!drv.keys.some((k) => domain.assumptions[k])) return null;
+      const lo = pick(runStudio(bump(scenDomain, drv, sc, vals[id], -delta), sc));
+      const hi = pick(runStudio(bump(scenDomain, drv, sc, vals[id], delta), sc));
+      return { id, name: drv.label, delta, low: lo, high: hi, swingLow: lo - mBase, swingHigh: hi - mBase, total: Math.abs(lo - mBase) + Math.abs(hi - mBase) };
+    }).filter(Boolean) as Bar[];
+    out.sort((a, b) => b.total - a.total);
+    return out;
+  }, [tornActive, metric, tornRows, scenDomain, domain.assumptions, sc, vals, mBase, tick]);
+
+  /* ---- Vergleich: alle Szenarien des Registers gegen die Modell-Basis ----- */
+  const cmpActive = tab === "vergleich";
+  const cmp = React.useMemo(() => {
+    if (!cmpActive) return [] as { s: ScenEntry; k: Res }[];
+    return allScen.map((s) => ({ s, k: runStudio(applyStudio(domain, resolveSet(s.set), sc), sc) }));
+  }, [cmpActive, allScen, domain, resolveSet, sc, tick]);
+
   /* Heatmap (25 Läufe) — nachgelagert, damit das Ziehen der Regler flüssig bleibt */
   const heatVals = React.useDeferredValue(vals);
   const heat = React.useMemo(() => {
+    if (tab !== "sim") return { steps: [-0.2, -0.1, 0, 0.1, 0.2], grid: [], lo: 0, hi: 1 };
     const d0 = applyStudio(domain, heatVals, sc);
     const steps = [-0.2, -0.1, 0, 0.1, 0.2];
     const allY = [...VAL_CROPS, ...ROT_CROPS].map((c) => `yield.${c}`);
@@ -280,27 +434,26 @@ export function ScenarioStudioView() {
     }
     const flat = grid.flat();
     return { steps, grid, lo: Math.min(...flat), hi: Math.max(...flat) };
-  }, [domain, heatVals, sc, tick]);
+  }, [tab, domain, heatVals, sc, tick]);
 
   const cur = currency === "EUR" ? "€" : "RON";
   const D = (now: number, was: number) => now - was;
 
   return (
     <div className="space-y-4">
-      {/* ------------------------------------------------- Preset-Kopfzeile */}
+      {/* ---------------------------- Kopfzeile: Ansicht + Szenario-Register */}
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
           <div className="flex items-center gap-3">
             <h2 className="text-[14px] font-semibold">{t("Szenario-Studio")}</h2>
             <Segmented
-              ariaLabel={t("Szenario-Preset")}
-              value={preset}
-              onChange={applyPreset}
+              ariaLabel={t("Ansicht")}
+              value={tab}
+              onChange={(v) => setTab(v as TabId)}
               options={[
-                { value: "base", label: t("Base Case") },
-                { value: "infra", label: t("Infrastruktur-Ausfall"), tone: "warning" },
-                { value: "stagfl", label: t("Stagflation"), tone: "warning" },
-                { value: "bull", label: t("Bull / Vertikal"), tone: "brand" },
+                { value: "sim", label: t("Simulation") },
+                { value: "tornado", label: t("Tornado") },
+                { value: "vergleich", label: t("Szenario-Vergleich") },
               ]}
             />
             {preset === "custom" && <StatusPill tone="warning" label={t("Eigene Einstellung")} />}
@@ -312,6 +465,15 @@ export function ScenarioStudioView() {
               onClick={() => { setVals({}); setPreset("base"); }}
             >
               <RotateCcw size={13} strokeWidth={2.5} aria-hidden />{t("Zurücksetzen")}
+            </button>
+            <button
+              disabled={!dirty || readOnly}
+              title={t("Aktuellen Reglerstand als eigenes Szenario im Register ablegen")}
+              className="inline-flex items-center gap-1.5 rounded-control border px-3 text-[12px] font-semibold"
+              style={{ height: 32, borderColor: "var(--nx-border)", color: dirty && !readOnly ? "var(--nx-text-secondary)" : "var(--nx-text-muted)", background: "var(--nx-surface)", opacity: dirty && !readOnly ? 1 : 0.5 }}
+              onClick={() => setSaveOpen((s) => !s)}
+            >
+              <Save size={13} strokeWidth={2.5} aria-hidden />{t("Als Szenario speichern")}
             </button>
             <button
               disabled={!dirty || readOnly}
@@ -332,8 +494,44 @@ export function ScenarioStudioView() {
             </button>
           </div>
         </div>
+        {/* Szenario-Register: eingebaute Szenarien + eigene, gespeicherte */}
+        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b" style={{ borderColor: "var(--nx-border-divider)" }}>
+          <span className="caption mr-1 text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted">{t("Szenarien")}</span>
+          {allScen.map((s) => {
+            const on = preset === s.id;
+            return (
+              <span key={s.id} className="inline-flex items-center rounded-pill border" title={t(s.desc)}
+                style={{ height: 24, borderColor: on ? "var(--nx-brand-lift)" : "var(--nx-border)", background: on ? "var(--nx-success-bg)" : "var(--nx-surface-sunken)" }}>
+                <button className="px-2.5 text-[11.5px] font-semibold" style={{ color: on ? "var(--nx-green-ink)" : "var(--nx-text-secondary)" }} onClick={() => applyPreset(s.id)}>
+                  {s.builtin ? t(s.name) : s.name}
+                </button>
+                {!s.builtin && !readOnly && (
+                  <button className="pr-2 pl-0.5" title={t("Szenario löschen")} onClick={() => delScenario(s.id)} style={{ color: "var(--nx-text-muted)" }}>
+                    <Trash2 size={11} strokeWidth={2.5} aria-hidden />
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </div>
+        {saveOpen && (
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b" style={{ borderColor: "var(--nx-border-divider)", background: "var(--nx-surface-sunken)" }}>
+            <input
+              autoFocus value={saveName} onChange={(e) => setSaveName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveScenario(); if (e.key === "Escape") setSaveOpen(false); }}
+              placeholder={t("Name des Szenarios")}
+              className="rounded-control border px-2 text-[12px]"
+              style={{ height: 28, width: 260, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-text)" }}
+            />
+            <button className="rounded-control border px-3 text-[12px] font-semibold" style={{ height: 28, borderColor: "var(--nx-brand-lift)", color: "var(--nx-brand-lift)" }} onClick={saveScenario}>{t("Speichern")}</button>
+            <button className="rounded-control border px-3 text-[12px]" style={{ height: 28, borderColor: "var(--nx-border)", color: "var(--nx-text-muted)" }} onClick={() => setSaveOpen(false)}>{t("Abbrechen")}</button>
+            <span className="text-[11px] text-nx-text-muted">{Object.keys(vals).length} {t("Treiber ausgelenkt")}</span>
+          </div>
+        )}
         <div className="px-4 py-2 text-[11px] text-nx-text-muted">
-          {t(PRESETS.find((p) => p.id === preset)?.desc ?? "Regler frei kombiniert — jede Änderung rechnet das vollständige Modell (Composer → Engine) nicht-destruktiv neu.")}
+          {preset === "custom"
+            ? t("Regler frei kombiniert — jede Änderung rechnet das vollständige Modell (Composer → Engine) nicht-destruktiv neu.")
+            : (() => { const s = allScen.find((x) => x.id === preset); return s ? (s.builtin ? t(s.desc) : s.desc) : ""; })()}
         </div>
       </section>
 
@@ -362,6 +560,7 @@ export function ScenarioStudioView() {
       </div>
 
       {/* ------------------------------------- Regler links · Grafiken rechts */}
+      {tab === "sim" && (
       <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(340px, 400px) minmax(0, 1fr)" }}>
         {/* ---- Regler ---- */}
         <section className="rounded-tile border self-start" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
@@ -405,7 +604,182 @@ export function ScenarioStudioView() {
           <CapexRoi domain={domain} sc={sc} currency={currency} />
         </div>
       </div>
+      )}
+
+      {/* --------------------------------------------------------- Tornado */}
+      {tab === "tornado" && (
+        <TornadoPanel
+          bars={bars} rows={tornRows} setTorn={setTorn} readOnly={readOnly}
+          currency={currency} metric={metric} setMetric={setMetric} mBase={mBase}
+          custom={preset === "custom" || dirty}
+        />
+      )}
+
+      {/* ------------------------------------------------ Szenario-Vergleich */}
+      {tab === "vergleich" && (
+        <ComparePanel rows={cmp} base={base} currency={currency} onLoad={applyPreset} active={preset} />
+      )}
     </div>
+  );
+}
+
+/* ============================== Tornado ================================== */
+type Bar = { id: string; name: string; delta: number; low: number; high: number; swingLow: number; swingHigh: number; total: number };
+function TornadoPanel({ bars, rows, setTorn, readOnly, currency, metric, setMetric, mBase, custom }: {
+  bars: Bar[]; rows: { id: string; delta: number }[];
+  setTorn: (fn: (r: { id: string; delta: number }[]) => { id: string; delta: number }[]) => void;
+  readOnly: boolean; currency: "EUR" | "RON";
+  metric: MetricId; setMetric: (m: MetricId) => void; mBase: number; custom: boolean;
+}) {
+  const maxSwing = Math.max(1, ...bars.map((b) => Math.max(Math.abs(b.swingLow), Math.abs(b.swingHigh))));
+  const seg = (v: number) => {
+    const w = (Math.abs(v) / maxSwing) * 50;
+    return { left: `${v < 0 ? 50 - w : 50}%`, width: `${w}%`, background: v < 0 ? "var(--nx-error)" : "var(--nx-success)" };
+  };
+  const free = DRIVERS.filter((d) => !rows.some((r) => r.id === d.id));
+  return (
+    <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
+        <h2 className="inline-flex items-center gap-2 text-[14px] font-semibold">
+          <Tornado size={14} strokeWidth={2.5} aria-hidden />{t("Tornado — Wirkung je Treiber")}
+        </h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <Segmented
+            ariaLabel={t("Zielgröße")}
+            value={metric}
+            onChange={(v) => setMetric(v as MetricId)}
+            options={(Object.keys(METRICS) as MetricId[]).map((m) => ({ value: m, label: t(METRICS[m].label) }))}
+          />
+          <span className="text-[11px] text-nx-text-muted">
+            {custom ? t("gerechnet um den aktuellen Reglerstand") : t("gerechnet um die Modell-Basis")} · {fmtMoney(mBase, currency)}
+          </span>
+        </div>
+      </div>
+      <div className="px-4 py-3 space-y-1.5">
+        {bars.length === 0 && <div className="py-6 text-center text-[12px] text-nx-text-muted">{t("Keine Treiber ausgewählt.")}</div>}
+        {bars.map((b) => (
+          <div key={b.id} className="grid items-center gap-2" style={{ gridTemplateColumns: "minmax(150px, 230px) 70px minmax(0, 1fr) 170px 20px" }}>
+            <span className="truncate text-[12px]" title={t(b.name)}>{t(b.name)}</span>
+            <span className="flex items-center gap-1">
+              <span className="text-[10px] text-nx-text-muted">±</span>
+              <input
+                type="number" step={1} min={1} max={90} disabled={readOnly}
+                value={Math.round(b.delta * 100)}
+                onChange={(e) => { const x = Number(e.target.value); if (isFinite(x)) setTorn((r) => r.map((q) => (q.id === b.id ? { ...q, delta: Math.max(0.01, x / 100) } : q))); }}
+                className="num rounded-control border px-1 text-right text-[11px]"
+                style={{ width: 46, height: 24, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-text)" }}
+                aria-label={`${t(b.name)} ±%`}
+              />
+              <span className="text-[10px] text-nx-text-muted">%</span>
+            </span>
+            <div className="relative" style={{ height: 18, background: "var(--nx-surface-sunken)", borderRadius: 3 }}>
+              <div style={{ position: "absolute", top: 0, bottom: 0, ...seg(b.swingLow), opacity: 0.85, borderRadius: 2 }} />
+              <div style={{ position: "absolute", top: 0, bottom: 0, ...seg(b.swingHigh), opacity: 0.85, borderRadius: 2 }} />
+              <div style={{ position: "absolute", top: -2, bottom: -2, left: "50%", width: 1, background: "var(--nx-border)" }} />
+            </div>
+            <span className="num text-right text-[11px]">
+              <Swing v={b.swingLow} currency={currency} />
+              <span className="mx-1 text-nx-text-muted">/</span>
+              <Swing v={b.swingHigh} currency={currency} />
+            </span>
+            <button disabled={readOnly} title={t("Treiber entfernen")} onClick={() => setTorn((r) => r.filter((q) => q.id !== b.id))} style={{ color: "var(--nx-text-muted)" }}>
+              <X size={12} strokeWidth={2.5} aria-hidden />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-t" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface-sunken)" }}>
+        <Plus size={12} strokeWidth={2.5} aria-hidden />
+        <select
+          disabled={readOnly} value=""
+          onChange={(e) => { const id = e.target.value; if (id) setTorn((r) => [...r, { id, delta: 0.15 }]); }}
+          className="rounded-control border px-2 text-[11.5px]"
+          style={{ height: 26, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-text)" }}
+          aria-label={t("Treiber hinzufügen")}
+        >
+          <option value="">{t("Treiber hinzufügen …")}</option>
+          {free.map((d) => <option key={d.id} value={d.id}>{t(d.label)}</option>)}
+        </select>
+        <span className="text-[11px] text-nx-text-muted">{t("Jede Zeile lenkt den Treiber ±x % aus und rechnet das vollständige Modell neu.")}</span>
+      </div>
+    </section>
+  );
+}
+
+function Swing({ v, currency }: { v: number; currency: "EUR" | "RON" }) {
+  if (Math.abs(v) < 0.5) return <span className="text-nx-text-muted">—</span>;
+  return <span style={{ color: v < 0 ? "var(--nx-error)" : "var(--nx-success)" }}>{v < 0 ? "−" : "+"}{fmtMoney(Math.abs(v), currency)}</span>;
+}
+
+/* ========================== Szenario-Vergleich =========================== */
+function ComparePanel({ rows, base, currency, onLoad, active }: {
+  rows: { s: ScenEntry; k: Res }[]; base: Res; currency: "EUR" | "RON"; onLoad: (id: string) => void; active: string;
+}) {
+  const th = "px-3 py-1.5 text-right caption text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted";
+  const td = "num px-3 py-1.5 text-right text-[11.5px]";
+  return (
+    <section className="rounded-tile border overflow-hidden" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
+        <h2 className="inline-flex items-center gap-2 text-[14px] font-semibold">
+          <GitCompare size={14} strokeWidth={2.5} aria-hidden />{t("Szenario-Vergleich")}
+        </h2>
+        <span className="text-[11px] text-nx-text-muted">{t("Alle Szenarien des Registers gegen die Modell-Basis — Headline-Jahr")}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr style={{ background: "var(--nx-surface-sunken)" }}>
+              <th className="px-3 py-1.5 text-left caption text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted">{t("Szenario")}</th>
+              <th className={th}>{t("EBITDA / J.")}</th>
+              <th className={th}>{t("Δ vs. Basis")}</th>
+              <th className={th}>{t("Umsatz / J.")}</th>
+              <th className={th}>{t("min. Liquidität")}</th>
+              <th className={th}>{t("DSCR")}</th>
+              <th className={th}>{t("Net Debt / EBITDA")}</th>
+              <th className="px-3 py-1.5" />
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+              <td className="px-3 py-1.5 text-[12px] font-semibold">{t("Modell-Basis")}</td>
+              <td className={td}>{fmtMoney(base.ebitda, currency)}</td>
+              <td className={`${td} text-nx-text-muted`}>—</td>
+              <td className={td}>{fmtMoney(base.rev, currency)}</td>
+              <td className={td} style={{ color: base.minCash < 0 ? "var(--nx-error)" : undefined }}>{fmtMoney(base.minCash, currency)}</td>
+              <td className={td} style={{ color: dscrCol(base.dscr) }}>{fmtNumber(base.dscr, 2)}x</td>
+              <td className={td} style={{ color: levCol(base.lev) }}>{fmtNumber(base.lev, 2)}x</td>
+              <td />
+            </tr>
+            {rows.filter(({ s }) => s.id !== "base").map(({ s, k }) => {
+              const d = k.ebitda - base.ebitda;
+              return (
+                <tr key={s.id} style={{ borderTop: "1px solid var(--nx-border-divider)", background: s.id === active ? "var(--nx-success-bg)" : undefined }}>
+                  <td className="px-3 py-1.5 text-[12px]">
+                    <span className="font-semibold">{s.builtin ? t(s.name) : s.name}</span>
+                    {!s.builtin && <span className="ml-1.5 caption text-[9px] text-nx-text-muted">{t("eigen")}</span>}
+                  </td>
+                  <td className={td}>{fmtMoney(k.ebitda, currency)}</td>
+                  <td className={td} style={{ color: d < 0 ? "var(--nx-error)" : d > 0 ? "var(--nx-success)" : undefined }}>
+                    {Math.abs(d) < 0.5 ? "—" : `${d < 0 ? "−" : "+"}${fmtMoney(Math.abs(d), currency)}`}
+                  </td>
+                  <td className={td}>{fmtMoney(k.rev, currency)}</td>
+                  <td className={td} style={{ color: k.minCash < 0 ? "var(--nx-error)" : undefined }}>{fmtMoney(k.minCash, currency)}</td>
+                  <td className={td} style={{ color: dscrCol(k.dscr) }}>{fmtNumber(k.dscr, 2)}x</td>
+                  <td className={td} style={{ color: levCol(k.lev) }}>{fmtNumber(k.lev, 2)}x</td>
+                  <td className="px-3 py-1.5 text-right">
+                    <button className="inline-flex items-center gap-1 rounded-control border px-2 text-[11px] font-semibold"
+                      style={{ height: 24, borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)" }}
+                      onClick={() => onLoad(s.id)} title={t("Szenario in die Regler laden")}>
+                      <SlidersHorizontal size={11} strokeWidth={2.5} aria-hidden />{t("Laden")}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
