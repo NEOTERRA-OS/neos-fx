@@ -169,11 +169,12 @@ function CloudBadge() {
     load: { label: "Cloud: lädt …", color: "var(--nx-text-muted)" },
     saving: { label: "Cloud: speichert …", color: "var(--nx-text-muted)" },
     saved: { label: "Cloud: gespeichert", color: "var(--nx-success)" },
-    error: { label: "Cloud: offline (JSON-Export nutzen)", color: "var(--nx-warning)" },
+    local: { label: "Lokal gespeichert (dieser Browser)", color: "var(--nx-text-secondary)" },
+    error: { label: "Nicht gespeichert — JSON-Export nutzen", color: "var(--nx-warning)" },
   };
   const m = map[cloud];
   return (
-    <span className="num inline-flex items-center gap-1.5 text-[11px]" style={{ color: m.color }} title={t("Automatisches Speichern in der Team-Cloud (Supabase). Beim Start wird der letzte Stand geladen.")}>
+    <span className="num inline-flex items-center gap-1.5 text-[11px]" style={{ color: m.color }} title={t("Automatisches Speichern in der Team-Cloud (Supabase). Ist die Cloud nicht erreichbar, sichert die App lokal in diesem Browser — der Stand überlebt einen Reload, wird aber nicht mit dem Team geteilt.")}>
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M17.5 19a4.5 4.5 0 1 0-.9-8.9 6 6 0 1 0-11.1 3.4" /><path d="M12 13v8" /><path d="m8.5 17 3.5-4 3.5 4" />
       </svg>

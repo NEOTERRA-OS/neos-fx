@@ -13,7 +13,7 @@ import { setLang as i18nSetLang, localeFor, type Lang } from "../lib/i18n";
 
 type View = { scenarioId: string; granularity: Granularity; currency: "EUR" | "RON"; lang: Lang };
 
-export type CloudState = "off" | "load" | "saving" | "saved" | "error";
+export type CloudState = "off" | "load" | "saving" | "saved" | "local" | "error";
 
 type Store = {
   domain: Domain;

@@ -44,8 +44,8 @@ import { CheckPanel } from "../statements/CheckPanel";
 import { KpiBand } from "../kpi/KpiBand";
 import { StageSemanticsCard } from "../inputs/StageSemanticsCard";
 import { useModelStore, selectComputed, selectComputedAnnual } from "../../store/modelStore";
-import { deriveMassnahmenChecks } from "../../store/model";
-import { autoLoadLatest, autoSave, getMyMaxRole } from "../../store/persistence";
+import { deriveMassnahmenChecks, type Domain } from "../../store/model";
+import { autoLoadLatest, autoSave, getMyMaxRole, localLoad, localSave } from "../../store/persistence";
 
 export function AppShell() {
   const [theme, setTheme] = React.useState<"light" | "dark">("dark"); // Default: Dark Mode
@@ -85,15 +85,26 @@ export function AppShell() {
     // Timeout-Guard: nie im „lädt…"-Zustand hängen bleiben (z. B. Netz blockiert).
     const withTimeout = <T,>(p: Promise<T>, ms: number) =>
       Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+    // Nur anwenden, wenn der Nutzer zwischenzeitlich NICHTS geändert hat (kein Überschreiben).
+    const applyIfUntouched = (d: Domain | null) => {
+      if (d && useModelStore.getState().recalcTick === tickAtStart) useModelStore.getState().loadDomain(d);
+    };
+    // Cloud zuerst; ist sie nicht erreichbar (offline, lokale Datei, kein Login),
+    // greift der lokale Auto-Save → das Modell ist ohne Deployment voll nutzbar.
+    const fallbackLocal = () => {
+      if (!alive) return;
+      const d = localLoad();
+      applyIfUntouched(d);
+      readyRef.current = true;
+      setCloud(d || localSave(useModelStore.getState().domain) ? "local" : "error");
+    };
     withTimeout(autoLoadLatest(), 8000)
       .then((d) => {
         if (!alive) return;
-        // Nur anwenden, wenn der Nutzer zwischenzeitlich NICHTS geändert hat (kein Überschreiben).
-        if (d && useModelStore.getState().recalcTick === tickAtStart) useModelStore.getState().loadDomain(d);
-        readyRef.current = true;
-        setCloud("saved");
+        if (d) { applyIfUntouched(d); readyRef.current = true; setCloud("saved"); }
+        else fallbackLocal();  // kein Cloud-Stand → lokalen Stand nehmen
       })
-      .catch(() => { if (alive) { readyRef.current = true; setCloud("error"); } });
+      .catch(fallbackLocal);
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -101,12 +112,14 @@ export function AppShell() {
     if (!readyRef.current) return;
     setCloud("saving");
     const t = setTimeout(() => {
+      const dom = useModelStore.getState().domain;
+      const localOk = localSave(dom);           // immer zuerst lokal — überlebt Reload auch ohne Netz
       Promise.race([
-        autoSave(useModelStore.getState().domain),
+        autoSave(dom),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000)),
       ])
         .then(() => setCloud("saved"))
-        .catch(() => setCloud("error"));
+        .catch(() => setCloud(localOk ? "local" : "error"));
     }, 1500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

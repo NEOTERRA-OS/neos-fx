@@ -102,7 +102,7 @@ function networkHint(probe: "ok" | "blocked"): string {
   const isFile = typeof window !== "undefined" && window.location.protocol === "file:";
   const offline = typeof navigator !== "undefined" && navigator.onLine === false;
   if (offline) return t("Keine Internetverbindung — der Browser ist offline.");
-  if (isFile) return t("Diese Datei wurde lokal geöffnet (file://). Der Browser blockiert den Login aus einer lokalen Datei. Bitte fx.neoterra.ag im Browser aufrufen oder den Betrachter-Modus nutzen.");
+  if (isFile) return t("Die Datei wurde lokal geöffnet (file://) und erreicht den Anmelde-Server nicht. Ohne Anmeldung lässt sich das Modell lokal voll nutzen — nur die Team-Cloud fehlt.");
   if (probe === "ok") return t("Der Server ist erreichbar, aber der Anmelde-Aufruf wurde blockiert — meist durch eine Browser-Erweiterung (Adblocker/Privacy-Tool) oder ein Firmen-Netzwerk. Bitte im privaten Fenster ohne Erweiterungen erneut versuchen.");
   return t("Server nicht erreichbar (supabase.co wird blockiert). Bitte Netzwerk/VPN/Firewall prüfen oder ein anderes Netz verwenden.");
 }
@@ -183,7 +183,12 @@ function LoginScreen() {
 
             {isLocalFile && (
               <div className="nfx-msg warn" style={{ marginTop: 0, marginBottom: 18 }}>
-                {t("Lokale Datei erkannt (file://) — der Browser lässt aus einer lokalen Datei keine Anmeldung zu. Für den Login bitte fx.neoterra.ag aufrufen; hier funktioniert der Betrachter-Modus.")}
+                {t("Lokale Datei (file://) — die Anmeldung kann hier je nach Browser und Netzwerk fehlschlagen. Das Modell rechnet lokal vollständig; ohne Anmeldung wird der Stand in diesem Browser gesichert statt in der Team-Cloud.")}
+                {" "}
+                <button type="button" onClick={goReadonly}
+                  style={{ background: "none", border: 0, padding: 0, font: "inherit", fontWeight: 700, color: "inherit", textDecoration: "underline", cursor: "pointer" }}>
+                  {t("Ohne Anmeldung öffnen")}
+                </button>
               </div>
             )}
 
@@ -222,8 +227,8 @@ function LoginScreen() {
             {msg && <div className={"nfx-msg " + msg.tone}>{msg.text}</div>}
 
             <div className="nfx-view">
-              <span>{t("Nur ansehen?")}</span>
-              <button onClick={goReadonly}>{t("Betrachter-Modus öffnen")}</button>
+              <span>{isLocalFile ? t("Lokal arbeiten?") : t("Nur ansehen?")}</span>
+              <button onClick={goReadonly}>{isLocalFile ? t("Ohne Anmeldung öffnen") : t("Betrachter-Modus öffnen")}</button>
             </div>
 
             <div className="nfx-trust">

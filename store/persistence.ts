@@ -125,6 +125,55 @@ export async function autoSave(domain: Domain): Promise<void> {
   _autoId = (data?.id as string) ?? null;
 }
 
+/* ---- Lokaler Auto-Save (Browser-Speicher, ohne Anmeldung/Cloud) ----
+ *  Zweck: Das Modell lässt sich vollständig lokal nutzen (Einzeldatei, Betrachter-/Offline-Modus).
+ *  Der Stand überlebt Reload und Browser-Neustart auf DIESEM Rechner in DIESEM Browser.
+ *  Kein Ersatz für die Team-Cloud: keine Freigabe, keine Historie, kein Audit-Trail. */
+const LOCAL_KEY = "neos_fx_autosave_v1";
+const LOCAL_AT = "neos_fx_autosave_at";
+
+function ls(): Storage | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const k = "__nfx_ls_probe"; window.localStorage.setItem(k, "1"); window.localStorage.removeItem(k);
+    return window.localStorage;
+  } catch { return null; }
+}
+
+/** Lokal sichern. true = geschrieben, false = nicht verfügbar/Speicher voll. */
+export function localSave(domain: Domain): boolean {
+  const s = ls();
+  if (!s) return false;
+  try {
+    s.setItem(LOCAL_KEY, JSON.stringify(domain));
+    s.setItem(LOCAL_AT, new Date().toISOString());
+    return true;
+  } catch { return false; }
+}
+
+/** Zuletzt lokal gesicherten Stand laden (null, wenn keiner/ungültig). */
+export function localLoad(): Domain | null {
+  const s = ls();
+  if (!s) return null;
+  try {
+    const raw = s.getItem(LOCAL_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d || !d.catalog || !d.anbauplan || !d.assumptions) return null;
+    return migrateDomain(d as Domain);
+  } catch { return null; }
+}
+
+/** Zeitstempel des lokalen Stands (ISO) oder null. */
+export function localSavedAt(): string | null {
+  try { return ls()?.getItem(LOCAL_AT) ?? null; } catch { return null; }
+}
+
+/** Lokalen Stand verwerfen. */
+export function localClear(): void {
+  try { const s = ls(); s?.removeItem(LOCAL_KEY); s?.removeItem(LOCAL_AT); } catch { /* egal */ }
+}
+
 /* ---- JSON-Fallback (immer verfügbar) ---- */
 export function domainToJson(domain: Domain): string {
   return JSON.stringify(domain, null, 2);

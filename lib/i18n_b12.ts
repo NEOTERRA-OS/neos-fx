@@ -166,8 +166,8 @@ const B12: Record<string, string> = {
   "Verbindung wird geprüft …": "Checking connection …",
   "Keine Internetverbindung — der Browser ist offline.":
     "No internet connection — the browser is offline.",
-  "Diese Datei wurde lokal geöffnet (file://). Der Browser blockiert den Login aus einer lokalen Datei. Bitte fx.neoterra.ag im Browser aufrufen oder den Betrachter-Modus nutzen.":
-    "This file was opened locally (file://). The browser blocks sign-in from a local file. Please open fx.neoterra.ag in your browser or use viewer mode.",
+  "Die Datei wurde lokal geöffnet (file://) und erreicht den Anmelde-Server nicht. Ohne Anmeldung lässt sich das Modell lokal voll nutzen — nur die Team-Cloud fehlt.":
+    "The file was opened locally (file://) and cannot reach the sign-in server. Without signing in the model still works fully offline — only the team cloud is missing.",
   "Der Server ist erreichbar, aber der Anmelde-Aufruf wurde blockiert — meist durch eine Browser-Erweiterung (Adblocker/Privacy-Tool) oder ein Firmen-Netzwerk. Bitte im privaten Fenster ohne Erweiterungen erneut versuchen.":
     "The server is reachable, but the sign-in call was blocked — usually by a browser extension (ad blocker/privacy tool) or a corporate network. Please try again in a private window without extensions.",
   "Server nicht erreichbar (supabase.co wird blockiert). Bitte Netzwerk/VPN/Firewall prüfen oder ein anderes Netz verwenden.":
@@ -178,7 +178,13 @@ const B12: Record<string, string> = {
   "Für diese E-Mail existiert bereits ein Konto — bitte anmelden.":
     "An account already exists for this email — please sign in.",
   "Zu viele Versuche — bitte einen Moment warten.": "Too many attempts — please wait a moment.",
-  "Lokale Datei erkannt (file://) — der Browser lässt aus einer lokalen Datei keine Anmeldung zu. Für den Login bitte fx.neoterra.ag aufrufen; hier funktioniert der Betrachter-Modus.":
-    "Local file detected (file://) — the browser does not allow sign-in from a local file. For login please open fx.neoterra.ag; viewer mode works here.",
+  "Lokale Datei (file://) — die Anmeldung kann hier je nach Browser und Netzwerk fehlschlagen. Das Modell rechnet lokal vollständig; ohne Anmeldung wird der Stand in diesem Browser gesichert statt in der Team-Cloud.":
+    "Local file (file://) — sign-in may fail here depending on browser and network. The model computes fully offline; without signing in your work is saved in this browser instead of the team cloud.",
+  "Ohne Anmeldung öffnen": "Open without signing in",
+  "Lokal arbeiten?": "Work locally?",
+  "Lokal gespeichert (dieser Browser)": "Saved locally (this browser)",
+  "Nicht gespeichert — JSON-Export nutzen": "Not saved — use JSON export",
+  "Automatisches Speichern in der Team-Cloud (Supabase). Ist die Cloud nicht erreichbar, sichert die App lokal in diesem Browser — der Stand überlebt einen Reload, wird aber nicht mit dem Team geteilt.":
+    "Automatic saving to the team cloud (Supabase). If the cloud is unreachable the app saves locally in this browser — your work survives a reload but is not shared with the team.",
 };
 export default B12;
