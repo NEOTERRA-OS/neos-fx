@@ -836,6 +836,23 @@ function computeOperating(
       : (storeMonthsSeries ? (storeMonthsSeries[0] ?? 0) : 0);
     return Math.max(0, Math.round(v));
   };
+  /* DIENSTLEISTUNGSMODELL (Standard) gegen EIGENLAGER — der Unterschied ist strukturell:
+   *
+   *  Dienstleistung: Die Ware wird bereits bei der ERNTE verkauft, das Eigentum geht auf den
+   *    Abnehmer über, sie bleibt aber in unserem Lager. Erlös aus der Ware entsteht im
+   *    Erntemonat, die Forderung ebenso — der Abnehmer finanziert den Bestand, nicht wir.
+   *    Die Einlagerung ist eine SEPARATE Leistung und wird über die Lagermonate abgegrenzt.
+   *    Wir sind Verwahrer: Schwund geht zu unseren Lasten, aber als Ersatzpflicht zum
+   *    Warenwert, nicht als entgangener Erlös.
+   *
+   *  Eigenlager: Die Ware bleibt unser Eigentum und wird erst bei der Auslagerung verkauft.
+   *    Erlös und Forderung entstehen später, wir tragen die Kapitalbindung — und im ersten
+   *    Lagerjahr fällt ein voller Herbstumsatz ins Folgejahr.
+   *
+   *  Wirtschaftlich unterscheiden sich die Modelle in drei Punkten: Zeitpunkt des Erlöses,
+   *  wer den Bestand finanziert, und wer die Preisentwicklung über den Winter bekommt. */
+  const serviceMode = has("store.service_mode")
+    ? (resolveAssumption(state, "store.service_mode", chain, n, ppy)[0] ?? 1) >= 0.5 : true;
   const feeSeries = has("store.fee_per_t_month")
     ? resolveAssumption(state, "store.fee_per_t_month", chain, n, ppy) : null;
   const energySeries = has("store.energy_per_t_month")
@@ -944,8 +961,31 @@ function computeOperating(
           storageCost[q] += round(storedT * energy);              // Energie je Lagermonat
         }
 
-        if (outP < n) {
-          const shrink = shrinkSeries ? Math.max(0, shrinkSeries[p] ?? 0) : 0;
+        const shrink = shrinkSeries ? Math.max(0, shrinkSeries[p] ?? 0) : 0;
+
+        if (serviceMode) {
+          /* --- Ware bei der Ernte verkauft, Lagerung als Dienstleistung --------------- */
+          // Der Warenerlös entsteht JETZT, zusammen mit der Direktware — Eigentum geht über,
+          // die Ware bleibt nur physisch bei uns.
+          rev += round(storedT * blended * calc.qual[p] * acceptAt(p));
+          storedTonnesOut[Math.min(outP, n - 1)] += storedT;
+          // Lagergebühr über die Lagermonate abgegrenzt (Leistung wird über die Zeit erbracht).
+          for (let q = p + 1; q <= Math.min(outP, n - 1); q++) {
+            const feeQ = feeSeries ? (feeSeries[q] ?? 0) : 0;
+            const feeRev = round(storedT * feeQ);
+            if (feeRev === 0) continue;
+            storageFeeRevenue[q] += feeRev;
+            revenue[q] += feeRev;
+            outputVat[q] += round(feeRev * outRate(plan.cropId));
+            receiptTerms.push({ period: q, amount: feeRev, cropId: plan.cropId });
+          }
+          // Verwahrerhaftung: Schwund geht zu unseren Lasten — als Ersatzpflicht zum
+          // WARENWERT, nicht als entgangener Erlös. Eine vertragliche Schwundtoleranz
+          // (marktüblich) würde diesen Posten deckeln; hier bewusst ungedeckelt angesetzt.
+          const lossT = storedT * Math.max(0, shrink * months);
+          storageCost[Math.min(outP, n - 1)] += round(lossT * blended);
+        } else if (outP < n) {
+          /* --- Eigenlager: Verkauf erst bei der Auslagerung --------------------------- */
           const outT = storedT * Math.max(0, 1 - shrink * months); // Schwund mindert die Menge
           const fee = feeSeries ? (feeSeries[outP] ?? 0) : 0;
           const spotOut = calc.priceEurT[outP] ?? blended;
@@ -953,7 +993,6 @@ function computeOperating(
           const baseOut = mOut && mOut.share > 0
             ? mOut.share * mOut.price + (1 - mOut.share) * spotOut : spotOut;
           const revStored = round(outT * (baseOut + fee * months) * calc.qual[outP] * acceptAt(outP));
-          // Der Aufschlagsanteil ist der Ertrag der Kostenstelle Lager (nachrichtlich).
           storageFeeRevenue[outP] += round(outT * fee * months * calc.qual[outP] * acceptAt(outP));
           storedTonnesOut[outP] += storedT;
           if (outP === p) {
@@ -970,9 +1009,8 @@ function computeOperating(
             }
           }
         }
-        // outP >= n: die Ware ist am Horizontende noch nicht verkauft. Kein Umsatz, kein
-        // Erlösstrom — sie bleibt im Lagerbestand stehen. Sie in die letzte Periode zu
-        // quetschen würde das Schlussjahr künstlich aufblähen.
+        // Eigenlager mit outP >= n: die Ware ist am Horizontende noch nicht verkauft — kein
+        // Umsatz, sie bleibt im Lagerbestand stehen.
       }
       revenue[p] += rev;
       outputVat[p] += round(rev * outRate(plan.cropId));           // Ausgangs-USt (0 bei Reverse-Charge)
@@ -1816,7 +1854,7 @@ export function computeModel(
     state.tax.corporateTaxRateKey,
   );
   referencedKeys.push('quality.reject', 'market.cover_premium', 'infl.output');
-  for (const k of ['store.months', 'store.from_month', 'store.fee_per_t_month',
+  for (const k of ['store.months', 'store.from_month', 'store.service_mode', 'store.fee_per_t_month',
                    'store.energy_per_t_month', 'store.handling_per_t', 'store.shrink_per_month']) {
     if (k in state.assumptions) referencedKeys.push(k);
   }

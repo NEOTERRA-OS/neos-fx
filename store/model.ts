@@ -1342,9 +1342,20 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("market.tomate_cap_t", "market.tomate_cap_t", "Tomatenwerk-Kapazität (t/Kampagne)", "count", 150000),
   // Einlagerungsquote je lagerpflichtiger Kultur (0..1): Anteil der Ernte, der eingelagert wird.
   //  Rest geht direkt Feld → Verarbeiter (keine Lager-CAPEX). Treibt die Lager-Bemessung (store).
-  A("store.share.kartoffel_pommes", "store.share.kartoffel_pommes", "Einlagerungsquote Kartoffel Pommes", "rate", 1.0),
-  A("store.share.kartoffel_chips", "store.share.kartoffel_chips", "Einlagerungsquote Kartoffel Chips", "rate", 1.0),
-  A("store.share.zwiebel_moehre", "store.share.zwiebel_moehre", "Einlagerungsquote Zwiebel/Möhre", "rate", 1.0),
+  // Szenarioband nach Vorgabe Benedikt: Base 50/50 · Best 25 % frisch / 75 % Lager ·
+  //  Worst gar keine Einlagerung. Die Quote ist frei variierbar (Preise & Treiber,
+  //  Szenario-Studio). Sie treibt gleichzeitig Preis, Umsatzzeitpunkt, Kapitalbindung und
+  //  die Lager-CAPEX-Bemessung — im Worst Case ohne Einlagerung entfällt konsequenterweise
+  //  auch die Lagerinvestition.
+  A("store.share.kartoffel_pommes", "store.share.kartoffel_pommes", "Einlagerungsquote Kartoffel Pommes", "rate", 0.50, 0.75, 0),
+  A("store.share.kartoffel_chips", "store.share.kartoffel_chips", "Einlagerungsquote Kartoffel Chips", "rate", 0.50, 0.75, 0),
+  A("store.share.zwiebel_moehre", "store.share.zwiebel_moehre", "Einlagerungsquote Zwiebel/Möhre", "rate", 0.50, 0.75, 0),
+  // Die übrigen lagerpflichtigen Kulturen brauchen dieselbe Quote — sonst klaffen die
+  //  Vorgaben auseinander: die CAPEX-Bemessung nimmt bei fehlendem Schlüssel 100 % an,
+  //  der Erlöskanal in der Engine dagegen 0 %. Dann wird Lager gebaut, das nie genutzt wird.
+  A("store.share.suesskartoffel", "store.share.suesskartoffel", "Einlagerungsquote Süßkartoffel", "rate", 0.50, 0.75, 0),
+  A("store.share.knoblauch", "store.share.knoblauch", "Einlagerungsquote Knoblauch", "rate", 0.50, 0.75, 0),
+  A("store.share.knollensellerie", "store.share.knollensellerie", "Einlagerungsquote Knollensellerie", "rate", 0.50, 0.75, 0),
 
   /* --- Lagerkanal: Planungsannahmen statt Einzelverträge -------------------
    * Die Planung ist bewusst von den Bestandsverträgen gelöst (die galten für 2025 und sind
@@ -1363,7 +1374,17 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // heute ausdrücklich auf Kosten NEOTERRAs. Kalibrierung: die reine Kapitalbindung kostet bei
   // 5,8 % Revolver-Satz und 235 €/t rund 1,15 €/t·Monat, die Energie nochmal rund 2 €/t·Monat.
   // Ein Satz unter etwa 3,50 €/t·Monat deckt die Selbstkosten nicht.
-  A("store.fee_per_t_month", "store.fee_per_t_month", "Lageraufschlag (€/t·Monat)", "money_per_tonne", 400, 600, 200),
+  // Vermarktungsmodell der Lagerware. 1 = DIENSTLEISTUNG (Standard): Die Ware wird bereits
+  //  bei der Ernte verkauft, das Eigentum geht auf den Abnehmer über, sie bleibt aber in
+  //  unserem Lager. Die Einlagerung wird als separate Dienstleistung berechnet.
+  //  0 = EIGENLAGER: Die Ware bleibt unser Eigentum und wird erst bei der Auslagerung verkauft.
+  //  Der Unterschied ist erheblich — siehe Kommentar in computeOperating.
+  A("store.service_mode", "store.service_mode", "Lager als Dienstleistung (1) statt Eigenlager (0)", "count", 1),
+  // Lagergebühr je Tonne und Monat. Entscheidung Benedikt: mindestens 10, angesetzt 15.
+  //  Marktüblich sind für temperaturgeführte Lagerung mit Handling rund 8–20 €/t·Monat.
+  //  Break-even des eigenen Lagers liegt bei rund 6 €/t·Monat (Dienstleistungsmodell, ohne
+  //  Kapitalbindung der Ware) bzw. 7,15 (Eigenlager).
+  A("store.fee_per_t_month", "store.fee_per_t_month", "Lagergebühr (€/t·Monat)", "money_per_tonne", 1500, 1800, 1000),
   // Betriebskosten der Lagerung — Literaturkalibrierung, bis technische Daten der Anlage vorliegen.
   A("store.energy_per_t_month", "store.energy_per_t_month", "Lagerenergie (€/t·Monat)", "money_per_tonne", 200, 150, 300),
   A("store.handling_per_t", "store.handling_per_t", "Ein-/Auslagerung (€/t Durchsatz)", "money_per_tonne", 600, 500, 800),
@@ -5621,7 +5642,8 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
   { group: "Downside (Zurückweisung & Deckungskauf)", keys: ["quality.reject", "market.cover_premium"] },
   { group: "Lagerkanal (Feld vs. Lager)", keys: [
     "store.share.kartoffel_pommes", "store.share.kartoffel_chips", "store.share.zwiebel_moehre",
-    "store.months", "store.from_month", "store.fee_per_t_month", "store.energy_per_t_month",
+    "store.share.suesskartoffel", "store.share.knoblauch", "store.share.knollensellerie",
+    "store.months", "store.from_month", "store.service_mode", "store.fee_per_t_month", "store.energy_per_t_month",
     "store.handling_per_t", "store.shrink_per_month",
   ] },
   { group: "Subventionen", keys: ["subsidy.per_ha", "subsidy.coupled_freilandgemuese", "rev.gerste_zweitfrucht"] },

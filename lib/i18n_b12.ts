@@ -292,6 +292,16 @@ const B12: Record<string, string> = {
 
   // --- Paket B: Zahlungs-Timing und Anzahlungen der Off-taker ---
   "Bonus-Verzug": "Bonus delay",
+  // --- Lagerkanal ---
+  "Einlagerungsquote (alle Lagerkulturen)": "Storage share (all storable crops)",
+  "Anteil der Ernte, der eingelagert statt frisch ab Feld geliefert wird":
+    "share of the harvest put into store rather than delivered fresh from the field",
+  "Lagergebühr (€/t·Monat)": "Storage fee (EUR/t/month)",
+  "Break-even des eigenen Lagers liegt bei rund 6 €/t·Monat":
+    "break-even of the own store is around 6 EUR/t/month",
+  "Lagerdauer Ø (Monate)": "Average storage duration (months)",
+  "davon: Lagerbetrieb (Energie, Ein-/Auslagerung)": "of which: storage operations (energy, in/out handling)",
+  "nachrichtlich: Lageraufschlag im Umsatz": "memo: storage fee included in revenue",
   // --- Paket C: Downside ---
   "davon: Deckungskauf (Untererfüllung Kontrakt)": "of which: cover purchase (contract shortfall)",
   "Zurückweisungsquote am Werkstor": "Rejection rate at the factory gate",
