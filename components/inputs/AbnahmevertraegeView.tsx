@@ -16,8 +16,10 @@ import type { OfftakeContract } from "../../core/types";
  *   · Restmenge geht zum Kulturpreis aus den Annahmen weg (Spot).
  *   · Ohne Vertrag rechnet das Modell unverändert mit dem Kulturpreis.
  *
- *  Die Verträge sind NICHT indexiert — der Mischpreis fällt über den Mehrjahresplan
- *  gegenüber dem Spotpreis zurück. Genau das macht die Marge sichtbar. */
+ *  Indexierung: Die vorliegenden Verträge sind JAHRESverträge. Im Mehrjahresplan wird
+ *  jedes Jahr neu kontrahiert, deshalb wachsen die Kontraktpreise ab Jahr 2 mit derselben
+ *  Output-Inflation wie der Spotpreis (Annahme `infl.output`, Makro & Finanzen). Der hier
+ *  gezeigte Preis ist der Preis des ERSTEN Planjahrs — der unterschriebene Vertragspreis. */
 
 const STORAGE_LABEL: Record<string, string> = {
   none: "kein Lager",
@@ -31,6 +33,8 @@ export function AbnahmevertraegeView() {
   const currency = useModelStore((s) => s.view.currency);
   const readOnly = useModelStore((s) => s.readOnly);
   const contracts = domain.offtake ?? [];
+  /** Indexierungssatz der Kontraktpreise = Output-Inflation (identisch zum Spotpreis). */
+  const inflOut = resolveScalar(domain, "infl.output", sc);
 
   const cropName = React.useMemo(() => {
     const m: Record<string, string> = {};
@@ -126,7 +130,12 @@ export function AbnahmevertraegeView() {
           </button>
         </div>
         <div className="px-4 py-2 text-[12px] text-nx-text-secondary">
-          {t("Je Kultur wird die Erntemenge auf die aktiven Verträge aufgeteilt; die Restmenge geht zum Kulturpreis aus den Annahmen weg (Spot). Ohne Vertrag rechnet das Modell unverändert mit dem Kulturpreis. Die Kontraktpreise sind ")}<b>{t("fix und nicht indexiert")}</b>{t(" — über den Mehrjahresplan fällt der Mischpreis deshalb hinter den Spotpreis zurück.")}
+          {t("Je Kultur wird die Erntemenge auf die aktiven Verträge aufgeteilt; die Restmenge geht zum Kulturpreis aus den Annahmen weg (Spot). Ohne Vertrag rechnet das Modell unverändert mit dem Kulturpreis. Die unten gepflegten Preise sind die des ")}<b>{t("ersten Planjahrs")}</b>{t(" — der unterschriebene Vertragspreis.")}
+        </div>
+        <div className="px-4 pb-2 text-[12px] text-nx-text-secondary">
+          {t("Indexierung: Es sind Jahresverträge — im Mehrjahresplan wird jedes Jahr neu kontrahiert. Die Kontraktpreise wachsen deshalb ab Jahr 2 mit ")}
+          <b>{fmtNumber(inflOut * 100, 1)} %{t(" p. a. (Output-Inflation)")}</b>
+          {t(", also mit demselben Satz wie der Spotpreis. Der Abstand Mischpreis ↔ Spot bleibt damit über den Horizont proportional. Satz änderbar unter Makro & Finanzen (infl.output) bzw. im Szenario-Studio.")}
         </div>
         {unconfirmed.length > 0 && (
           <div className="mx-4 mb-3 flex items-start gap-2 rounded-control border px-3 py-2 text-[11.5px]"

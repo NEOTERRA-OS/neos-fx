@@ -548,21 +548,30 @@ function computeOperating(
     const l = byCrop.get(c.cropId);
     if (l) l.push(c); else byCrop.set(c.cropId, [c]);
   }
+  // Indexierung der Kontraktpreise: Die vorliegenden Verträge sind JAHRESverträge
+  //  (Laufzeit bis 2026/27) — im Mehrjahresplan wird also jedes Jahr neu kontrahiert.
+  //  Deshalb wachsen die Kontraktpreise ab Jahr 2 mit derselben Output-Inflation wie
+  //  der Spotpreis (buildModelState/curveInfl, iOut). Jahr 1 = unterschriebener Preis.
+  //  Ohne diesen Schritt fiele der Mischpreis nur deshalb hinter den Spot zurück, weil
+  //  ein Einjahresvertrag über acht Jahre fortgeschrieben wird — ein Artefakt, keine Aussage.
+  const inflOutSeries = resolveAssumption(state, "infl.output", chain, n, ppy);
+  const offtakeIdx = (y: number) => Math.pow(1 + (inflOutSeries[Math.min(y * ppy, n - 1)] ?? 0), y);
   /** cropId → je Jahr { share: kontrahierter Mengenanteil, price: mengengewichteter Kontraktpreis }. */
   const mix = new Map<string, { share: number; price: number }[]>();
   for (const [cropId, list] of byCrop) {
     const tons = tonnesByCropYear.get(cropId);
     mix.set(cropId, Array.from({ length: years }, (_, y) => {
       const total = tons ? tons[y] : 0;
+      const idx = offtakeIdx(y);
       let share = 0, valued = 0;
       for (const c of list) {
         const s = c.volumeMode === 'tonnes'
           ? (total > 0 ? Math.min(1, (c.tonnesPerYear ?? 0) / total) : 0)
           : Math.max(0, Math.min(1, c.share ?? 0));
         if (s <= 0) continue;
-        // Realisierter Kontraktpreis: Basis + erwarteter Bonus/Malus, gemindert um
-        // die erwartete Zurückweisungsquote am Werkstor.
-        const eff = (c.priceCentPerTonne + (c.bonusCentPerTonne ?? 0)) * (1 - (c.rejectRate ?? 0));
+        // Realisierter Kontraktpreis: (Basis + erwarteter Bonus/Malus) × Indexierung,
+        // gemindert um die erwartete Zurückweisungsquote am Werkstor.
+        const eff = (c.priceCentPerTonne + (c.bonusCentPerTonne ?? 0)) * idx * (1 - (c.rejectRate ?? 0));
         share += s; valued += s * eff;
       }
       // Übervergabe (Σ > 100 %): es gibt nur eine Ernte → proportional kürzen.

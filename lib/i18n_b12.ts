@@ -245,11 +245,15 @@ const B12: Record<string, string> = {
   "Vertrag hinzufügen": "Add contract",
   "Vertrag löschen": "Delete contract",
   "Mischpreis & Zahlungsziel je Kultur": "Blended price & payment term per crop",
-  "Je Kultur wird die Erntemenge auf die aktiven Verträge aufgeteilt; die Restmenge geht zum Kulturpreis aus den Annahmen weg (Spot). Ohne Vertrag rechnet das Modell unverändert mit dem Kulturpreis. Die Kontraktpreise sind ":
-    "Per crop the harvest is allocated across the active contracts; the remainder is sold at the crop price from the assumptions (spot). Without a contract the model calculates exactly as before, at the crop price. Contract prices are ",
-  "fix und nicht indexiert": "fixed and not indexed",
-  " — über den Mehrjahresplan fällt der Mischpreis deshalb hinter den Spotpreis zurück.":
-    " — so over the multi-year plan the blended price falls behind the spot price.",
+  "Je Kultur wird die Erntemenge auf die aktiven Verträge aufgeteilt; die Restmenge geht zum Kulturpreis aus den Annahmen weg (Spot). Ohne Vertrag rechnet das Modell unverändert mit dem Kulturpreis. Die unten gepflegten Preise sind die des ":
+    "Per crop the harvest is allocated across the active contracts; the remainder is sold at the crop price from the assumptions (spot). Without a contract the model calculates exactly as before, at the crop price. The prices maintained below are those of the ",
+  "ersten Planjahrs": "first plan year",
+  " — der unterschriebene Vertragspreis.": " — the signed contract price.",
+  "Indexierung: Es sind Jahresverträge — im Mehrjahresplan wird jedes Jahr neu kontrahiert. Die Kontraktpreise wachsen deshalb ab Jahr 2 mit ":
+    "Indexation: these are annual contracts — in the multi-year plan they are re-contracted every year. Contract prices therefore grow from year 2 at ",
+  " p. a. (Output-Inflation)": " p.a. (output inflation)",
+  ", also mit demselben Satz wie der Spotpreis. Der Abstand Mischpreis ↔ Spot bleibt damit über den Horizont proportional. Satz änderbar unter Makro & Finanzen (infl.output) bzw. im Szenario-Studio.":
+    ", i.e. at the same rate as the spot price. The gap between blended price and spot therefore stays proportional across the horizon. The rate can be changed under Macro & Finance (infl.output) or in the Scenario Studio.",
   " — der Basispreis ist im Vertrag nicht befüllt. Der angesetzte Wert ist eine Annahme und muss nachgefordert werden.":
     " — the base price is not filled in the contract. The value used is an assumption and must be requested.",
   "Keine Abnahmeverträge hinterlegt — der Umsatz rechnet vollständig mit dem Kulturpreis.":
