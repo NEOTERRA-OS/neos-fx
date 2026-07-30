@@ -208,6 +208,24 @@ export interface Operation {
   /** Perioden, in denen die Operation kostenwirksam wird (rekurrierend möglich). */
   costPeriods: PeriodIndex[];
   lines: CostLine[];
+  /**
+   * Kohortenzuordnung für die Feldbestand-Aktivierung (welcher Ernte gehören diese Kosten?).
+   *
+   *  · fehlt / 'current' — Standard: die Kosten gehören zur NÄCHSTEN Ernte dieses
+   *    Kostenstroms. Das deckt den Regelfall ab, auch die Herbstaussaat einer Winterkultur:
+   *    sie liegt hinter der Ernte des laufenden Jahres, und die nächste Ernte ist die des
+   *    Folgejahres.
+   *  · 'next' — die Kosten gehören zur Ernte NACH der nächsten. Nötig nur, wenn eine
+   *    Aussaat in denselben Monat fällt wie eine Ernte desselben Stroms; dann kann die
+   *    abgeleitete Regel die beiden Blöcke nicht trennen und würde die Aussaat zu früh
+   *    in die GuV entlassen.
+   *
+   * Im aktuellen Datenstand ist der Schalter nirgends nötig — der frühere Konflikt
+   * Gerste-Herbstaussaat gegen Soja-Ernte im Oktober ist dadurch gelöst, dass die
+   * Zweitfrucht einen EIGENEN Kostenstrom bildet. Der Schalter ist die Reserve für
+   * künftige Kulturen, bei denen sich das nicht über die Stromtrennung auflöst.
+   */
+  cohort?: 'current' | 'next';
 }
 
 /**
@@ -252,6 +270,15 @@ export interface CropPlan {
     lossRateAssumptionKey?: string;
     harvestPeriod: PeriodIndex;
     extraCostPerHaCent: number;
+    /**
+     * Periode, in der die Zweitfrucht-Betriebsmittel (Saatgut/N/PSM/Wasser) kostenwirksam
+     * werden. Fehlt sie, wird die LETZTE Ernteperiode der Hauptfrucht angesetzt — im
+     * Doppelfruchtsystem wird die Zweitfrucht unmittelbar nach der Hauptfruchternte
+     * gesät. Vorher lagen diese Kosten im Erntemonat der ZWEITFRUCHT, also rund ein
+     * Quartal zu spät: der Zahlungsausgang war zu weit hinten und für die Zweitfrucht
+     * baute sich kein Feldbestand auf.
+     */
+    costPeriod?: PeriodIndex;
   };
 }
 

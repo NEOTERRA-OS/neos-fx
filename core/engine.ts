@@ -171,23 +171,30 @@ function cropCostPerHa(
   chain: UUID[],
   n: number,
   ppy: number,
-): { perPeriodPerHa: number[]; byTypePerHa: Record<import('./types').CostType, number[]> } {
+): {
+  perPeriodPerHa: number[];
+  /** Kosten von Arbeitsgängen mit cohort='next' — gehören zur Ernte NACH der nächsten. */
+  perPeriodPerHaNext: number[];
+  byTypePerHa: Record<import('./types').CostType, number[]>;
+} {
   const perPeriodPerHa = zeros(n);
+  const perPeriodPerHaNext = zeros(n);
   const byTypePerHa = emptyByType(n);
 
   if (plan.operations && plan.operations.length > 0) {
     for (const op of plan.operations) {
+      const target = op.cohort === 'next' ? perPeriodPerHaNext : perPeriodPerHa;
       for (const line of op.lines) {
         const unitCost = resolveAssumption(state, line.unitCostKey, chain, n, ppy);
         for (const p of op.costPeriods) {
           if (p < 0 || p >= n) continue;
           const c = line.quantityPerHa * unitCost[p]; // €/ha
-          perPeriodPerHa[p] += c;
-          byTypePerHa[line.costType][p] += c;
+          target[p] += c;
+          byTypePerHa[line.costType][p] += c;   // Kostenarten-Sicht: Kohorte irrelevant
         }
       }
     }
-    return { perPeriodPerHa, byTypePerHa };
+    return { perPeriodPerHa, perPeriodPerHaNext, byTypePerHa };
   }
 
   // Fallback: pauschale Kostenkeys als Punktlast in der Pflanzperiode
@@ -200,7 +207,7 @@ function cropCostPerHa(
     perPeriodPerHa[cp] += sum;
     byTypePerHa.other[cp] += sum;
   }
-  return { perPeriodPerHa, byTypePerHa };
+  return { perPeriodPerHa, perPeriodPerHaNext, byTypePerHa };
 }
 
 /**
@@ -706,25 +713,30 @@ function computeOperating(
   // Ernte über die Feldbestand-Aktivierung weiter unten.
   const costIncurred = zeros(n);
   const subsidies = zeros(n);
-  /** Kostenstrom je (parcelId, cropId): entstandene Kosten und Ernteperioden über den
+  /** Kostenstrom: entstandene Kosten (nach Kohorte getrennt) und Ernteperioden über den
    *  Horizont. Der Strom, nicht die einzelne Planzeile, ist die richtige Einheit — bei
    *  Winterkulturen liegt die Aussaat für die nächste Ernte in derselben Planzeile
-   *  NACH deren Ernte (weizen: Ernte Periode 6, Aussaat Periode 9). */
-  const streamCost = new Map<string, number[]>();
-  const streamHarvest = new Map<string, Set<number>>();
-  const streamOf = (plan: CropPlan) => `${plan.parcelId}|${plan.cropId}`;
-  const addStreamCost = (plan: CropPlan, p: number, amount: number) => {
-    const k = streamOf(plan);
-    let arr = streamCost.get(k);
-    if (!arr) { arr = zeros(n); streamCost.set(k, arr); }
-    arr[p] += amount;
+   *  NACH deren Ernte (weizen: Ernte Periode 6, Aussaat Periode 9).
+   *
+   *  Der Schlüssel trennt die ZWEITFRUCHT vom Hauptfruchtstrom (`|2` am Ende), obwohl
+   *  beide dieselbe cropId tragen. Ohne diese Trennung lagen die Gerste-Herbstaussaat
+   *  (Oktober) und die Soja-Ernte (ebenfalls Oktober) im selben Strom, und die Aussaat
+   *  wurde bei der Soja-Ernte in die GuV entlassen statt bei der Gerstenernte des
+   *  Folgejahres. Die Trennung löst das ohne jede Datenpflege. */
+  interface CostStream { cur: number[]; next: number[]; harvest: Set<number> }
+  const streams = new Map<string, CostStream>();
+  const streamOf = (plan: CropPlan, second = false) =>
+    `${plan.parcelId}|${plan.cropId}${second ? '|2' : ''}`;
+  const getStream = (key: string): CostStream => {
+    let st = streams.get(key);
+    if (!st) { st = { cur: zeros(n), next: zeros(n), harvest: new Set<number>() }; streams.set(key, st); }
+    return st;
   };
-  const addStreamHarvest = (plan: CropPlan, p: number) => {
-    const k = streamOf(plan);
-    let set = streamHarvest.get(k);
-    if (!set) { set = new Set<number>(); streamHarvest.set(k, set); }
-    set.add(p);
+  const addStreamCost = (key: string, p: number, amount: number, cohort?: 'current' | 'next') => {
+    const st = getStream(key);
+    (cohort === 'next' ? st.next : st.cur)[p] += amount;
   };
+  const addStreamHarvest = (key: string, p: number) => { getStream(key).harvest.add(p); };
   const inventoryValue = zeros(n);
   const outputVat = zeros(n);
   const vat = state.vat;
@@ -909,23 +921,31 @@ function computeOperating(
         outputVat[hp] += round(rev2 * outRate(plan.cropId));
         // Zweitfrucht läuft ohne Abnahmevertrag → globaler DSO, keine Vorfinanzierung.
         if (rev2 !== 0) receiptTerms.push({ period: hp, amount: rev2, cropId: plan.cropId });
-        const c2 = round(s2.extraCostPerHaCent * plan.areaHa);          // Zweitfrucht-Betriebsmittel
-        costIncurred[hp] += c2;
-        addStreamCost(plan, hp, c2);
-        addStreamHarvest(plan, hp);                                     // Zweitfrucht-Ernte
+        // Zweitfrucht-Betriebsmittel: EIGENER Kostenstrom, und kostenwirksam zur AUSSAAT
+        // (unmittelbar nach der Hauptfruchternte), nicht erst im Erntemonat der Zweitfrucht.
+        const k2 = streamOf(plan, true);
+        const c2 = round(s2.extraCostPerHaCent * plan.areaHa);
+        const sowMain = plan.harvestPeriods.filter((x) => x >= 0 && x < n);
+        const cp2 = s2.costPeriod ?? (sowMain.length ? Math.max(...sowMain) : hp);
+        const cp2c = cp2 >= 0 && cp2 < n ? cp2 : hp;
+        costIncurred[cp2c] += c2;
+        addStreamCost(k2, cp2c, c2);
+        addStreamHarvest(k2, hp);                                       // Zweitfrucht-Ernte
       }
     }
 
     // Produktionskosten: bottom-up (operations) oder Fallback (Punktlast).
     // ENTSTEHUNG, nicht GuV — die Zuordnung zur Ernte erfolgt über den Feldbestand.
-    const { perPeriodPerHa } = cropCostPerHa(plan, state, chain, n, ppy);
+    // Die Kohorte je Arbeitsgang (Operation.cohort) wird dabei mitgeführt.
+    const kMain = streamOf(plan);
+    const { perPeriodPerHa, perPeriodPerHaNext } = cropCostPerHa(plan, state, chain, n, ppy);
     for (let p = 0; p < n; p++) {
       const c = round(perPeriodPerHa[p] * plan.areaHa);
-      if (c === 0) continue;
-      costIncurred[p] += c;
-      addStreamCost(plan, p, c);
+      if (c !== 0) { costIncurred[p] += c; addStreamCost(kMain, p, c, 'current'); }
+      const cN = round(perPeriodPerHaNext[p] * plan.areaHa);
+      if (cN !== 0) { costIncurred[p] += cN; addStreamCost(kMain, p, cN, 'next'); }
     }
-    for (const h of plan.harvestPeriods) if (h >= 0 && h < n) addStreamHarvest(plan, h);
+    for (const h of plan.harvestPeriods) if (h >= 0 && h < n) addStreamHarvest(kMain, h);
   }
 
   // Subventionen (GAP/CAP etc.) — Inline-Satz > Assumption; Anspruchs-Cap (CRISS erste N ha);
@@ -1019,22 +1039,32 @@ function computeOperating(
    * (Gerste/Soja, Oktober), erkennt der Proxy die Aussaat nicht und liefert 0 — dann
    * bleibt Jahr 1 um diesen Block zu günstig. Betroffen ist nur der Gerste-Soja-Strom. */
   const openingBio = new Map<string, number>();
-  for (const [key, cost] of streamCost) {
-    const hs = [...(streamHarvest.get(key) ?? [])].sort((a, b) => a - b);
+  for (const [key, st] of streams) {
+    const hs = [...st.harvest].sort((a, b) => a - b);
     const inYear1 = hs.filter((h) => h < ppy);
     let opening = 0;
     if (inYear1.length > 0) {
-      for (let p = inYear1[inYear1.length - 1] + 1; p < Math.min(n, ppy); p++) opening += cost[p];
+      for (let p = inYear1[inYear1.length - 1] + 1; p < Math.min(n, ppy); p++) {
+        opening += st.cur[p] + st.next[p];
+      }
     }
     if (opening > 0) openingBio.set(key, opening);
   }
 
-  for (const [key, cost] of streamCost) {
-    const harvest = streamHarvest.get(key);
+  for (const [key, st] of streams) {
+    // Zwei Töpfe: `bucket` sammelt die Kosten der nächsten Ernte, `bucketNext` die der
+    // Ernte danach (Arbeitsgänge mit cohort='next'). Bei einer Ernte wird `bucket`
+    // entlastet und `bucketNext` rückt nach.
     let bucket = openingBio.get(key) ?? 0;
+    let bucketNext = 0;
     for (let p = 0; p < n; p++) {
-      bucket += cost[p];
-      if (harvest?.has(p) && bucket !== 0) { cogs[p] += bucket; bucket = 0; }
+      bucket += st.cur[p];
+      bucketNext += st.next[p];
+      if (st.harvest.has(p)) {
+        if (bucket !== 0) cogs[p] += bucket;
+        bucket = bucketNext;
+        bucketNext = 0;
+      }
     }
   }
   let openingBioTotal = 0;
