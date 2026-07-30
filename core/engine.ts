@@ -271,12 +271,23 @@ export interface WorkingCapitalResult {
  *
  *   Forderungen[p] = Forderungen[p−1] + fakturiert[p] − eingegangen[p] − verrechnete Anzahlung[p]
  *
- * Fällig wird ein Strom `dsoDays` Kalendertage nach der Faktura; das kontraktspezifische
- * Zahlungsziel kommt aus dem Abnahmevertrag (47 / 28 / 14 Tage), Spot- und Zweitfrucht-
- * erlöse tragen den globalen DSO aus `wc.dsoAssumptionKey`. Fällt ein Zahlungsziel
- * zwischen zwei Perioden, wird linear auf die beiden Nachbarperioden aufgeteilt, statt
- * auf eine ganze Periode zu runden. Zahlungen jenseits des Horizonts bleiben als
- * offene Forderung stehen — richtig für einen abgeschnittenen Planungszeitraum.
+ * Das Zahlungsziel ist EINHEITLICH und gilt für den gesamten Umsatz — ein Treiber aus
+ * `wc.dsoAssumptionKey` (Base 14 Tage = Verhandlungsziel, Best 7, Worst 28), NICHT je
+ * Vertrag. Begründung wie bei der Anzahlung: jeder Vertrag ist individuell verhandelt;
+ * ein Zahlungsziel je Kontrakt fesselt das Modell an eine Momentaufnahme des Abnehmer-
+ * mixes und lässt sich im Wachstumsszenario nicht fortschreiben. Die in den Verträgen
+ * dokumentierten Ziele (VIA AGRO 47 · PepsiCo 28 · Pestova 14) bleiben auf
+ * `OfftakeContract.dsoDays` als Beleg erhalten und werden in der Ansicht gegen die
+ * Planungsannahme gestellt — der Abstand IST die Verhandlungsaufgabe.
+ *
+ * Einzige Ausnahme: separat fakturierte Bonustranchen tragen über `extraDelayDays`
+ * einen Zusatzverzug ON TOP (VIA AGRO: Qualitäts-/Lagerbonus erst ab 01.12.), weil das
+ * kein Zahlungsziel ist, sondern ein Kalendertrigger.
+ *
+ * Fällt ein Zahlungsziel zwischen zwei Perioden, wird linear auf die beiden Nachbar-
+ * perioden aufgeteilt, statt auf eine ganze Periode zu runden. Zahlungen jenseits des
+ * Horizonts bleiben als offene Forderung stehen — richtig für einen abgeschnittenen
+ * Planungszeitraum.
  *
  * Vorräte und Verbindlichkeiten laufen bewusst WEITER über die Tages-Kennzahl: die
  * Umstellung von DPO und Lagertagen auf einen echten Rollforward ist ein eigener
@@ -341,9 +352,10 @@ function computeWorkingCapital(
     if (cur === undefined || t.period > cur) lastBill.set(y, t.period);
   }
 
-  /** Betrag `dsoDays` nach Periode `p` fällig stellen; Zwischenlage linear aufteilen. */
-  const schedule = (p: number, amount: number, dsoDays: number | undefined) => {
-    const days = Math.max(0, dsoDays ?? dso[p] ?? 0);
+  /** Betrag nach dem EINHEITLICHEN Zahlungsziel (+ optionalem Zusatzverzug) fällig stellen;
+   *  Zwischenlage linear auf die beiden Nachbarperioden aufteilen. */
+  const schedule = (p: number, amount: number, extraDelayDays: number | undefined) => {
+    const days = Math.max(0, (dso[p] ?? 0) + (extraDelayDays ?? 0));
     const lag = days / daysPerPeriod;
     const k = Math.floor(lag);
     const frac = lag - k;
@@ -379,7 +391,7 @@ function computeWorkingCapital(
           advanceApplied[p] += use;
         }
       }
-      if (amt !== 0) schedule(p, amt, t.dsoDays);
+      if (amt !== 0) schedule(p, amt, t.extraDelayDays);
       billedNet[p] += amt;
     }
     customerAdvances[p] = advBal;
@@ -602,8 +614,10 @@ export interface ReceiptTerm {
   period: number;
   /** Betrag in CENT. */
   amount: number;
-  /** Zahlungsziel in Kalendertagen. undefined → globaler DSO aus wc.dsoAssumptionKey. */
-  dsoDays?: number;
+  /** Zusätzlicher Verzug in Kalendertagen ON TOP auf das einheitliche Zahlungsziel.
+   *  Nur für separat fakturierte Tranchen (Qualitäts-/Lagerbonus mit Kalendertrigger).
+   *  Das Zahlungsziel selbst ist NICHT kontraktbezogen — siehe computeWorkingCapital. */
+  extraDelayDays?: number;
   /** Kultur, aus der der Strom stammt (Zweitfrucht: die der Hauptkultur). */
   cropId?: string;
   /** Vertrag, aus dem der Strom stammt. undefined → Spot/Restmenge oder Zweitfrucht. */
@@ -790,14 +804,16 @@ function computeOperating(
       if (rev !== 0) {
         const elig = advEligible(plan.cropId) || undefined;
         if (elig) advBaseByYear[Math.floor(p / ppy)] += rev;
-        const weights: { w: number; dsoDays?: number; contractId?: string; isBonus?: boolean }[] = [];
+        // Das Zahlungsziel ist EINHEITLICH (wc.dso) und nicht kontraktbezogen — die Aufteilung
+        // hier dient nur noch der Bonustranche, die als separat fakturierter Strom einen
+        // Zusatzverzug tragen kann (VIA AGRO: Qualitäts-/Lagerbonus erst ab 01.12.).
+        const weights: { w: number; extraDelayDays?: number; contractId?: string; isBonus?: boolean }[] = [];
         if (m && m.share > 0 && blended > 0) {
           for (const pt of m.parts) {
-            if (pt.base !== 0) weights.push({ w: pt.s * pt.base, dsoDays: pt.c.dsoDays, contractId: pt.c.id });
-            // Bonustranche: eigenes, verzögertes Zahlungsziel (DSO + Bonusverzug).
+            if (pt.base !== 0) weights.push({ w: pt.s * pt.base, contractId: pt.c.id });
             if (pt.bonus !== 0) weights.push({
               w: pt.s * pt.bonus,
-              dsoDays: pt.c.dsoDays + (pt.c.bonusDelayDays ?? 0),
+              extraDelayDays: pt.c.bonusDelayDays ?? 0,
               contractId: pt.c.id,
               isBonus: true,
             });
@@ -809,11 +825,11 @@ function computeOperating(
           if (amount === 0) continue;
           allocated += amount;
           receiptTerms.push({
-            period: p, amount, dsoDays: wt.dsoDays, cropId: plan.cropId,
+            period: p, amount, extraDelayDays: wt.extraDelayDays, cropId: plan.cropId,
             contractId: wt.contractId, isBonus: wt.isBonus, advanceEligible: elig,
           });
         }
-        // Spot-/Restmenge trägt den globalen DSO (dsoDays undefined) und den Rundungsrest.
+        // Spot-/Restmenge trägt dasselbe einheitliche Zahlungsziel und den Rundungsrest.
         const rest = rev - allocated;
         if (rest !== 0) receiptTerms.push({ period: p, amount: rest, cropId: plan.cropId, advanceEligible: elig });
       }

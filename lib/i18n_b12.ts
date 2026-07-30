@@ -288,11 +288,26 @@ const B12: Record<string, string> = {
 
   // --- Paket B: Zahlungs-Timing und Anzahlungen der Off-taker ---
   "Bonus-Verzug": "Bonus delay",
+  "Zahlungsziel (Plan)": "Payment term (plan)",
+  "laut Vertrag Ø": "per contract, avg.",
+  "Zahlungsziel laut Vertrag": "Payment term per contract",
+  "dokumentarisch": "documentary",
+  "Die Engine rechnet mit dem einheitlichen Planungsziel wc.dso, nicht mit diesem Wert.":
+    "The engine computes with the unified planning term wc.dso, not with this value.",
+  "(+": "(+",
+  " zu verhandeln)": " to negotiate)",
+  "Tagen": "days",
+  "Zahlungsziel: Plan liegt unter der Vertragslage": "Payment term: plan is below what is contracted",
+  ". Gerechnet wird mit ": ". The model computes with ",
+  " für den gesamten Umsatz — das ist das Verhandlungsziel, nicht der Bestand. Länger vereinbart: ":
+    " across all revenue — that is the negotiation target, not the current position. Longer terms agreed: ",
+  ". Solange diese Ziele gelten, ist der Liquiditätsverlauf zu optimistisch. Zum Gegenrechnen den Worst Case ziehen oder wc.dso hochsetzen.":
+    ". As long as those terms stand, the liquidity profile is too optimistic. To counter-check, run the worst case or raise wc.dso.",
   "Zahlungswirkung": "Cash effect",
   "Forderung läuft ": "Receivable clears ",
   " Monate nach der Ernte aus": " months after harvest",
-  "Erntemenge des ersten Planjahrs im aktuellen Szenario. Das Zahlungsziel wirkt seit Paket B zahlungswirksam: die Forderung entsteht mit der Lieferung und läuft erst nach dem kontraktspezifischen Ziel als Kasse zu.":
-    "Harvest volume of the first plan year in the current scenario. Payment terms are now cash-effective: the receivable arises on delivery and only converts to cash after the contract-specific term.",
+  "Erntemenge des ersten Planjahrs im aktuellen Szenario. Das Zahlungsziel wirkt zahlungswirksam: die Forderung entsteht mit der Lieferung und läuft erst nach dem Zahlungsziel als Kasse zu. Gerechnet wird mit EINEM einheitlichen Ziel für den gesamten Umsatz — die Spalte „laut Vertrag\" zeigt daneben, was heute tatsächlich vereinbart ist.":
+    "Harvest volume of the first plan year in the current scenario. Payment terms are cash-effective: the receivable arises on delivery and only converts to cash once the term has run. The model computes with ONE unified term across all revenue — the \"per contract\" column shows what is actually agreed today.",
   "Anzahlungen der Off-taker": "Off-taker advances",
   "Quote auf den geplanten Erntewert — nicht je Vertrag, damit sie mit dem Anbauplan skaliert.":
     "Share of the planned harvest value — not per contract, so it scales with the cropping plan.",

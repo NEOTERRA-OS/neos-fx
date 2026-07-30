@@ -1142,7 +1142,15 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("tco.zug_8rx.service_h", "tco.zug_8rx.service_h", "Wartung/Service Zug JD 8RX €/h", "money", 291),
   A("tco.ops_6r.service_h", "tco.ops_6r.service_h", "Wartung/Service Pflege/Ernte JD 6R €/h", "money", 220),
   A("tco.maehdr.service_h", "tco.maehdr.service_h", "Wartung/Service Mähdrescher S7 900 €/h", "money", 644),
-  A("wc.dso", "wc.dso", "DSO (Forderungstage)", "days", 45),
+  // Zahlungsziel EINHEITLICH auf Planungsebene (Entscheidung Benedikt, 30.07.) — ein Treiber
+  // für den gesamten Umsatz, nicht je Vertrag. Begründung wie bei der Anzahlung: jeder Vertrag
+  // ist individuell verhandelt; ein Zahlungsziel je Kontrakt fesselt das Modell an eine
+  // Momentaufnahme des Abnehmermixes und lässt sich im Wachstumsszenario nicht fortschreiben.
+  // Base 14 Tage = das Verhandlungsziel, das NEOTERRA grundsätzlich anstrebt (heute nur von
+  // Pestova erreicht). Best 7 = besser als jeder vorliegende Vertrag. Worst 28 = PepsiCos
+  // effektives Ziel inkl. Sperrfenster. Die 47 Tage von VIA AGRO liegen damit AUSSERHALB des
+  // Bandes — bleibt dieser Vertrag unverändert, ist das Band nach oben zu erweitern.
+  A("wc.dso", "wc.dso", "Zahlungsziel Forderungen (DSO)", "days", 14, 7, 28),
   A("wc.dpo", "wc.dpo", "DPO (Verb.-Tage)", "days", 30),
   A("wc.inv", "wc.inv", "Lagertage", "days", 60),
   // --- Anzahlungen der Off-taker (Paket B) ---

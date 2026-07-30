@@ -59,7 +59,7 @@ export function AbnahmevertraegeView() {
   const mix = React.useMemo(() => {
     const out = new Map<string, {
       total: number; share: number; price: number; blended: number; spot: number;
-      dso: number; contracted: number; list: OfftakeContract[];
+      dsoDoc: number; contracted: number; list: OfftakeContract[];
     }>();
     const byCrop = new Map<string, OfftakeContract[]>();
     for (const c of contracts) {
@@ -82,14 +82,12 @@ export function AbnahmevertraegeView() {
       }
       if (share > 1) { valued /= share; dsoW /= share; share = 1; }
       const price = share > 0 ? valued / share : 0;
-      // Restmenge wird spot bezahlt; das Zahlungsziel der Restmenge kommt aus der WC-Politik.
-      const spotDso = domain.workingCapital?.dsoAssumptionKey
-        ? resolveScalar(domain, domain.workingCapital.dsoAssumptionKey, sc)
-        : 0;
       out.set(cropId, {
         total, share, price, spot,
         blended: share > 0 ? share * price + (1 - share) * spot : spot,
-        dso: share > 0 ? dsoW + (1 - share) * spotDso : spotDso,
+        // Mengengewichtetes Zahlungsziel, wie in den Verträgen DOKUMENTIERT. Die Engine
+        // rechnet damit nicht — sie nutzt das einheitliche Planungsziel (planDso).
+        dsoDoc: share > 0 ? dsoW / share : 0,
         contracted: total * share,
         list,
       });
@@ -139,6 +137,13 @@ export function AbnahmevertraegeView() {
     return out;
   }, [advOn, adv, tonnesByCrop, domain, sc, mix, advRate]);
 
+  /** EINHEITLICHES Zahlungsziel der Planung — gilt für den gesamten Umsatz, nicht je Vertrag. */
+  const planDso = domain.workingCapital?.dsoAssumptionKey
+    ? resolveScalar(domain, domain.workingCapital.dsoAssumptionKey, sc)
+    : 0;
+  /** Verträge, deren dokumentiertes Ziel über der Planungsannahme liegt = Verhandlungsaufgabe. */
+  const dsoGap = contracts.filter((c) => c.active && c.dsoDays > planDso + 0.5);
+
   const unconfirmed = contracts.filter((c) => c.active && !c.priceConfirmed);
   const th = "px-2 py-1.5 caption text-[10px] text-nx-text-muted text-left";
   const sel = "rounded-control border px-1 text-[11.5px]";
@@ -174,6 +179,19 @@ export function AbnahmevertraegeView() {
             </span>
           </div>
         )}
+        {dsoGap.length > 0 && (
+          <div className="mx-4 mb-3 flex items-start gap-2 rounded-control border px-3 py-2 text-[11.5px]"
+            style={{ borderColor: "var(--nx-warn, #C9A227)", background: "color-mix(in srgb, var(--nx-warn, #C9A227) 12%, transparent)", color: "var(--nx-warn, #C9A227)" }}>
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+            <span>
+              <b>{t("Zahlungsziel: Plan liegt unter der Vertragslage")}</b>{t(". Gerechnet wird mit ")}
+              <b>{fmtNumber(planDso, 0)} {t("Tagen")}</b>
+              {t(" für den gesamten Umsatz — das ist das Verhandlungsziel, nicht der Bestand. Länger vereinbart: ")}
+              {dsoGap.map((c) => `${c.buyer} (${fmtNumber(c.dsoDays, 0)} ${getLang() === "en" ? "d" : "Tage"})`).join(", ")}
+              {t(". Solange diese Ziele gelten, ist der Liquiditätsverlauf zu optimistisch. Zum Gegenrechnen den Worst Case ziehen oder wc.dso hochsetzen.")}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* --- Mischpreis je Kultur ------------------------------------------ */}
@@ -181,7 +199,7 @@ export function AbnahmevertraegeView() {
         <div className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
           <div className="px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
             <h3 className="text-[13px] font-semibold">{t("Mischpreis & Zahlungsziel je Kultur")}</h3>
-            <p className="caption mt-0.5 text-[10.5px] text-nx-text-muted">{t("Erntemenge des ersten Planjahrs im aktuellen Szenario. Das Zahlungsziel wirkt seit Paket B zahlungswirksam: die Forderung entsteht mit der Lieferung und läuft erst nach dem kontraktspezifischen Ziel als Kasse zu.")}</p>
+            <p className="caption mt-0.5 text-[10.5px] text-nx-text-muted">{t("Erntemenge des ersten Planjahrs im aktuellen Szenario. Das Zahlungsziel wirkt zahlungswirksam: die Forderung entsteht mit der Lieferung und läuft erst nach dem Zahlungsziel als Kasse zu. Gerechnet wird mit EINEM einheitlichen Ziel für den gesamten Umsatz — die Spalte „laut Vertrag\" zeigt daneben, was heute tatsächlich vereinbart ist.")}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
@@ -193,8 +211,8 @@ export function AbnahmevertraegeView() {
                 <th className={th}>{t("Spotpreis")}</th>
                 <th className={th}>{t("Mischpreis")}</th>
                 <th className={th}>{t("Δ vs. Spot")}</th>
-                <th className={th}>{t("Zahlungsziel Ø")}</th>
-                <th className={th}>{t("Zahlungswirkung")}</th>
+                <th className={th}>{t("Zahlungsziel (Plan)")}</th>
+                <th className={th}>{t("laut Vertrag Ø")}</th>
               </tr></thead>
               <tbody>
                 {Array.from(mix.entries()).map(([cropId, m]) => {
@@ -210,9 +228,10 @@ export function AbnahmevertraegeView() {
                       <td className="px-2 py-1.5 num" style={{ color: Math.abs(d) < 1 ? "var(--nx-text-muted)" : d > 0 ? "var(--nx-success)" : "var(--nx-error)" }}>
                         {Math.abs(d) < 1 ? "—" : (d > 0 ? "+" : "−") + fmtMoney(Math.abs(d), currency)}
                       </td>
-                      <td className="px-2 py-1.5 num">{fmtNumber(m.dso, 0)} {t("Tage")}</td>
-                      <td className="px-2 py-1.5 caption text-[10.5px] text-nx-text-muted">
-                        {t("Forderung läuft ")}{fmtNumber(m.dso / 30.42, 1)}{t(" Monate nach der Ernte aus")}
+                      <td className="px-2 py-1.5 num font-semibold">{fmtNumber(planDso, 0)} {t("Tage")}</td>
+                      <td className="px-2 py-1.5 num" style={{ color: m.dsoDoc > planDso + 0.5 ? "var(--nx-warn, #C9A227)" : "var(--nx-text-muted)" }}>
+                        {m.share > 0 ? `${fmtNumber(m.dsoDoc, 0)} ${t("Tage")}` : "—"}
+                        {m.dsoDoc > planDso + 0.5 && <span className="caption ml-1 text-[10px]">{t("(+")}{fmtNumber(m.dsoDoc - planDso, 0)}{t(" zu verhandeln)")}</span>}
                       </td>
                     </tr>
                   );
@@ -405,9 +424,15 @@ export function AbnahmevertraegeView() {
                   <NumberInput value={c.bonusCentPerTonne ?? 0} moneyCent width={80} suffix="€/t"
                     onCommit={(v) => upd(c.id, (x) => { x.bonusCentPerTonne = v; })} />
                 </Field>
-                <Field label={t("Zahlungsziel")}>
-                  <NumberInput value={c.dsoDays} width={70} suffix={t("Tage")}
-                    onCommit={(v) => upd(c.id, (x) => { x.dsoDays = v; })} />
+                <Field label={t("Zahlungsziel laut Vertrag")}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <NumberInput value={c.dsoDays} width={70} suffix={t("Tage")}
+                      onCommit={(v) => upd(c.id, (x) => { x.dsoDays = v; })} />
+                    <span className="caption text-[10px] text-nx-text-muted"
+                      title={t("Die Engine rechnet mit dem einheitlichen Planungsziel wc.dso, nicht mit diesem Wert.")}>
+                      {t("dokumentarisch")}
+                    </span>
+                  </span>
                 </Field>
                 <Field label={t("Bonus-Verzug")}>
                   <NumberInput value={c.bonusDelayDays ?? 0} width={70} suffix={t("Tage")}

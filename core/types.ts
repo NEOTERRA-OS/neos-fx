@@ -505,9 +505,18 @@ export interface OfftakeContract {
   priceConfirmed: boolean;
   /** Erwarteter Bonus/Malus aus der Qualitätsleiter, CENT/t (kann negativ sein). */
   bonusCentPerTonne?: Money;
-  /** Anteil des Bonus, der erst deutlich später fließt (VIA AGRO: Auszahlung ab 01.12.). */
+  /** Zusatzverzug der separat fakturierten Bonustranche in Kalendertagen — ON TOP auf das
+   *  einheitliche Zahlungsziel (VIA AGRO: Qualitäts-/Lagerbonus erst ab 01.12.). Das ist ein
+   *  Kalendertrigger, kein Zahlungsziel, und bleibt deshalb kontraktbezogen. WIRKT. */
   bonusDelayDays?: number;
-  /** Gewichtetes Zahlungsziel in Kalendertagen (Working-Capital-Paket B). */
+  /** Gewichtetes Zahlungsziel in Kalendertagen, wie im Vertrag dokumentiert
+   *  (VIA AGRO 47 · PepsiCo 28 · Pestova 14).
+   *
+   *  DOKUMENTARISCH — die Engine rechnet damit NICHT. Das Zahlungsziel ist auf Planungs-
+   *  ebene vereinheitlicht (`wc.dso`, Base 14 Tage = Verhandlungsziel), weil jeder Vertrag
+   *  individuell verhandelt ist und ein Ziel je Kontrakt sich im Wachstumsszenario nicht
+   *  fortschreiben lässt. Der Wert bleibt als Beleg erhalten und wird in der Ansicht gegen
+   *  die Planungsannahme gestellt: die Differenz ist die Verhandlungsaufgabe. */
   dsoDays: number;
   /** Erwartete Zurückweisungsquote am Werkstor 0..1 → mindert die abgerechnete Menge. */
   rejectRate?: number;
