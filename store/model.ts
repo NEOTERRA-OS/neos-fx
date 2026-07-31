@@ -3853,6 +3853,13 @@ export const SPRAY_WINDOWS: Record<string, { kwS: number; kwE: number; rate: num
   kartoffel_pommes:  { kwS: 20, kwE: 33, rate: 270 },
   kartoffel_chips:   { kwS: 20, kwE: 33, rate: 270 },
   zwiebel_moehre:    { kwS: 20, kwE: 36, rate: 250 },
+  // ERGÄNZT 31.07.2026: diese drei Wertkulturen hatten kein Spritzfenster und erzeugten
+  //  deshalb selbst mit Fläche NIE Spritzenbedarf — 200 ha im Endausbau ohne Pflanzenschutz
+  //  in der Flottenauslegung. Fenster aus den Arbeitsgängen: Sellerie 5 Überfahrten
+  //  (Sept-Ernte), Süßkartoffel 3, Knoblauch 4 (Winterknoblauch, Frühjahrsbehandlung).
+  knollensellerie:   { kwS: 22, kwE: 36, rate: 250 },
+  suesskartoffel:    { kwS: 21, kwE: 32, rate: 250 },
+  knoblauch:         { kwS: 12, kwE: 24, rate: 250 },
 };
 
 export type SprayFleet = {
@@ -3881,8 +3888,20 @@ export function deriveSprayFleet(domain: Domain, scenarioId: string): SprayFleet
   const tf = shiftFactorOf(domain, scenarioId);
   const bf = sprayBoomFactor(domain, scenarioId); // 48-m-Paket: breiteres Gestänge → weniger Spritzen
   const weekly: number[] = new Array(53).fill(0);
+  // NULLBASIS-FALLE mit direkter CAPEX-Wirkung. Die Spritzenflotte wurde auf den Flächen des
+  //  STARTJAHRES gesizt — 300 ha, davon nur Kartoffel. Ergebnis: 2 Spritzen, eingefroren über
+  //  alle acht Planjahre, auch für die 2.334 ha des Endausbaus. Über machineFleetCount ging
+  //  diese 2 direkt in deriveCapex. Jetzt: der Bedarf wird über die Flächenkurven je Planjahr
+  //  bestimmt und die Flotte auf das MAXIMUM über den Horizont gesizt (eine Spritze, die 2031
+  //  gebraucht wird, muss vorhanden sein — sie schrumpft nicht wieder).
+  const areasMY = cropAreasMemo(domain).areas;
+  const jahre = Math.max(1, domain.growth?.years ?? 1);
   const areaByCrop = new Map<string, number>();
-  for (const a of domain.anbauplan) areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + a.areaHa);
+  for (const a of domain.anbauplan) {
+    const c = areasMY[a.cropId];
+    const maxHa = c ? Math.max(...c.slice(0, jahre)) : a.areaHa;
+    areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + maxHa);
+  }
   for (const [cropId, w] of Object.entries(SPRAY_WINDOWS)) {
     const area = areaByCrop.get(cropId) ?? 0;
     if (area <= 0) continue;
