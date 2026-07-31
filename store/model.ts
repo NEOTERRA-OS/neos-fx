@@ -4550,7 +4550,15 @@ export function deriveEinsatzplan(domain: Domain, scenarioId: string): EinsatzPl
   const tf = shiftFactorOf(domain, scenarioId);
   const harvestStaffel = resolveScalar(domain, "en.harvest_staffel", scenarioId);
   const saatStaffel = resolveScalar(domain, "en.saat_staffel", scenarioId);
-  const staff = resolveScalar(domain, "en.staff", scenarioId);
+  // PERSONALKAPAZITAET aus der Personalplanung statt aus der Altkonstante en.staff (45).
+  //  Die 45 stammten aus dem alten Kombimodell und hatten mit der treiberbasierten
+  //  Personalplanung nichts mehr zu tun — dort stehen 38,1 FTE im Endausbau. Zwei Zahlen
+  //  fuer dieselbe Groesse, und die Engpass-Ampel verglich gegen die falsche.
+  //  Gezaehlt wird, wer im Feld arbeiten kann: Stammfahrer, Bewaesserung und Saisonkraefte.
+  //  Leitung, Werkstatt, Lager und Praktikanten stehen fuer die Erntespitze nicht bereit.
+  const zielJahrEP = Math.max(0, (domain.growth?.years ?? 1) - 1);
+  const staff = ["pers.stamm.n", "pers.bewaesserung.n", "pers.saison.n"]
+    .reduce((sum, k) => sum + personalFteOfYear(domain, k, zielJahrEP, scenarioId), 0);
 
   // NULLBASIS-FALLE: die Flaechen des STARTJAHRES. Tomate, Zwiebel/Moehre, Sellerie,
   //  Suesskartoffel und Knoblauch stehen dort mit 0 ha und wurden von der Schleife unten

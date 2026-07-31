@@ -102,7 +102,7 @@ export function EinsatzView() {
       <div className="rounded-tile border grid grid-cols-3" style={{ ...border, background: "var(--nx-surface)", overflow: "hidden" }}>
         <Kpi cap={t("Engpass-Zeiträume")} val={String(plan.kpis.conflictCount)} tone={plan.kpis.conflictCount ? "err" : "ok"} />
         <Kpi cap={t("Spitzen-Klasse · KW")} val={`${plan.kpis.peakClass.split(" ")[0]} · ${t("KW")}${plan.kpis.peakWeek}`} tone={plan.kpis.peakUtilPct > 100 ? "err" : "warn"} />
-        <Kpi cap={`${t("Personal-Spitze (Kap")} ${fmtNumber(plan.kpis.staff, 0)})`} val={`${plan.kpis.peakLabor} P`} tone={plan.kpis.peakLabor > plan.kpis.staff ? "err" : "ok"} />
+        <Kpi cap={`${t("Erntehandarbeit Spitze · eigene Kräfte")} ${fmtNumber(plan.kpis.staff, 0)}`} val={`${plan.kpis.peakLabor} P`} tone={plan.kpis.peakLabor > plan.kpis.staff ? "err" : "ok"} />
       </div>
 
       {/* ENTFERNT 31.07.2026: „Auslastung je Maschine (aus dem Register)". Der Abschnitt
