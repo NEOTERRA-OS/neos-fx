@@ -457,5 +457,9 @@ const B12: Record<string, string> = {
   "M\u00f6hren-/Sellerierodung": "Carrot/celeriac lifting",
   "Feldrand-Logistik": "Field-edge logistics",
   "Lohnarbeit \u2014 Satz-Faktor (1,0 = LWK-Erfahrungss\u00e4tze)": "Contract work \u2014 rate factor (1.0 = LWK reference rates)",
+  "Fl\u00e4che je Kultur und Planjahr. \u03a3 Betriebsfl\u00e4che = bewirtschaftete Fl\u00e4che des Jahres.": "Area per crop and plan year. \u03a3 farmed area = area under cultivation that year.",
+  "Jede Zelle ist eine Variable \u2014 Fl\u00e4che je Kultur und Planjahr direkt editierbar. Das ganze Modell rechnet sofort neu: Umsatz, Maschinenbedarf, Lagerkapazit\u00e4t, Personal, Finanzierung. Der Pfeil rechts l\u00e4sst eine Zeile linear vom Start- auf den Zielwert laufen.": "Every cell is a variable \u2014 area per crop and plan year, directly editable. The whole model recomputes at once: revenue, machinery demand, storage capacity, staffing, financing. The arrow on the right ramps a row linearly from its start to its target value.",
+  "Linear vom Start- auf den Zielwert hochlaufen lassen": "Ramp linearly from start to target value",
+  "Das Startjahr wird zus\u00e4tzlich in den Anbauplan gespiegelt \u2014 er ist die Bemessungsgrundlage f\u00fcr Maschinenpark, Lager und Beregnung. Anbaupausen (Kartoffel \u2264 25 %, Doldenbl\u00fctler \u2264 20 %) und die Markt-Obergrenzen bleiben als W\u00e4chter aktiv und melden sich in der Pr\u00fcfliste.": "The start year is mirrored into the cropping plan \u2014 it is the sizing basis for machinery, storage and irrigation. Rotation breaks (potato \u2264 25 %, Apiaceae \u2264 20 %) and the market caps stay active as guards and report in the check list.",
 };
 export default B12;

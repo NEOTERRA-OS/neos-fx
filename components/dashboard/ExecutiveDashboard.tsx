@@ -1,9 +1,10 @@
 "use client";
 import React from "react";
 import { useModelStore, selectComputedAnnual, selectComputedMonthly } from "../../store/modelStore";
-import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, START_YEAR } from "../../store/model";
+import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, setCropPathHa, rampCropPath, START_YEAR } from "../../store/model";
 import { useModelStore as useStore, readAssumption } from "../../store/modelStore";
 import { cropName, cropColor, cropYield, cropLoss } from "../inputs/cropCalc";
+import { NumberInput } from "../inputs/NumberInput";
 import { CheckPanel } from "../statements/CheckPanel";
 import { ContributionView } from "../inputs/ContributionView";
 import { fmtMoney, fmtNumber, fmtPct, fmtFactor } from "../../design/format";
@@ -536,6 +537,8 @@ const TBL_TH = "px-3 py-2 caption text-[10px] text-nx-text-muted";
 const TBL_CARD: React.CSSProperties = { borderColor: "var(--nx-border)", background: "var(--nx-surface)", boxShadow: "var(--nx-el-card)" };
 
 function SkalierungspfadTabelle({ domain }: { domain: any }) {
+  const patch = useModelStore((s) => s.patch);
+  const readOnly = useModelStore((s) => s.readOnly);
   const my = React.useMemo(() => deriveCropAreasMY(domain), [domain]);
   const years = my.years;
   // Zeilen in Anbauplan-Reihenfolge, Kartoffel-Zwischensumme direkt nach den beiden Sorten.
@@ -548,6 +551,9 @@ function SkalierungspfadTabelle({ domain }: { domain: any }) {
   const at = (id: string, y: number) => Math.round(my.areas[id]?.[y] ?? 0);
   const sumAt = (list: string[], y: number) => list.reduce((s, id) => s + at(id, y), 0);
   const cell = (v: number) => (v > 0 ? fmtNumber(v, 0) : "–");
+
+  const setHa = (cropId: string, y: number, v: number) => patch((d: any) => setCropPathHa(d, cropId, y, v, years));
+  const rampRow = (cropId: string) => patch((d: any) => rampCropPath(d, cropId, years));
 
   const Row = ({ label, get, strong }: { label: string; get: (y: number) => number; strong?: boolean }) => (
     <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
@@ -565,7 +571,9 @@ function SkalierungspfadTabelle({ domain }: { domain: any }) {
       <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
         <h3 className="text-[13px] font-semibold">{t("Skalierungspfad der Kulturen (ha)")}</h3>
         <p className="mt-0.5 text-[11px] text-nx-text-muted">
-          {t("Fläche je Kultur und Planjahr aus der Kultur-Skalierungspolitik. Σ Betriebsfläche = bewirtschaftete Fläche des Jahres.")}
+          {readOnly
+            ? t("Fläche je Kultur und Planjahr. Σ Betriebsfläche = bewirtschaftete Fläche des Jahres.")
+            : t("Jede Zelle ist eine Variable — Fläche je Kultur und Planjahr direkt editierbar. Das ganze Modell rechnet sofort neu: Umsatz, Maschinenbedarf, Lagerkapazität, Personal, Finanzierung. Der Pfeil rechts lässt eine Zeile linear vom Start- auf den Zielwert laufen.")}
         </p>
       </div>
       <div className="overflow-x-auto px-2 py-2">
@@ -576,12 +584,30 @@ function SkalierungspfadTabelle({ domain }: { domain: any }) {
               {Array.from({ length: years }, (_, y) => (
                 <th key={y} className={TBL_TH + " text-right"}>{START_YEAR + y}</th>
               ))}
+              {!readOnly && <th className={TBL_TH + " text-center"} style={{ width: 34 }} />}
             </tr>
           </thead>
           <tbody>
             {ids.map((id) => (
               <React.Fragment key={id}>
-                <Row label={cropName(id)} get={(y) => at(id, y)} />
+                {readOnly ? (
+                  <Row label={cropName(id)} get={(y) => at(id, y)} />
+                ) : (
+                  <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                    <td className="px-3 py-1">{cropName(id)}</td>
+                    {Array.from({ length: years }, (_, y) => (
+                      <td key={y} className="px-1.5 py-1 text-right">
+                        <NumberInput value={at(id, y)} width={58} onCommit={(v) => setHa(id, y, v)} />
+                      </td>
+                    ))}
+                    <td className="px-1 py-1 text-center">
+                      <button title={t("Linear vom Start- auf den Zielwert hochlaufen lassen")}
+                        onClick={() => rampRow(id)}
+                        className="rounded-control border px-1.5 text-[11px]"
+                        style={{ height: 24, borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)", background: "var(--nx-surface)" }}>↗</button>
+                    </td>
+                  </tr>
+                )}
                 {kart.length > 1 && id === kart[kart.length - 1] && (
                   <Row label={t("Kartoffel gesamt")} get={(y) => sumAt(kart, y)} strong />
                 )}
@@ -592,10 +618,16 @@ function SkalierungspfadTabelle({ domain }: { domain: any }) {
               {Array.from({ length: years }, (_, y) => (
                 <td key={y} className="num px-3 py-2 text-right font-semibold">{fmtNumber(sumAt(ids, y), 0)}</td>
               ))}
+              {!readOnly && <td />}
             </tr>
           </tbody>
         </table>
       </div>
+      {!readOnly && (
+        <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
+          {t("Das Startjahr wird zusätzlich in den Anbauplan gespiegelt — er ist die Bemessungsgrundlage für Maschinenpark, Lager und Beregnung. Anbaupausen (Kartoffel ≤ 25 %, Doldenblütler ≤ 20 %) und die Markt-Obergrenzen bleiben als Wächter aktiv und melden sich in der Prüfliste.")}
+        </div>
+      )}
     </section>
   );
 }

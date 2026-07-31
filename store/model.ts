@@ -2217,6 +2217,43 @@ function buildLohnarbeit(): LohnarbeitEntry[] {
   return out;
 }
 
+/** Setzt die Fläche EINER Kultur in EINEM Planjahr (Mutator auf einem Domänen-Entwurf).
+ *
+ *  Zwei Dinge müssen zusammenbleiben, sonst rechnet das Modell auseinander:
+ *   · cropPolicy[cropId].haByYear — die Flächenkurve, aus der deriveCropAreasMY die Jahre ab 1 zieht,
+ *   · anbauplan[].areaHa für JAHR 0 — die Bemessungsgrundlage für Maschinenpark, Lager und
+ *     Beregnung. Bliebe sie stehen, würde für eine Fläche dimensioniert, die im Startjahr gar
+ *     nicht bewirtschaftet wird.
+ *  Mehrere Anbauplan-Zeilen derselben Kultur werden gleichmäßig bedient, Rundungsrest auf die letzte. */
+export function setCropPathHa(d: Domain, cropId: string, y: number, haIn: number, years: number): void {
+  const ha = Math.max(0, Math.round(haIn));
+  const cur = d.cropPolicy?.[cropId];
+  const areas = deriveCropAreasMY(d).areas;
+  const path: number[] = Array.from({ length: years }, (_, i) => {
+    const hb = cur?.haByYear;
+    if (hb?.length) return hb[Math.min(i, hb.length - 1)] ?? 0;
+    return Math.round(areas[cropId]?.[Math.min(i, (areas[cropId]?.length ?? 1) - 1)] ?? 0);
+  });
+  path[Math.max(0, Math.min(years - 1, y))] = ha;
+  d.cropPolicy = { ...(d.cropPolicy ?? {}), [cropId]: { ...(cur ?? {}), mode: "path", haByYear: path } };
+  if (y === 0) {
+    const rows = d.anbauplan.filter((a) => a.cropId === cropId);
+    if (rows.length) {
+      const per = Math.round(ha / rows.length);
+      rows.forEach((a, i) => { a.areaHa = i === rows.length - 1 ? ha - per * (rows.length - 1) : per; });
+    }
+  }
+}
+
+/** Lässt eine Kultur linear vom Start- auf den Zielwert hochlaufen (beide bleiben stehen). */
+export function rampCropPath(d: Domain, cropId: string, years: number): void {
+  const areas = deriveCropAreasMY(d).areas;
+  const a0 = Math.round(areas[cropId]?.[0] ?? 0);
+  const aN = Math.round(areas[cropId]?.[Math.min(years - 1, (areas[cropId]?.length ?? 1) - 1)] ?? 0);
+  const path = Array.from({ length: years }, (_, i) => Math.round(a0 + ((aN - a0) * i) / Math.max(1, years - 1)));
+  d.cropPolicy = { ...(d.cropPolicy ?? {}), [cropId]: { ...(d.cropPolicy?.[cropId] ?? {}), mode: "path", haByYear: path } };
+}
+
 /** Ist der Eintrag im Planjahr y wirksam? */
 export function lohnAktivIn(e: LohnarbeitEntry, y: number): boolean {
   if (!e.active) return false;
