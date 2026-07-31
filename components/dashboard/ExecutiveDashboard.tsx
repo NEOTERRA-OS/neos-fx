@@ -124,7 +124,19 @@ function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domai
   const my = deriveCropAreasMY(domain);
   const [jahr, setJahr] = React.useState<number | null>(null);
   const yi = Math.min(jahr ?? yearIndex, my.years - 1);
-  const contrib = React.useMemo(() => deriveContribution(domain, scenarioId), [domain, scenarioId]);
+  // NULLBASIS-FALLE. deriveContribution rechnet auf domain.anbauplan — und der trägt die
+  //  Flächen des STARTJAHRES. Tomate, Zwiebel/Möhre, Sellerie, Süßkartoffel und Knoblauch
+  //  beginnen erst 2028 und stehen dort mit 0 ha; die Schleife unten übersprang sie deshalb,
+  //  und die Tabelle zeigte für 1.334 ha — den Großteil der Produktion — dauerhaft „–".
+  //  Die Σ-Zeile summierte entsprechend nur die beiden Kartoffeln.
+  //  Fix: die Contribution auf den Flächen DES GEWÄHLTEN JAHRES rechnen. Je-ha-Größen sind
+  //  ohnehin flächenunabhängig, das Jahr bestimmt nur, welche Kultur überhaupt existiert.
+  const contrib = React.useMemo(() => {
+    const d = { ...domain, anbauplan: (domain.anbauplan as any[]).map((a) => ({
+      ...a, areaHa: (my.areas[a.cropId]?.[Math.min(yi, my.years - 1)] ?? a.areaHa),
+    })) };
+    return deriveContribution(d, scenarioId);
+  }, [domain, scenarioId, yi, my]);
   const perHa = React.useMemo(() => {
     const m: Record<string, { db: number; rev: number; cogs: number }> = {};
     for (const c of contrib.crops) {
