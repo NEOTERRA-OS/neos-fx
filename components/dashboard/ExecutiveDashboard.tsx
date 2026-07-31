@@ -85,7 +85,10 @@ export function ExecutiveDashboard() {
           "Contribution" erreichbar. */}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
-        <FundingBox annual={annual} monthly={monthly} idx={i} />
+        {/* ENTFERNT 31.07.2026: „Finanzierung & Funding". Investitionsvolumen, Peak-Revolver,
+            USt-Vorfinanzierung, Finanzverbindlichkeiten und Gearing stehen vollständig in
+            „Liquidität je Planjahr" (Spitzen-Revolver samt Monat) und in der Finanzierungs-
+            ansicht — hier waren es fünf Einzelzahlen ohne Jahresbezug. */}
         <CheckPanel checks={[...annual.checks, ...deriveMassnahmenChecks(domain)]} />
       </div>
     </div>
@@ -316,40 +319,8 @@ function LiquiditaetJeJahr({ monthly, annual }: { monthly: ComputedModel; annual
     </Tile>
   );
 }
-function FundingBox({ annual, monthly, idx }: { annual: ComputedModel; monthly: ComputedModel; idx: number }) {
-  const capex = Math.abs(sum(monthly.cashFlow.capex.values));
-  const peakRevolver = Math.max(0, ...(monthly.balanceSheet.revolver?.values ?? [0]));
-  const peakVat = Math.max(0, ...(monthly.balanceSheet.vatReceivable?.values ?? [0]));
-  const debtEnd = (annual.balanceSheet.debt.values[idx] ?? 0) + (annual.balanceSheet.revolver.values[idx] ?? 0);
-  const equity = annual.balanceSheet.totalEquity.values[idx] ?? 0;
-  const gearing = equity + debtEnd > 0 ? debtEnd / (equity + debtEnd) : 0;
-  const items = [
-    { cap: t("Investitionsvolumen (CapEx)"), val: fmtMoney(capex) + " €" },
-    { cap: t("Peak Revolver-Bedarf"), val: fmtMoney(peakRevolver) + " €" },
-    { cap: t("Peak USt-Vorfinanzierung"), val: fmtMoney(peakVat) + " €" },
-    { cap: t("Finanzverbindlichkeiten (Ende)"), val: fmtMoney(debtEnd) + " €" },
-    { cap: t("Gearing (FK / (FK+EK))"), val: fmtPct(gearing) },
-  ];
-  return (
-    <Tile title={t("Finanzierung & Funding")} hint={t("Kapitalbedarf im Jahresverlauf")}>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 sm:grid-cols-3">
-        {items.map((it) => (
-          <div key={it.cap}>
-            <div className="caption text-[10px] text-nx-text-muted">{it.cap}</div>
-            <div className="num text-[15px] font-semibold">{it.val}</div>
-          </div>
-        ))}
-      </div>
-    </Tile>
-  );
-}
-
-
 const TBL_TH = "px-3 py-2 caption text-[10px] text-nx-text-muted";
 const TBL_CARD: React.CSSProperties = { borderColor: "var(--nx-border)", background: "var(--nx-surface)", boxShadow: "var(--nx-el-card)" };
-
-/* SkalierungspfadTabelle entfernt 31.07.2026 — der Pfad steht jetzt in der Anbauplanung,
-   verschmolzen mit dem Anbauplan (components/inputs/AnbauplanView.tsx). */
 
 function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
   const years = annual.timeline.periodCount;
@@ -402,20 +373,13 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
       {d >= 0 ? "▲" : "▼"} {fmtNumber(Math.abs(d) * 100, 0)} %
     </span>
   );
-  /** Balkenlänge relativ zum größten Absolutwert der Zeile — macht den Verlauf sichtbar,
-   *  ohne ein zweites Diagramm daneben zu stellen. */
-  const maxOf = (r: Zeile) => {
-    if (!r.val) return 0;
-    let m = 0; for (let y = 0; y < years; y++) m = Math.max(m, Math.abs(r.val(y)));
-    return m || 1;
-  };
 
   return (
     <section className="rounded-tile border" style={TBL_CARD}>
       <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
         <h3 className="text-[13px] font-semibold">{t("Ergebnis je Planjahr")}</h3>
         <p className="mt-0.5 text-[11px] text-nx-text-muted">
-          {t("Aktives Szenario, Geldgrößen in Mio €. Unter jedem Wert die Veränderung zum Vorjahr; Balken zeigen den Verlauf innerhalb der Zeile. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,50.")}
+          {t("Aktives Szenario, Geldgrößen in Mio €. Neben jedem Wert die Veränderung zum Vorjahr. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,50.")}
         </p>
       </div>
       <div className="overflow-x-auto px-2 py-2">
@@ -431,7 +395,6 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
           <tbody>
             {rows.map((r, i) => {
               if (r.kind === "trenner") return <tr key={"t" + i}><td colSpan={years + 1} style={{ height: 6 }} /></tr>;
-              const mx = maxOf(r);
               return (
                 <tr key={r.label} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
                   <td className={"px-3 py-1.5 " + (r.stark ? "font-semibold" : "")}>
@@ -446,23 +409,24 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
                       : r.kind === "quote" ? (v < 0 ? "var(--nx-error)" : "var(--nx-brand-lift)")
                       : v < 0 ? "var(--nx-error)" : "var(--nx-text)";
                     return (
-                      <td key={y} className="px-3 py-1.5 text-right align-top">
-                        <div className={"num " + (r.stark ? "font-semibold text-[13px]" : "")} style={{ color: farbe }}>
-                          {r.fmt ? r.fmt(v) : v}
-                        </div>
-                        {r.kind === "geld" && (
-                          <>
-                            <div className="num text-[9.5px] leading-tight" style={{ minHeight: 12 }}>
+                      // Wert und Vorjahresvergleich stehen NEBENEINANDER, nicht übereinander:
+                      // die Spalten sind breit genug, und drei Zeilen je Zelle machten aus einer
+                      // Tabelle mit zwölf Positionen eine mit sechsunddreißig.
+                      // KEIN Verlaufsbalken: er zeigte den Wert relativ zum Zeilenmaximum und
+                      // wiederholte damit bei einer monoton wachsenden Reihe nur die Zahl in
+                      // anderer Form. Ein Balken, der nichts sagt, was nicht danebensteht, ist
+                      // keine Visualisierung, sondern Dekoration.
+                      <td key={y} className="px-3 py-1.5 text-right" style={{ whiteSpace: "nowrap" }}>
+                        <span className="inline-flex items-baseline justify-end gap-1.5">
+                          <span className={"num " + (r.stark ? "font-semibold text-[13px]" : "")} style={{ color: farbe }}>
+                            {r.fmt ? r.fmt(v) : v}
+                          </span>
+                          {r.kind === "geld" && (
+                            <span className="num text-[9.5px]" style={{ minWidth: 42, textAlign: "left" }}>
                               {d === null ? <span className="text-nx-text-muted">·</span> : <Pfeil d={d} />}
-                            </div>
-                            <div className="mt-0.5 ml-auto" style={{ width: 44, height: 3, background: "var(--nx-border-divider)", borderRadius: 2, overflow: "hidden" }}>
-                              <div style={{
-                                width: `${Math.min(100, (Math.abs(v) / mx) * 100)}%`, height: "100%",
-                                background: v < 0 ? "var(--nx-error)" : r.stark ? "var(--nx-brand-lift)" : "var(--nx-text-muted)",
-                              }} />
-                            </div>
-                          </>
-                        )}
+                            </span>
+                          )}
+                        </span>
                       </td>
                     );
                   })}

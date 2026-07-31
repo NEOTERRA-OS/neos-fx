@@ -364,6 +364,11 @@ export function AnnahmenView() {
   const nKlaeren = rows.filter(zuKlaeren).length;
   const pct = total ? Math.round((geprueft / total) * 100) : 0;
 
+  // „alle ausklappen" ist erst erledigt, wenn JEDER Bereich mit Inhalt offen ist — sonst
+  // würde ein Klick bei teilweise geöffneten Bereichen fälschlich alles einklappen.
+  const alleBereicheAuf = BEREICHE.filter((b) => rows.some((r) => bereichOf(r.category) === b.id))
+    .every((b) => offen[b.id]);
+
   const catsOf = (bid: string) => {
     const m = new Map<string, { n: number; ok: number }>();
     for (const r of rows) {
@@ -433,11 +438,19 @@ export function AnnahmenView() {
             <Star size={12} strokeWidth={2.5} aria-hidden />{t("Cockpit")}
             <span className="num ml-auto text-[10px] text-nx-text-muted">{cockpitRows.length}</span>
           </button>
-          <button className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-[12px] font-semibold"
-            style={{ ...navBtn(!suchend && auswahl.kind === "klaeren"), borderColor: "var(--nx-border)" }}
+          <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold"
+            style={navBtn(!suchend && auswahl.kind === "klaeren")}
             onClick={() => { setQ(""); setAuswahl({ kind: "klaeren" }); }}>
             <Flag size={12} strokeWidth={2.5} aria-hidden />{t("Zu klären")}
             <span className="num ml-auto text-[10px]" style={{ color: nKlaeren ? "var(--nx-warn, #C9A227)" : "var(--nx-text-muted)" }}>{nKlaeren}</span>
+          </button>
+          {/* Alle Bereiche auf einmal: sechs Bereiche einzeln aufzuklappen, um EINE Kategorie
+              zu finden, ist genau die Klickarbeit, die ein Navigator abnehmen soll. */}
+          <button className="flex w-full items-center gap-1.5 border-b px-3 py-1.5 text-left text-[11px] font-semibold"
+            style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-muted)" }}
+            onClick={() => setOffen(alleBereicheAuf ? {} : Object.fromEntries(BEREICHE.map((b) => [b.id, true])))}>
+            {alleBereicheAuf ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            {alleBereicheAuf ? t("Alle einklappen") : t("Alle ausklappen")}
           </button>
 
           {BEREICHE.map((b) => {
