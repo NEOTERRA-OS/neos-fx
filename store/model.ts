@@ -783,18 +783,19 @@ const MONTH_END: string[] = Array.from({ length: N }, (_, i) => {
  *  Kultur              2027  2028  2029  2030  2031  2032  2033  2034
  *  Kartoffel Pommes     150   225   300   400   500   500   500   500
  *  Kartoffel Chips      150   225   300   400   500   500   500   500
- *  Industrietomate        0   150   300   450   600   667   667   667
+ *  Industrietomate        0    50   300   450   600   667   667   667
  *  Zwiebel/Möhre          0   100   200   300   400   467   467   467
  *  Knollensellerie        0    30    50    70    90   100   100   100
  *  Süßkartoffel           0    20    30    40    50    50    50    50
  *  Knoblauch              0    20    30    40    50    50    50    50
- *  Σ Spezialkulturen    300   770 1.210 1.700 2.190 2.334 2.334 2.334
- *  Rest = Ackerbau    3.700 3.230 2.790 2.300 1.810 1.666 1.666 1.666
+ *  Σ Spezialkulturen    300   670 1.210 1.700 2.190 2.334 2.334 2.334
  */
 export const SKALIERUNG_HA: Record<string, number[]> = {
   kartoffel_pommes: [150, 225, 300, 400, 500, 500, 500, 500],
   kartoffel_chips:  [150, 225, 300, 400, 500, 500, 500, 500],
-  tomate:           [  0, 150, 300, 450, 600, 667, 667, 667],
+  // 2028 auf 50 ha begrenzt (Benedikt 31.07.2026: "50 ha gehen") — Pilotjahr für die
+  //  Industrietomate, erst danach der Hochlauf auf die Werkskapazität.
+  tomate:           [  0,  50, 300, 450, 600, 667, 667, 667],
   zwiebel_moehre:   [  0, 100, 200, 300, 400, 467, 467, 467],
   knollensellerie:  [  0,  30,  50,  70,  90, 100, 100, 100],
   suesskartoffel:   [  0,  20,  30,  40,  50,  50,  50,  50],
