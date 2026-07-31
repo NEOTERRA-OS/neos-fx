@@ -5590,19 +5590,30 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
             usefulLifeMonths: L, usefulLifeFiscalMonths: L, purchasePeriod: py * 12,
             disposalPeriod: disposed ? dispY * 12 : undefined,
             disposalProceedsCent: disposed ? Math.round(resCent * inf) : undefined,
-            financingMode: py === startY && startY === 0 ? ci.financingMode : "cash",
+            financingMode: py === startY ? ci.financingMode : "cash",   // Erstanschaffung finanziert, Ersatz aus Cash
           });
           if (!disposed) break;
           py = dispY; age = C; // Folgetausche im Zyklus
         }
       };
-      // Basisflotte (Jahr 0): C Kohorten, Ausmusterung gestaffelt Jahr C..2C-1 (intakt bis C, dann revolvierend).
-      for (let k = 0; k < C; k++) mkChain(0, Math.round(ci.amount / C), Math.round((ci.salvageValue ?? 0) / C), C + k);
-      // Ausbau-Zugänge je Skalierungsjahr v: zusätzliche C Kohorten. KULTURSCHARF — jede Maschine
-      //  folgt der Flächenkurve ihrer Nutzer-Kulturen (Kultur-Politik); geteilte Technik folgt der
-      //  Gesamtfläche. Asset-Deal-Flotten bleiben herausgerechnet (adj), keine Doppelzählung.
-      const dM = dMachOf(ci.id.startsWith("cx-") ? ci.id.slice(3) : ci.id);
-      for (let v = 1; v < years; v++) {
+      // BASISFLOTTE im BEDARFSJAHR, nicht pauschal im Startjahr.
+      //  Vorher stand hier mkChain(0, …): jede Maschine des Katalogs wurde im Jahr 0 angeschafft,
+      //  auch wenn die Kultur, die sie braucht, erst Jahre später anläuft. Im Skalierungspfad
+      //  kaufte das Modell damit 2027 auf 300 ha Kartoffel bereits den Tomaten-Vollernter, die
+      //  Zwiebel-Erntekette und den Möhrenroder — Technik für Kulturen mit 0 ha. Das war der
+      //  Hauptteil der überhöhten Anlaufinvestition.
+      //  bedarfsJahrOf liefert das erste Jahr, in dem die Maschine wirklich gebraucht wird
+      //  (Nutzer-Kultur hat Fläche und der Gang ist nicht fremdvergeben); ci.amount ist auf genau
+      //  dieses Jahr bemessen (machineHoursPerYear). -1 = wird nie gebraucht ⇒ gar kein CAPEX.
+      const mid = ci.id.startsWith("cx-") ? ci.id.slice(3) : ci.id;
+      const yStart = bedarfsJahrOf(domain, mid, years);
+      if (yStart < 0) continue;
+      for (let k = 0; k < C; k++) mkChain(yStart, Math.round(ci.amount / C), Math.round((ci.salvageValue ?? 0) / C), C + k);
+      // Ausbau-Zugänge NACH dem Bedarfsjahr. dMachOf ist auf dasselbe Jahr normiert und hat die
+      //  davor aufgelaufenen Zugänge dort gebündelt — dieser Jahrgang steckt bereits in der
+      //  Basisflotte oben und darf hier nicht noch einmal kommen (sonst doppelte Anschaffung).
+      const dM = dMachOf(mid);
+      for (let v = yStart + 1; v < years; v++) {
         if (dM[v] <= 1e-9) continue;
         const addNet = ci.amount * dM[v], addRes = (ci.salvageValue ?? 0) * dM[v];
         for (let k = 0; k < C; k++) mkChain(v, Math.round(addNet / C), Math.round(addRes / C), C + k);
