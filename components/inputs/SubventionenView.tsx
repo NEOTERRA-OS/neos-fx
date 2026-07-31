@@ -5,6 +5,7 @@ import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
 import { X } from "lucide-react";
+import { deriveCropAreasMY, START_YEAR } from "../../store/model";
 import type { Subsidy } from "../../core/types";
 
 /** Subventionen — EU-CAP 2023–2027 (RO). Volle Struktur: Säule 1 (Direktzahlungen, inkl.
@@ -24,12 +25,24 @@ const PILLARS: { key: 1 | 2; label: string }[] = [
 export function SubventionenView() {
   const { domain, patch } = useModelStore();
   const subs = domain.subsidies;
+  // NULLBASIS-FALLE. Die Ansicht rechnete auf domain.anbauplan — den Flächen des STARTJAHRES.
+  //  Tomate, Zwiebel/Möhre, Sellerie, Süßkartoffel und Knoblauch stehen dort mit 0 ha, weil sie
+  //  erst 2028 beginnen. Alle kulturgebundenen Zeilen zeigten deshalb dauerhaft 0 €, während die
+  //  Engine korrekt auf den Politik-Kurven rechnete: Σ 53.800 € in der Ansicht gegen rund
+  //  2,5 Mio € in der GuV. Jetzt: Jahresumschalter und Flächen aus deriveCropAreasMY.
+  const jahre = Math.max(1, domain.growth?.years ?? 1);
+  const [jahr, setJahr] = React.useState(jahre - 1);
+  const y = Math.min(jahr, jahre - 1);
   const areaByCrop = React.useMemo(() => {
+    const areas = deriveCropAreasMY(domain).areas;
     const m = new Map<string, number>();
-    for (const a of domain.anbauplan) m.set(a.cropId, (m.get(a.cropId) ?? 0) + a.areaHa);
+    for (const a of domain.anbauplan) {
+      const c = areas[a.cropId];
+      m.set(a.cropId, c ? (c[Math.min(y, c.length - 1)] ?? 0) : a.areaHa);
+    }
     return m;
-  }, [domain.anbauplan]);
-  const totalArea = domain.anbauplan.reduce((s, a) => s + a.areaHa, 0);
+  }, [domain, y]);
+  const totalArea = [...areaByCrop.values()].reduce((s, v) => s + v, 0);
 
   const eligibleHa = (s: Subsidy) => {
     let ha = s.cropIds && s.cropIds.length ? s.cropIds.reduce((x, c) => x + (areaByCrop.get(c) ?? 0), 0) : totalArea;
@@ -70,7 +83,12 @@ export function SubventionenView() {
     <div className="space-y-4">
       <div className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
-          <h2 className="text-[14px] font-semibold">{t("Subventionen — EU-CAP 2023–2027 (RO)")}</h2>
+          <h2 className="text-[14px] font-semibold">{t("Subventionen — EU-CAP (RO)")}</h2>
+          <select value={y} onChange={(e) => setJahr(parseInt(e.target.value, 10))}
+            className="ml-3 rounded-control border px-2 text-[12px]"
+            style={{ height: 28, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)" }}>
+            {Array.from({ length: jahre }, (_, i) => <option key={i} value={i}>{START_YEAR + i}</option>)}
+          </select>
           <span className="caption text-[10.5px] text-nx-text-muted">Σ {fmtMoney(grandAnnual)}{t(" €/Jahr · Auszahlung Vorschuss (Okt) + Rest (Dez) → Cashflow")}</span>
         </div>
         <div className="px-4 py-2 text-[12px] text-nx-text-secondary">

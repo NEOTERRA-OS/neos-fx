@@ -1257,6 +1257,10 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Avalprovision p. a. auf die besicherte Summe → Betriebsaufwand (EBITDA-wirksam).
   A("advance.aval_fee", "advance.aval_fee", "Avalprovision Anzahlung p. a.", "rate", 0),
   // --- Förderung ---
+  // Kappung der GAP-Flächenpauschalen je Betrieb und Jahr ab 2028 (Kommissionsvorschlag
+  //  MFR 2028–2034: max. 100.000 EUR je Betrieb). 0 = keine Kappung, dann läuft die
+  //  aktuelle Periode unverändert weiter — das ist die optimistische Annahme.
+  A("cap.per_farm_from_2028", "cap.per_farm_from_2028", "GAP-Kappung Flächenprämien je Betrieb ab 2028 (0 = keine)", "money", 10000000),
   A("subsidy.per_ha", "subsidy.per_ha", "GAP/CAP-Basisprämie €/ha (alle)", "money_per_ha", 20500),
   A("subsidy.coupled_freilandgemuese", "subsidy.coupled_freilandgemuese", "Gekoppelte Stützung Tomate + Zwiebel/Möhre €/ha", "money_per_ha", 161200),
   A("rev.gerste_zweitfrucht", "rev.gerste_zweitfrucht", "Zweitkultur-Beitrag Gerste — Doppel-Soja €/ha", "money_per_ha", 50000),
@@ -2878,21 +2882,34 @@ const SUBSIDIES: Subsidy[] = [
   // — Säule 1: Direktzahlungen —
   { id: "s-biss", name: "BISS — Basisprämie (Sprijin de bază)", basis: "per_ha", ratePerHaCent: 10066,
     pillar: 1, category: "biss", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  { id: "s-criss", name: "CRISS — umverteilende Prämie (erste 50 ha)", basis: "per_ha", ratePerHaCent: 5300,
-    firstHaCap: 50, pillar: 1, category: "criss", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
+  // CRISS AUS: In Rumänien ist die umverteilende Prämie auf Betriebe von 1 bis 50 ha
+  //  GESAMTFLÄCHE begrenzt — wer 50 ha überschreitet, verliert den Anspruch für ALLE Hektar,
+  //  nicht nur für die darüber liegenden. NEOTERRA startet mit 300 ha. Die firstHaCap-Logik
+  //  bildete eine Staffel ab, die es so nicht gibt.
+  { id: "s-criss", name: "CRISS — umverteilende Prämie (nur Betriebe ≤ 50 ha, hier ohne Anspruch)", basis: "per_ha", ratePerHaCent: 5300,
+    firstHaCap: 50, pillar: 1, category: "criss", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
   { id: "s-eco", name: "Öko-Regelungen / Eco-Schemes (PD, Ø)", basis: "per_ha", ratePerHaCent: 7000,
     pillar: 1, category: "eco", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
   // — VCP / Gekoppelte Stützung (Voluntary Coupled Payments · Sprijin Cuplat Vegetal) — KULTURSPEZIFISCH —
   { id: "vcp-tomate", name: "VCP — Industrietomate (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
     cropIds: ["tomate"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  { id: "vcp-zwiebel", name: "VCP — Zwiebel / Möhre (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  { id: "vcp-gemuese-neu", name: "VCP — Sellerie / Süßkartoffel (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  { id: "vcp-knoblauch", name: "VCP — Knoblauch (Sprijin cuplat usturoi)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["knoblauch"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  { id: "vcp-soja", name: "VCP — Soja (Eiweißpflanzen)", basis: "per_ha", ratePerHaCent: 20000,
-    cropIds: ["soja_luzerne"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
+  // VCP NUR TOMATE. Die rumänische Intervention PD-17 „legume cultivate în câmp" deckt
+  //  ausschließlich TOMATE, GURKE, PAPRIKA und AUBERGINE. Zwiebel, Möhre, Knoblauch,
+  //  Sellerie und Süßkartoffel stehen NICHT auf der Liste — sie bekommen keine gekoppelte
+  //  Stützung. Die drei folgenden Zeilen buchten zusammen 1,07 Mio €/Jahr ab 2032 und rund
+  //  5,7 Mio € kumuliert 2028–2034 als Phantom-Ertrag direkt ins EBITDA.
+  //  Sie bleiben als INAKTIVE Zeilen stehen, damit die Annahme sichtbar und umkehrbar ist,
+  //  falls sich die Kulturliste der Intervention ändert.
+  { id: "vcp-zwiebel", name: "VCP — Zwiebel/Möhre (nicht in PD-17, ohne Anspruch)", basis: "per_ha", ratePerHaCent: 160700,
+    cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+  { id: "vcp-gemuese-neu", name: "VCP — Sellerie/Süßkartoffel (nicht in PD-17, ohne Anspruch)", basis: "per_ha", ratePerHaCent: 160700,
+    cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+  { id: "vcp-knoblauch", name: "VCP — Knoblauch (nicht in PD-17, ohne Anspruch)", basis: "per_ha", ratePerHaCent: 160700,
+    cropIds: ["knoblauch"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+  // Soja ist im Solo-Modell keine Kultur mehr. Die Zeile lag aktiv da und haette gezahlt,
+  //  sobald jemand Soja wieder in den Anbauplan nimmt.
+  { id: "vcp-soja", name: "VCP — Soja (Kultur nicht im Plan)", basis: "per_ha", ratePerHaCent: 20000,
+    cropIds: ["soja_luzerne"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
   { id: "vcp-kartoffel", name: "VCP — Verarbeitungskartoffel (falls berechtigt)", basis: "per_ha", ratePerHaCent: 0,
     cropIds: ["kartoffel_pommes", "kartoffel_chips"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
   { id: "s-young", name: "Junglandwirte-Zuschlag (erste 100 ha, falls berechtigt)", basis: "per_ha", ratePerHaCent: 2600,
@@ -5913,15 +5930,39 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
         ? s.cropIds.reduce((sum, cid) => sum + (cropAreasMY.areas[cid]?.[Math.min(y, years - 1)] ?? (cropBaseHa.get(cid) ?? 0) * scale[y]), 0)
         : fullFarmHaOf(y);
       if (s.firstHaCap != null && s.firstHaCap > 0) elig = Math.min(elig, s.firstHaCap);
-      const amt = s.basis === "per_ha" ? Math.round(perHa * elig) : (s.lumpSumCent ?? 0);
-      if (amt === 0) continue;
+      let amt = s.basis === "per_ha" ? Math.round(perHa * elig) : (s.lumpSumCent ?? 0);
+      // GAP-PERIODENBRUCH 2028. Die laufende Förderperiode endet 2027; das Modell rechnet bis
+      //  2034 und schrieb die Sätze bisher stillschweigend acht Jahre unverändert fort. Der
+      //  Kommissionsvorschlag für den MFR 2028–2034 sieht eine vereinfachte Flächenprämie mit
+      //  verpflichtender Degressivität und einer KAPPUNG je Betrieb vor. Das Modell rechnete
+      //  für 2032 allein an Flächenprämien rd. 400 T€ — das Vierfache der vorgeschlagenen
+      //  Obergrenze. Der Cap gilt für die FLÄCHENPAUSCHALEN (Säule 1, ohne VCP), betriebsweit.
+      //  Über cap.per_farm_from_2028 abschaltbar (0 = keine Kappung).
+      amt = Math.max(0, amt);
       const prof = (s.payout && s.payout.length ? s.payout : s.receiptPeriods.map((pp) => ({ period: pp, share: 1 / Math.max(1, s.receiptPeriods.length) })));
+      if (amt === 0) continue;
       subsidies.push({
         id: `${s.id}-y${y}`, name: s.name, basis: "lump_sum", lumpSumCent: amt,
         receiptPeriods: s.receiptPeriods.map((pp) => pp + y * 12),
         payout: prof.map((x) => ({ period: x.period + y * 12, share: x.share })),
         pillar: s.pillar, category: s.category, active: true,
       });
+    }
+  }
+  // KAPPUNG der Flächenpauschalen ab 2028 (Säule 1 ohne VCP), betriebsweit je Jahr.
+  {
+    // ACHTUNG EINHEIT: "money"-Assumptions liefern CENT, nicht Euro.
+    const capCent = domain.assumptions["cap.per_farm_from_2028"]
+      ? resolveScalar(domain, "cap.per_farm_from_2028", scenarioId) : 0;
+    if (capCent > 0) {
+      for (let y = 1; y < years; y++) {                       // greift ab dem 2. Planjahr (2028)
+        const flaeche = subsidies.filter((x) => x.id.endsWith(`-y${y}`) && x.category !== "vcp");
+        const summe = flaeche.reduce((a, x) => a + (x.lumpSumCent ?? 0), 0);
+        if (summe > capCent && summe > 0) {
+          const f = capCent / summe;                          // anteilig kürzen
+          for (const x of flaeche) x.lumpSumCent = Math.round((x.lumpSumCent ?? 0) * f);
+        }
+      }
     }
   }
 
