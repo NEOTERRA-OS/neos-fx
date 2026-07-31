@@ -68,8 +68,10 @@ const DRIVERS: Drv[] = [
   { id: "priceKart", label: "Kontraktpreis Kartoffel (P + C)", group: G_PRC, keys: ["price.kartoffel_pommes", "price.kartoffel_chips"], mode: "mult", unit: "×", min: 0.55, max: 1.5, step: 0.01, dec: 2 },
 
   /* -- Subventionen -------------------------------------------------------- */
-  { id: "subsidy.per_ha", label: "GAP-Basisprämie", group: G_SUB, keys: ["subsidy.per_ha"], mode: "abs", money: true, unit: "€/ha", min: 0, max: 600, step: 5, dec: 0 },
-  { id: "subsidy.coupled_freilandgemuese", label: "Gekoppelte Stützung Freilandgemüse (PNS)", group: G_SUB, keys: ["subsidy.coupled_freilandgemuese"], mode: "abs", money: true, unit: "€/ha", min: 0, max: 2600, step: 25, dec: 0, hint: "Tomate + Zwiebel/Möhre, bewässert" },
+  // Zwei tote Regler ersetzt (31.07.2026): "GAP-Basisprämie" und "Gekoppelte Stützung"
+  //  schrieben auf Annahmen, die die Engine nicht liest — sie zahlt aus dem Subventions-
+  //  Register (BISS, Öko, VCP je Kultur). Beide Regler bewegten das Ergebnis um exakt null.
+  { id: "subsidy.factor", label: "Förderung gesamt (Faktor auf alle Registersätze)", group: G_SUB, keys: ["subsidy.factor"], mode: "abs", unit: "×", min: 0.5, max: 1.2, step: 0.01, dec: 2, hint: "0,80 ≈ Wegfall der gekoppelten Stützung für Sellerie, Süßkartoffel und Knoblauch" },
 
   /* -- Klima & Infrastruktur ---------------------------------------------- */
   { id: "risk.irrig_outage_d", label: "Beregnungsausfall in der Hitzespitze", group: G_RISK, keys: ["risk.irrig_outage_d"], mode: "abs", unit: "d", min: 0, max: 21, step: 1, dec: 0, hint: "ANIF-Zentralnetz: Pumpen-/Netzausfall in Juli/August" },
@@ -125,8 +127,8 @@ const LEGACY_FACTOR: Record<string, string> = {
   qual_value: "qualValue", qual_kartoffel: "qualKart", qual_tomate: "qualTomate",
   loss_all: "lossAll", diesel: "price.diesel_l", fert: "fertAll", seed: "seedAll",
   water: "irrig.eur_mm", labor: "wageAll", tco: "tcoDiscount",
-  euribor: "macro.euribor", tax: "tax.rate", subs_base: "subsidy.per_ha",
-  subs_coupled: "subsidy.coupled_freilandgemuese", infl_out: "infl.output", infl_in: "infl.input",
+  euribor: "macro.euribor", tax: "tax.rate", subs_base: "subsidy.factor",
+  subs_coupled: "subsidy.factor", infl_out: "infl.output", infl_in: "infl.input",
 };
 
 /* ---- Presets ------------------------------------------------------------- */
@@ -297,7 +299,7 @@ function migrateScenarios(list: SensScenario[] | undefined, baseOfId: (id: strin
 }
 const DEFAULT_TORNADO: { id: string; delta: number }[] = [
   { id: "priceValue", delta: 0.15 }, { id: "yieldValue", delta: 0.10 }, { id: "qualValue", delta: 0.08 },
-  { id: "wageAll", delta: 0.15 }, { id: "macro.euribor", delta: 0.30 }, { id: "subsidy.coupled_freilandgemuese", delta: 0.20 },
+  { id: "wageAll", delta: 0.15 }, { id: "macro.euribor", delta: 0.30 }, { id: "subsidy.factor", delta: 0.20 },
 ];
 /** Zielgrößen des Tornados. */
 type MetricId = "ebitda" | "ni" | "fcf" | "minCash";

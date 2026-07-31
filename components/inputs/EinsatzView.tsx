@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption, selectScopedDomain } from "../../store/modelStore";
-import { deriveEinsatzplan } from "../../store/model";
+import { deriveEinsatzplan, CROP_NAME } from "../../store/model";
 import { fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
 
@@ -81,12 +81,10 @@ export function EinsatzView() {
   //  geloeschte Ackerbaukulturen und liess dafuer Knollensellerie, Suesskartoffel und
   //  Knoblauch weg — drei aktive Kulturen konnten ihre Arbeitsschritte nicht anzeigen.
   const cropOrder = [...new Set(domain.anbauplan.map((a) => a.cropId))];
-  const cropName: Record<string, string> = {
-    weizen: t("Winterweizen"), gerste_zw: t("Wintergerste + Soja"), soja_luzerne: t("Soja / Luzerne"), winterraps: t("Winterraps"),
-    mais: t("Körnermais"), tomate: t("Industrietomate"), kartoffel_pommes: t("Kartoffel Pommes"), kartoffel_chips: t("Kartoffel Chips"), zwiebel_moehre: t("Zwiebel / Möhre"),
-  };
+  // Namen aus CROP_NAME im Store — die lokale Liste kannte Sellerie, Suesskartoffel und
+  //  Knoblauch nicht und zeigte fuer sie die technische ID.
   const opsByCrop = cropOrder
-    .map((cid) => ({ cid, name: cropName[cid] ?? cid, ops: plan.ops.filter((o) => o.cropId === cid).sort((a, b) => a.kwS - b.kwS) }))
+    .map((cid) => ({ cid, name: t((CROP_NAME as Record<string, string>)[cid] ?? cid), ops: plan.ops.filter((o) => o.cropId === cid).sort((a, b) => a.kwS - b.kwS) }))
     .filter((g) => g.ops.length);
 
   const th = "px-3 py-2 caption text-[10px] text-nx-text-muted";

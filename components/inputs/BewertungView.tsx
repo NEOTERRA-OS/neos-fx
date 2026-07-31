@@ -28,10 +28,12 @@ export function BewertungView() {
   const tick = useModelStore((s) => s.recalcTick);
 
   const [exitM, setExitM] = React.useState(7);          // ×
-  const [startHa, setStartHa] = React.useState(4000);
-  const [endHa, setEndHa] = React.useState(20000);
-  const [rampY, setRampY] = React.useState(8);
-  const [horizon, setHorizon] = React.useState(10);
+  // ENTFERNT 31.07.2026: Start (4.000 ha), Ziel (20.000 ha), Ramp und Horizont. Vier
+  //  Eingabefelder aus dem alten Gruppenmodell, die seit der Umstellung auf die Engine-
+  //  Jahreswerte NICHTS mehr rechneten — man konnte 20.000 ha auf 50.000 stellen, und der
+  //  Enterprise Value blieb auf den Cent gleich. Fläche und Horizont kommen aus dem
+  //  Skalierungspfad (300 → 2.334 ha, acht Planjahre); der Exit-Multiple bleibt als einziger
+  //  echter Regler stehen.
 
   // WACC (CAPM) — Inputs editierbar, WACC wird berechnet und speist den DCF.
   const [rf, setRf] = React.useState(3.0);              // risikofreier Zins (EUR) %
@@ -146,7 +148,7 @@ export function BewertungView() {
 
     return { rows, npvBase, irrBase, tv, ebitdaFinal, salesFinal, peak, sens, totalCapex,
       ev, equityValue, evEbitda, evSales, roic, ebitdaMargin, fcfConv, moic, payback, netDebtNow: fin.netDebtNow };
-  }, [model, wacc, exitM, startHa, endHa, rampY, horizon, fin.netDebtNow]);
+  }, [model, wacc, exitM, fin.netDebtNow]);
 
   // Football-Field (EV-Spannen je Methode) + Break-even
   const fball = React.useMemo(() => {
@@ -180,10 +182,9 @@ export function BewertungView() {
           <h2 className="mr-2 text-[14px] font-semibold">{t("DCF-Bewertung")}</h2>
           <span className="flex items-center gap-2 text-[12px]"><span className="text-nx-text-secondary">WACC</span><b className="num" style={{ color: "var(--nx-brand-lift)" }}>{fmtNumber(wacc, 2)} %</b><span className="text-[10px] text-nx-text-muted">{t("(berechnet ↓)")}</span></span>
           <Num label={t("Exit-Multiple")} value={exitM} onChange={setExitM} suffix="× EBITDA" />
-          <Num label={t("Start")} value={startHa} onChange={setStartHa} step={1000} suffix="ha" />
-          <Num label={t("Ziel")} value={endHa} onChange={setEndHa} step={1000} suffix="ha" />
-          <Num label={t("Ramp")} value={rampY} onChange={setRampY} suffix="J" />
-          <Num label={t("Horizont")} value={horizon} onChange={setHorizon} suffix="J" />
+          <span className="text-[11px] text-nx-text-muted">
+            {t("Fläche und Horizont kommen aus dem Skalierungspfad")} — {fmtNumber(SKALIERUNG_TOTAL_HA[0] ?? 0, 0)} → {fmtNumber(SKALIERUNG_TOTAL_HA[SKALIERUNG_TOTAL_HA.length - 1] ?? 0, 0)} ha, {model.jahre} {t("Planjahre")}
+          </span>
         </div>
         <div className="flex flex-wrap gap-x-8 gap-y-3 px-6 py-4">
           {kpi("NPV @ " + fmtNumber(wacc, 1) + "%", fmtMoney(proj.npvBase) + " €", proj.npvBase >= 0 ? "var(--nx-success)" : "var(--nx-error)")}
@@ -348,7 +349,7 @@ export function BewertungView() {
           </table>
         </div>
         <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
-          {t("Vereinfachter Investoren-DCF: Per-ha-Ökonomie aus dem Kern (Stufe 1) × Flächen-Ramp; FCFF = EBIT×(1−Steuer) + AfA − CAPEX. Kompendium-Skalierung (Blended-BE ~2.585 €/ha konstant). Für die volle 3-Statement-Bewertung liefert der Kern `computeValuation` (mehrjährige Konfiguration A).")}
+          {t("Investoren-DCF auf den JAHRESWERTEN der Engine — dieselben Zahlen wie in GuV und Cashflow, kein zweiter Rechenweg und keine eigene Flächenannahme. FCFF = EBIT×(1−Steuer) + AfA − CAPEX, diskontiert mit dem oben berechneten WACC; Terminal Value als Exit-Multiple auf dem EBITDA des eingeschwungenen Endjahres.")}
         </div>
       </section>
     </div>

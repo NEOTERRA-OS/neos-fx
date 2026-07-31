@@ -5,17 +5,15 @@ import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
 import type { VatTreatment } from "../../core/types";
+import { CROP_NAME } from "../../store/model";
 
 /** USt / TVA (RO) — Ausgangs-/Vorsteuer, Reverse-Charge (Getreide/Ölsaaten), CAPEX-Vorsteuer-
  *  Erstattung (rambursare), Zahllast-/Erstattungs-Timing → Cashflow + Bilanz (USt-Forderung/
  *  -Verbindlichkeit). USt ist durchlaufend (P&L netto); Wirkung nur über Cash-Timing + Saldo. */
 
-const CROP_LABEL: Record<string, string> = {
-  weizen: "Winterweizen", gerste_zw: "Wintergerste + Doppel-Soja", soja_luzerne: "Soja / Luzerne",
-  winterraps: "Winterraps", mais: "Körnermais", tomate: "Industrietomate",
-  kartoffel_pommes: "Kartoffel (Pommes)", kartoffel_chips: "Kartoffel (Chips)", zwiebel_moehre: "Zwiebel / Möhre",
-  suesskartoffel: "Süßkartoffel", knoblauch: "Knoblauch", knollensellerie: "Knollensellerie",
-};
+/** Kulturnamen aus dem Store (CROP_NAME) statt aus einer zweiten, hier gepflegten Liste —
+ *  die trug noch die fuenf entfallenen Ackerbaukulturen und konnte auseinanderlaufen. */
+const CROP_LABEL: Record<string, string> = CROP_NAME as Record<string, string>;
 const TREAT_LABEL: Record<VatTreatment, string> = {
   standard: "Regelsatz 21 %", reduced: "ermäßigt 11 %", reverse_charge: "Reverse-Charge (0 %)",
   export: "Export / i.g. (0 %)", zero: "befreit (0 %)",

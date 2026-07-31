@@ -205,13 +205,13 @@ export type MachineType = {
   /** Bestand-vs-Plan: bereits im Betrieb vorhandene Einheiten. Neu-CAPEX (Bilanzzugang +
    *  Finanzierung) entsteht nur für ⌈benötigte Flotte − ownedUnits⌉. Editierbar (Swap Ist/Plan). */
   ownedUnits?: number;
-  /** Intercompany-Miete (z. B. von Isolde): Einheiten, die NICHT gekauft, sondern gemietet werden.
-   *  Kein CAPEX/AfA — stattdessen stundenbasierte Miet-OPEX (gemietete Stück × Stunden/Stück ×
-   *  €/h aus Stundenkosten × (1 + machine.rent_markup)). Neu-CAPEX = ⌈benötigt − owned − rented⌉. */
+  /** MASCHINENMIETE AM MARKT (nicht Intercompany — das Solo-Modell hat keine zweite operative
+   *  Gesellschaft mehr). Einheiten, die NICHT gekauft, sondern gemietet werden: kein CAPEX/AfA,
+   *  stattdessen stundenbasierte Miet-OPEX (gemietete Stück × Stunden/Stück × €/h aus
+   *  Stundenkosten × (1 + machine.rent_markup)). Neu-CAPEX = ⌈benötigt − owned − rented⌉. */
   rentedUnits?: number;
-  /** Verleiher-Gesellschaft der gemieteten Einheiten (Entity.id) — explizite Mietrichtung.
-   *  Fehlt → Default-Verleiher Isolde (ENTITY_ISOLDE). Steuert, welcher Gesellschaft in der
-   *  Entity-Sicht der Miet-ERTRAG gutgeschrieben wird (Mieter zahlt, Verleiher verdient). */
+  /** Verleiher (Entity.id) — im Solo-Modell unbesetzt, es wird am Markt gemietet. Das Feld
+   *  bleibt für gespeicherte Stände lesbar, hat aber keine Rechenwirkung mehr. */
   rentedFrom?: string;
   /** Durchschnittsalter des Bestands (Jahre) → Restbuchwert = Netto × max(Restwert-%,
    *  1 − (1−Restwert-%) × Verschleiß). Editierbar im Register. */
@@ -1199,7 +1199,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // opex.machine_rent_income: Miet-ERTRAG des Verleihers (negativ in OpEx → hebt EBITDA). Composer-gesetzt.
   A("opex.machine_rent_income", "opex.machine_rent_income", "Maschinen-Miet-Ertrag (Intercompany) /Monat", "money", 0),
   // Aufschlag auf die Stundenkosten (AfA/h + Service/h) für die Intercompany-Miete (z. B. +15 % Isolde-Marge).
-  A("machine.rent_markup", "machine.rent_markup", "Miet-Aufschlag Intercompany (auf Stundenkosten)", "rate", 0.15),
+  A("machine.rent_markup", "machine.rent_markup", "Miet-Aufschlag des Vermieters (auf die Stundenkosten)", "rate", 0.15),
   // opex.fix: Pacht + Overhead je Kultur — wird im Composer je Build aus dem Anbauplan
   // deterministisch als Monatswert überschrieben.
   A("opex.fix", "opex.fix", "Fixkosten/Monat (Pacht + Overhead/Versich./Zins)", "money", 0),
@@ -1265,9 +1265,16 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  ab dem zweiten Planjahr die Flächenpauschalen anteilig gekürzt, die gekoppelte
   //  Stützung bleibt ausgenommen.
   A("cap.per_farm_from_2028", "cap.per_farm_from_2028", "GAP-Kappung Flächenprämien je Betrieb ab 2028 (0 = keine)", "money", 0),
-  A("subsidy.per_ha", "subsidy.per_ha", "GAP/CAP-Basisprämie €/ha (alle)", "money_per_ha", 20500),
-  A("subsidy.coupled_freilandgemuese", "subsidy.coupled_freilandgemuese", "Gekoppelte Stützung Tomate + Zwiebel/Möhre €/ha", "money_per_ha", 161200),
-  A("rev.gerste_zweitfrucht", "rev.gerste_zweitfrucht", "Zweitkultur-Beitrag Gerste — Doppel-Soja €/ha", "money_per_ha", 50000),
+  // ERSETZT 31.07.2026: subsidy.per_ha (205 €/ha) und subsidy.coupled_freilandgemuese
+  //  (1.612 €/ha). Beide Keys standen im Annahmen-Register und im Szenario-Studio, wurden
+  //  aber von der Engine NIE gelesen — die zahlt aus dem Subventions-Register (BISS, Öko,
+  //  VCP je Kultur). Wer an den Reglern drehte, bewegte nichts. Der eine Regler, der die
+  //  Förderung wirklich bewegt, steht jetzt hier und wirkt auf ALLE Registersätze.
+  //  Das ist auch die Stellschraube für das dokumentierte VCP-Risiko: gilt die engere
+  //  Lesart der Intervention PD-17, fehlen ab 2032 rund 1,07 Mio €/Jahr.
+  A("subsidy.factor", "subsidy.factor", "Förderung — Faktor auf alle Registersätze (1,00 = wie hinterlegt)", "rate", 1.0, 0.7, 1.15),
+  // ENTFERNT 31.07.2026: rev.gerste_zweitfrucht. Die Gerste-Zweitfrucht gehörte zum
+  //  Ackerbau; der Erlösstrom läuft seit Paket A über secondCrop in der Engine.
   A("covenant.dscr_min", "covenant.dscr_min", "DSCR min. (Agrar-Projektfin. 1,10)", "rate", 1.10),
   A("covenant.leverage_max", "covenant.leverage_max", "Leverage max.", "rate", 3.5),
 
@@ -1594,6 +1601,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("spray.refill_min", "spray.refill_min", "Befüllzeit min", "count", 20),
   A("spray.field_eff", "spray.field_eff", "Feldeffizienz", "rate", 0.80),
   A("spray.hours_day", "spray.hours_day", "Einsatzstunden/Tag", "count", 11),
+  A("spray.reserve", "spray.reserve", "Spritzen — Redundanz-Reserve (Stück über dem Rechenbedarf)", "count", 1),
   A("spray.sf_share", "spray.sf_share", "Selbstfahrer-Anteil der Spritzenflotte", "rate", 0.25),
   A("spray.tank_gz_l", "spray.tank_gz_l", "Tank gezogen (Dammann) l", "count", 14000),
   A("spray.tank_sf_l", "spray.tank_sf_l", "Tank Selbstfahrer l", "count", 12000),
@@ -1619,13 +1627,12 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("en.harvest_staffel", "en.harvest_staffel", "Ernte-Staffelung (Wochen, Reifegruppen)", "count", 3),
   A("en.saat_staffel", "en.saat_staffel", "Aussaat-Staffelung (Wochen)", "count", 2),
   A("en.avail_h_year", "en.avail_h_year", "Verfügbare Feld-Betriebsstunden je Maschine & Jahr (1-Schicht)", "count", 2000),
-  A("en.staff", "en.staff", "Stammpersonal (Kapazität, Personen)", "count", 45),
-  // Einsatz-Flottenklassen ohne Bottom-up-Treiber: editierbare Basiszahl (× stageFactor).
-  // Defaults so gewählt, dass die Einsatzplanung out-of-the-box engpassfrei ist.
-  A("en.drill", "en.drill", "Sä-/Einzelkorntechnik (Einheiten, Basis)", "count", 2),
-  A("en.fert", "en.fert", "Düngerstreuer (Einheiten, Basis)", "count", 2),
-  A("en.combine", "en.combine", "Mähdrescher (Einheiten, Basis)", "count", 2),
-  A("en.transp", "en.transp", "Transport/Hakenlift (Einheiten, Basis)", "count", 3),
+  // ENTFERNT 31.07.2026: en.staff (45 Personen) — die Personalkapazität kommt aus der
+  //  Personalplanung (personalFteOfYear), nicht mehr aus einer Konstante des Gruppenmodells.
+  // ENTFERNT 31.07.2026: en.drill / en.fert / en.combine / en.transp. Vier Klassen der
+  //  Einsatzplanung standen auf frei gesetzten Basiszahlen aus dem Gruppenmodell, „damit die
+  //  Einsatzplanung out-of-the-box engpassfrei ist" — eine Ampel, die per Konstruktion nie
+  //  Rot zeigt, prüft nichts. Alle Klassen zählen jetzt Maschinen aus dem Katalog.
   A("en.gross_extra", "en.gross_extra", "Großschlepper zusätzlich zur Legekombi", "count", 1),
 
   /* ------------------------------------------------------------------
@@ -1870,6 +1877,30 @@ export function deriveMassnahmenChecks(domain: Domain): CheckResult[] {
         : `Doldenblütler-Anbaupause OK (Apiaceae max. ${Math.round(worst * 100)} % ≤ 20 % — Sellerie + ½ Möhre)`,
       passed: worst <= DOLDEN_CAP_DEFAULT + 1e-6,
       maxDeviation: Math.max(0, worst - DOLDEN_CAP_DEFAULT),
+      offendingPeriods: [],
+      severity: "warning",
+    });
+  }
+
+  // INTERCOMPANY-ABGLEICH Management-Fee. Die Holding vereinnahmt die Fee als Ertrag
+  //  (hold.fee → managementFeeIncome); die OpCo muss denselben Betrag als Aufwand tragen,
+  //  sonst entsteht Konzernergebnis aus dem Nichts. Bis 31.07.2026 fehlte die Gegenbuchung
+  //  vollständig: 50 T€ im Jahr Ertrag ohne Aufwand — und das, obwohl die Holding sich eine
+  //  Verrechnungspreis-Dokumentation für genau diese Fee leistet.
+  {
+    const feeH = domain.assumptions["hold.fee"]
+      ? Math.round(resolveScalar(domain, "hold.fee", domain.baseScenarioId)) : 0;
+    const feeO = (domain.overhead ?? [])
+      .filter((o) => o.id === HOLDING_FEE_OVERHEAD_ID)
+      .reduce((s, o) => s + (o.monthlyCent || 0), 0);
+    const diff = Math.abs(feeH - feeO);
+    checks.push({
+      id: "ic_mgmt_fee",
+      label: diff <= 1
+        ? `Management-Fee IC abgestimmt (${(feeH / 100).toFixed(0)} €/Monat, Holding-Ertrag = OpCo-Aufwand)`
+        : `Management-Fee IC NICHT abgestimmt: Holding ${(feeH / 100).toFixed(0)} €/Monat gegen OpCo ${(feeO / 100).toFixed(0)} €/Monat`,
+      passed: diff <= 1,
+      maxDeviation: diff / 100,
       offendingPeriods: [],
       severity: "warning",
     });
@@ -2740,21 +2771,28 @@ const cp = (
   kategorie: o.kategorie, benchMinCent: o.benchMinCent, benchMaxCent: o.benchMaxCent, quelle: o.quelle, notiz: o.notiz,
 });
 const bench = (lo: number, hi: number) => ({ benchMinCent: Math.round(lo * 100), benchMaxCent: Math.round(hi * 100) });
+// MENGEN AUF DEN SOLO-PLAN UMGESTELLT (31.07.2026). Der Katalog war auf den Endausbau des
+//  GRUPPENMODELLS bemessen — 16.000 ha Pivots, 40 Pumpstationen, 40 Brunnen, 500.000 m³
+//  Reservoir, 45.000 t Schüttlager. NEOTERRA bewirtschaftet im Endausbau 2.334 ha und erntet
+//  rund 77.000 t Lagerkulturen. Die Blöcke rechnen zwar nur, wenn sie in `capexPlanActive`
+//  scharfgeschaltet sind (heute nur „maschinen") — als Planungsregister las man sie aber als
+//  NEOTERRAs Vorhaben. Mengen jetzt auf Fläche und Tonnage des Plans; Einheitspreise und
+//  Benchmarks unverändert.
 const CAPEX_PLAN_SEED: CapexPlanItem[] = [
   // — Bewässerung / Wasser-Infrastruktur (assetClass irrigation; AFIR 25 % möglich) —
-  cp("bw-pivot", "bewaesserung", "Center-Pivot-Systeme (Valley/Reinke/Bauer)", "technik", "perHa", 16000, "ha", 1600, 12, { fkQuote: 0.5, subventionPct: 0.25, ...bench(1200, 2000), quelle: "Farmonaut 2026", notiz: "Ausbau 4.000 → 20.000 ha beregnet" }),
-  cp("bw-main", "bewaesserung", "Verrohrung / Mainlines (unterirdisch)", "infrastruktur", "perHa", 16000, "ha", 500, 18, { subventionPct: 0.25, ...bench(300, 700) }),
-  cp("bw-pump", "bewaesserung", "Pumpstationen (Pumpe, FU, Gebäude)", "technik", "perStueck", 40, "Stück", 60000, 12, { ...bench(30000, 90000) }),
-  cp("bw-well", "bewaesserung", "Brunnen / Bohrungen", "infrastruktur", "perStueck", 40, "Stück", 30000, 25, { ...bench(15000, 45000) }),
-  cp("bw-res", "bewaesserung", "Wasserspeicher / Reservoir (foliert)", "bau", "perM3", 500000, "m³", 10, 25, { ...bench(6, 15) }),
-  cp("bw-filt", "bewaesserung", "Filtration + Fertigation (Kopfstation)", "technik", "perStueck", 40, "Stück", 45000, 12, { ...bench(20000, 70000) }),
-  cp("bw-power", "bewaesserung", "Elektrifizierung / MS-Anschluss / Trafo", "infrastruktur", "fix", 1, "pauschal", 1500000, 18, { notiz: "größter Unsicherheitsposten — mit Angebot kalibrieren" }),
-  cp("bw-scada", "bewaesserung", "SCADA / Fernsteuerung", "elektronik", "perStueck", 40, "Stück", 1500, 6, { ...bench(500, 2000) }),
+  cp("bw-pivot", "bewaesserung", "Center-Pivot-Systeme (Valley/Reinke/Bauer)", "technik", "perHa", 2334, "ha", 1600, 12, { fkQuote: 0.5, subventionPct: 0.25, ...bench(1200, 2000), quelle: "Farmonaut 2026", notiz: "Nur relevant, wenn UNBEREGNETE Fläche zugepachtet wird — die heutige Pacht enthält die Pivots (750 €/ha)" }),
+  cp("bw-main", "bewaesserung", "Verrohrung / Mainlines (unterirdisch)", "infrastruktur", "perHa", 2334, "ha", 500, 18, { subventionPct: 0.25, ...bench(300, 700) }),
+  cp("bw-pump", "bewaesserung", "Pumpstationen (Pumpe, FU, Gebäude)", "technik", "perStueck", 6, "Stück", 60000, 12, { ...bench(30000, 90000) }),
+  cp("bw-well", "bewaesserung", "Brunnen / Bohrungen", "infrastruktur", "perStueck", 6, "Stück", 30000, 25, { ...bench(15000, 45000) }),
+  cp("bw-res", "bewaesserung", "Wasserspeicher / Reservoir (foliert)", "bau", "perM3", 73000, "m³", 10, 25, { ...bench(6, 15) }),
+  cp("bw-filt", "bewaesserung", "Filtration + Fertigation (Kopfstation)", "technik", "perStueck", 6, "Stück", 45000, 12, { ...bench(20000, 70000) }),
+  cp("bw-power", "bewaesserung", "Elektrifizierung / MS-Anschluss / Trafo", "infrastruktur", "fix", 1, "pauschal", 250000, 18, { notiz: "größter Unsicherheitsposten — mit Angebot kalibrieren" }),
+  cp("bw-scada", "bewaesserung", "SCADA / Fernsteuerung", "elektronik", "perStueck", 6, "Stück", 1500, 6, { ...bench(500, 2000) }),
   // — Lager (Kartoffel + Zwiebel/Möhre; Tomate NICHT) (assetClass buildings) —
-  cp("lg-bulk", "lager", "Schüttlager Kartoffel, belüftet (ambient)", "bau", "perTonne", 45000, "t", 160, 22, { ...bench(120, 200) }),
-  cp("lg-cool", "lager", "Kühl-/CA-Lager Kartoffel", "technik", "perTonne", 20000, "t", 320, 20, { ...bench(250, 550) }),
-  cp("lg-cure", "lager", "Zwiebel-Trocknung / Curing", "technik", "perTonne", 20000, "t", 200, 20, { ...bench(150, 250) }),
-  cp("lg-shell", "lager", "Gebäudehülle Lager (Stahl, isoliert)", "bau", "perM2", 8000, "m²", 500, 25, { ...bench(350, 800) }),
+  cp("lg-bulk", "lager", "Schüttlager Kartoffel, belüftet (ambient)", "bau", "perTonne", 24000, "t", 160, 22, { ...bench(120, 200) }),
+  cp("lg-cool", "lager", "Kühl-/CA-Lager Kartoffel", "technik", "perTonne", 12000, "t", 320, 20, { ...bench(250, 550) }),
+  cp("lg-cure", "lager", "Zwiebel-Trocknung / Curing", "technik", "perTonne", 6000, "t", 200, 20, { ...bench(150, 250) }),
+  cp("lg-shell", "lager", "Gebäudehülle Lager (Stahl, isoliert)", "bau", "perM2", 4500, "m²", 500, 25, { ...bench(350, 800) }),
   // — Packhaus / Aufbereitungslinien (assetClass buildings, kurze AfA) —
   cp("pk-line", "packhaus", "Verpackungslinie Kartoffel (20 t/h)", "technik", "perStueck", 1, "Linie", 1200000, 10, { ...bench(500000, 2000000), quelle: "LONKIA 2026" }),
   cp("pk-optic", "packhaus", "Optische Sortierung / Grading", "technik", "perStueck", 1, "Modul", 150000, 10, { ...bench(80000, 250000) }),
@@ -2766,15 +2804,15 @@ const CAPEX_PLAN_SEED: CapexPlanItem[] = [
   //  (aus dem Maschinenkatalog hierher verschoben; Block ist per Default AKTIV, damit es zählt).
   cp("ma-iot", "maschinen", "Sensorik · Telemetrie · Farm-Management-System", "elektronik", "fix", 1, "pauschal", 400000, 6, { jahr: 0, fkQuote: 0, restwertPct: 0.1, kategorie: "iot", notiz: "IoT/Digitalisierung — Netto nach Rabatt (Liste 500k)" }),
   // — Gebäude & allgemeine Infrastruktur (assetClass buildings) —
-  cp("gb-hall", "gebaeude", "Maschinenhalle (Stahl, kalt)", "bau", "perM2", 6000, "m²", 350, 25, { jahr: 0, ...bench(250, 450) }),
+  cp("gb-hall", "gebaeude", "Maschinenhalle (Stahl, kalt)", "bau", "perM2", 2500, "m²", 350, 25, { jahr: 0, ...bench(250, 450) }),
   cp("gb-shop", "gebaeude", "Werkstatt (isoliert, Grube, Kran)", "bau", "perM2", 800, "m²", 700, 25, { jahr: 0, ...bench(500, 900) }),
   cp("gb-fuel", "gebaeude", "Diesel-Tankanlage (doppelwandig)", "technik", "perStueck", 1, "Stück", 80000, 12, { jahr: 0, ...bench(30000, 120000) }),
   cp("gb-office", "gebaeude", "Sozial- / Bürogebäude", "bau", "perM2", 600, "m²", 1100, 30, { jahr: 0, ...bench(700, 1400) }),
-  cp("gb-silo", "gebaeude", "Getreide-Silos (Stahl, inkl. Technik)", "bau", "perTonne", 20000, "t", 120, 20, { ...bench(65, 180), quelle: "Agri-Systems 2026" }),
-  cp("gb-yard", "gebaeude", "Hofbefestigung / Wege (Beton)", "infrastruktur", "perM2", 20000, "m²", 50, 18, { jahr: 0, ...bench(30, 80) }),
+  // ENTFERNT 31.07.2026: Getreide-Silos — das Solo-Modell baut kein Getreide mehr an.
+  cp("gb-yard", "gebaeude", "Hofbefestigung / Wege (Beton)", "infrastruktur", "perM2", 6000, "m²", 50, 18, { jahr: 0, ...bench(30, 80) }),
   cp("gb-scale", "gebaeude", "Wiegebrücke 60 t (geeicht)", "technik", "perStueck", 1, "Stück", 45000, 15, { jahr: 0, ...bench(25000, 60000) }),
-  cp("gb-pv", "gebaeude", "PV-Anlage Eigenstrom", "technik", "perKWp", 1000, "kWp", 900, 20, { ...bench(700, 1100) }),
-  cp("gb-fence", "gebaeude", "Umzäunung / Sicherheit (Zaun, Tore, Kameras)", "infrastruktur", "perLfm", 5000, "lfm", 50, 12, { jahr: 0, ...bench(30, 80) }),
+  cp("gb-pv", "gebaeude", "PV-Anlage Eigenstrom", "technik", "perKWp", 300, "kWp", 900, 20, { ...bench(700, 1100) }),
+  cp("gb-fence", "gebaeude", "Umzäunung / Sicherheit (Zaun, Tore, Kameras)", "infrastruktur", "perLfm", 2000, "lfm", 50, 12, { jahr: 0, ...bench(30, 80) }),
 ];
 
 /* --------------------------------------------------------------------------
@@ -3051,6 +3089,8 @@ const OV = (group: string, label: string, monthlyEur: number): OverheadItem => (
   group, label, monthlyCent: Math.round(monthlyEur * 100),
 });
 const GA = "Geschäftsführung & Verwaltung (G&A)";
+/** ID der OpCo-Gegenbuchung zur Holding-Management-Fee (Abgleich-Check). */
+export const HOLDING_FEE_OVERHEAD_ID = "ov-ges-management-fee-an-di";
 const FIN = "Finanzen, Recht & Compliance";
 const IT = "IT, Software & Digitalisierung";
 const HR = "Personal (HR-Gemeinkosten)";
@@ -3066,6 +3106,10 @@ const SEED_OVERHEAD: OverheadItem[] = [
   OV(GA, "Geschäftsführung / Board / Management", 5000),
   OV(GA, "Zentrale Verwaltung / Office & Sekretariat", 1500),
   OV(GA, "Reisekosten & Repräsentation", 800),
+  // GEGENBUCHUNG zur Management-Fee der Holding (hold.fee, 4.167 €/Monat). Die Holding
+  //  vereinnahmte sie als Intercompany-Ertrag, die OpCo trug sie nirgends — 50 T€ im Jahr
+  //  Konzernergebnis aus dem Nichts. Der Check `ic_mgmt_fee` meldet ein Auseinanderlaufen.
+  OV(GA, "Management-Fee an die Holding (IC)", 4167),
   OV(FIN, "Buchhaltung & Controlling", 1500),
   OV(FIN, "Wirtschaftsprüfung / Audit", 1000),
   OV(FIN, "Recht & Compliance", 1000),
@@ -3320,7 +3364,7 @@ export const SEED: Domain = {
     tornado: [
       { id: "priceValue", delta: 0.15 }, { id: "yieldValue", delta: 0.10 }, { id: "qualValue", delta: 0.08 },
       { id: "priceRot", delta: 0.15 }, { id: "price.diesel_l", delta: 0.20 }, { id: "fertAll", delta: 0.20 },
-      { id: "wageAll", delta: 0.15 }, { id: "macro.euribor", delta: 0.30 }, { id: "subsidy.coupled_freilandgemuese", delta: 0.20 },
+      { id: "wageAll", delta: 0.15 }, { id: "macro.euribor", delta: 0.30 }, { id: "subsidy.factor", delta: 0.20 },
     ],
     scenarios: [],
   },
@@ -3484,7 +3528,17 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
   const bf = sprayBoomFactor(domain, scenarioId);
   const byId = new Map(domain.machineCatalog.map((m) => [m.id, m]));
   const gaenge = domain.arbeitsgaenge[cropId] ?? [];
-  const areaHa = domain.anbauplan.filter((a) => a.cropId === cropId).reduce((s, a) => s + a.areaHa, 0);
+  // NULLBASIS-FALLE. domain.anbauplan trägt die Flächen des STARTJAHRES; Tomate,
+  //  Zwiebel/Möhre, Sellerie, Süßkartoffel und Knoblauch stehen dort mit 0 ha, weil sie erst
+  //  2028 beginnen. Die Kalkulation zeigte für fünf von sieben Kulturen „0 ha" in der
+  //  Überschrift und 0 € in der Summenspalte — die Je-ha-Kosten stimmten, die absoluten nicht.
+  //  Bemessen wird auf dem ZIELJAHR: die Maßnahmenkette beschreibt den ausgebauten Betrieb.
+  const areaHa = (() => {
+    const kurve = cropAreasMemo(domain).areas[cropId];
+    const ziel = Math.max(0, (domain.growth?.years ?? 1) - 1);
+    if (kurve && kurve.length) return kurve[Math.min(ziel, kurve.length - 1)] ?? 0;
+    return domain.anbauplan.filter((a) => a.cropId === cropId).reduce((s, a) => s + a.areaHa, 0);
+  })();
   // Timing-Anker: editierbarer Aussaat-/Pflanzmonat (Katalog) → alles hängt relativ an S/E.
   const sow = entry?.sowMonth ?? SOW_MONTH[cropId] ?? entry?.plantingPeriod ?? 0;
   const harvRaw = entry?.harvestPeriods?.[0] ?? sow + 4;
@@ -3947,15 +4001,27 @@ export function deriveSprayFleet(domain: Domain, scenarioId: string, jahrIdx?: n
       : Math.max(...c.slice(0, jahre));
     areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + ha);
   }
+  // AUFRUNDEN ERST AM SCHLUSS. Vorher rundete jede Kultur einzeln auf eine GANZE Spritze auf
+  //  und belegte sie über ihr ganzes Fenster: Knoblauch braucht 0,02 Spritzen und bekam eine.
+  //  Bei sieben Kulturen mit überlappenden Sommerfenstern summierte sich das auf sieben
+  //  Maschinen, obwohl der echte Wochenbedarf in der Spitze unter einer liegt. Eine Spritze
+  //  kann in derselben Woche mehrere Schläge fahren, solange die Kapazität reicht — genau das
+  //  bildet der gebrochene Bedarf ab. Gerundet wird einmal, auf der Wochenspitze.
   for (const [cropId, w] of Object.entries(SPRAY_WINDOWS)) {
     const area = areaByCrop.get(cropId) ?? 0;
     if (area <= 0) continue;
-    const u = Math.max(1, Math.ceil(area / (w.rate * bf * tf * 6)));
+    const u = area / (w.rate * bf * tf * 6);          // Maschinen-Wochen, fraktioniert
     for (let k = w.kwS; k <= w.kwE; k++) weekly[k] += u;
   }
   let peakWeek = 0, peakDemand = 0;
   for (let k = 1; k <= 52; k++) if (weekly[k] > peakDemand) { peakDemand = weekly[k]; peakWeek = k; }
-  const total = Math.max(0, peakDemand);
+  // REDUNDANZ-RESERVE. Pflanzenschutz ist terminkritisch: ein Blight-Fenster wartet nicht auf
+  //  die Werkstatt. Deshalb eine zweite Maschine, sobald überhaupt gespritzt wird — der
+  //  Rechenbedarf allein ergäbe eine einzige Spritze für 2.334 ha ohne jeden Ausfallpuffer.
+  //  Über spray.reserve abschaltbar (0 = reiner Rechenbedarf).
+  const reserve = domain.assumptions["spray.reserve"]
+    ? Math.max(0, Math.round(resolveScalar(domain, "spray.reserve", scenarioId))) : 1;
+  const total = peakDemand > 0 ? Math.ceil(peakDemand) + reserve : 0;
   const sfShare = resolveScalar(domain, "spray.sf_share", scenarioId);
   const sf = total > 0 ? Math.min(total, Math.ceil(total * sfShare)) : 0;
   const gz = total - sf;
@@ -4418,110 +4484,13 @@ export type PersonnelProposal = {
   info: { fieldHours: number; machineCount: number; drivers: number; irrigatedHa: number;
           valueCropHa: number; lkwCount: number; logistik: number; dailyPeak: number };
 };
-export function derivePersonnelProposal(domain: Domain, scenarioId: string): PersonnelProposal {
-  const availH = resolveScalar(domain, "en.avail_h_year", scenarioId) || 2000;
-  const totalArea = domain.anbauplan.reduce((s, a) => s + a.areaHa, 0);
-  const areaByCrop = new Map<string, number>();
-  for (const a of domain.anbauplan) areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + a.areaHa);
-  const valueCropHa = ["tomate", "kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre"]
-    .reduce((s, c) => s + (areaByCrop.get(c) ?? 0), 0);
+/* ENTFERNT 31.07.2026: derivePersonnelProposal — der "Personalplaner", der aus den
+   Flaechen des STARTJAHRES eigene Kopfzahlen vorschlug und damit neben dem Treibermodell
+   eine zweite, widerspruechliche Personalrechnung fuehrte. Der Screen ist geloescht; die
+   Funktion hatte keinen Aufrufer mehr. Kopfzahlen kommen aus personalFteOfYear. */
 
-  // Feld-Fahrerstunden: Σ Ist-Stunden aller Feldmaschinen (Arbeitsgänge). Ein Gespann = 1 Fahrer.
-  let fieldHours = 0, machineCount = 0;
-  for (const m of domain.machineCatalog) {
-    if (m.mode !== "fixedFleet") continue;
-    machineCount += machineFleetCount(domain, m, scenarioId);
-    fieldHours += machineHoursPerYear(domain, m.id); // nur cEff-Maschinen liefern > 0
-  }
-  // Peak-Deckung: Saison-Ballung → nur ~62 % der Jahresstunden je Fahrer nutzbar für Feldarbeit.
-  const drivers = Math.max(1, Math.ceil(fieldHours / (availH * 0.62)));
-
-  const lkwCount = (() => { const m = domain.machineCatalog.find((x) => x.id === "lkw_sattel"); return m ? machineFleetCount(domain, m, scenarioId) : 0; })();
-  const logistik = Math.max(0, Math.ceil(lkwCount * 1.2)); // Schicht-/Reservefaktor
-  const irrigatedHa = totalArea; // Stufe 1: Anbauplan = beregnete Fläche
-
-  const recommend: Record<string, number> = {
-    "pers.leitung.n": Math.max(2, Math.round(2 + totalArea / 8000)),
-    "pers.stamm.n": drivers,
-    "pers.bewaesserung.n": Math.max(2, Math.round(irrigatedHa / 1100)),
-    "pers.lager.n": Math.max(2, Math.round(valueCropHa / 320)),
-    "pers.service.n": Math.max(1, Math.round(machineCount / 6)),
-    "pers.saison.n": Math.round((valueCropHa / 170) * 10) / 10,
-    "pers.prakt.n": Math.max(2, Math.round(totalArea / 1600)),
-  };
-  const dailyPeak = Math.round(valueCropHa * 0.9); // Ernte-Spitze Tagelöhner (in COGS)
-  return { recommend, info: { fieldHours: Math.round(fieldHours), machineCount, drivers, irrigatedHa, valueCropHa, lkwCount, logistik, dailyPeak } };
-}
-
-/* --------------------------------------------------------------------------
- * deriveMachineTCO — Maschinen-Vollkosten / TCO je Maschine (Anzeige).
- *  Fix (Flotte/Jahr): AfA (Neupreis×(1−Restw)/Nutzung) + kalk. Zins (Ø geb. Kapital × 4 %).
- *  Variabel €/h: Wartung/Vers/Rep/Schmier + Diesel + Fahrer + optional Service.
- *  hoursPerYear = Ist-Stunden aus den Arbeitsgängen (Referenz C). Alle Werte CENT.
- * ------------------------------------------------------------------------ */
-export function deriveMachineTCO(domain: Domain, scenarioId: string): TCOBreakdown[] {
-  const derived = deriveCapex(domain, scenarioId);
-  const dById = new Map(derived.map((d) => [d.machineId, d]));
-  const dieselPerL = resolveScalar(domain, "price.diesel_l", scenarioId);
-  const operatorPerH = resolveScalar(domain, "rate.labor_h", scenarioId);
-
-  const out: TCOBreakdown[] = [];
-  for (const m of domain.machineCatalog) {
-    const d = dById.get(m.id);
-    const amount = d?.amount ?? 0;   // CENT, Flotte gesamt
-    const count = d?.count ?? 0;
-
-    if (m.mode === "fixedFleet") {
-      const neupreis = machineUnitPriceCent(domain, m, scenarioId);
-      const restw = m.restwertPct ?? 0;
-      const yrs = m.nutzungYears ?? m.afaCommercialYears;
-      const afa = yrs > 0 ? count * (neupreis * (1 - restw)) / yrs : 0;
-      const interest = count * (neupreis * (1 + restw) / 2) * 0.04;
-      const insurance = 0; // Vers ist Betriebskosten (variabel), nicht fix
-      const fixedTotal = afa + interest + insurance;
-
-      // Service-Stunden: eigene Arbeitsgang-Stunden, sonst die des gekoppelten Anbaugeräts.
-      const hoursPerYear = serviceHoursPerYear(domain, m);
-      const isCarrier = !m.cEff; // CAPEX-only Zugschlepper (Diesel/Fahrer im Anbaugerät gefaltet)
-      let variablePerHour = { service: 0, repair: 0, diesel: 0, operator: 0, total: 0 };
-      let eurPerHour: number | null = null;
-      let eurPerHa: number | null = null;
-      if (hoursPerYear > 0) {
-        const service = m.serviceRateKey ? resolveScalar(domain, m.serviceRateKey, scenarioId) : 0;
-        // Träger zeigen NUR Fix + Service (Diesel/Rep/Fahrer stecken im Anbaugerät → kein Doppelzählen).
-        const repair = isCarrier ? 0 : (m.repairPerHourCent ?? 0) + (m.insurancePerHourCent ?? 0) + (m.lubePerHourCent ?? 0);
-        const diesel = isCarrier ? 0 : (m.dieselLPerHour ?? 0) * dieselPerL;
-        const operator = isCarrier ? 0 : operatorPerH;
-        const total = service + repair + diesel + operator;
-        variablePerHour = { service, repair, diesel, operator, total };
-        eurPerHour = fixedTotal / hoursPerYear + total;
-        eurPerHa = m.cEff ? eurPerHour / m.cEff : null;
-      }
-
-      out.push({
-        machineId: m.id, label: m.label, count, assetClass: m.assetClass,
-        hoursPerYear: hoursPerYear > 0 ? hoursPerYear : null,
-        fixedPerYear: { afa, interest, insurance, total: fixedTotal },
-        variablePerHour, eurPerHour, eurPerHa, serviceRateKey: m.serviceRateKey,
-      });
-    } else {
-      // Beregnung / Lager — nur Fixkosten (AfA + kalk. Zins + Versicherung), kein Stundenbezug.
-      const yrs = m.afaCommercialYears;
-      const afa = yrs > 0 ? (amount * 0.9) / yrs : 0;
-      const interest = amount * 0.02;
-      const insurance = amount * (m.insurancePct ?? 0);
-      const fixedTotal = afa + interest + insurance;
-      out.push({
-        machineId: m.id, label: m.label, count, assetClass: m.assetClass,
-        hoursPerYear: null,
-        fixedPerYear: { afa, interest, insurance, total: fixedTotal },
-        variablePerHour: { service: 0, repair: 0, diesel: 0, operator: 0, total: 0 },
-        eurPerHour: null, eurPerHa: null, serviceRateKey: m.serviceRateKey,
-      });
-    }
-  }
-  return out;
-}
+/* ENTFERNT 31.07.2026: deriveMachineTCO — nur von der geloeschten TCO-Ansicht benutzt;
+   die Kostenaufrisse stehen im Maschinenpark. */
 
 /* --------------------------------------------------------------------------
  * Delta 21.07. (2): Einsatzplanung — Wochenkalender KW 1–52 über alle Kulturen.
@@ -4542,26 +4511,11 @@ export type EinsatzPlan = {
 };
 
 const EN_OPS: EinsatzOp[] = [
-  { cropId: "weizen", label: "Aussaat Weizen", cls: "drill", kwS: 40, kwE: 43, rate: 60, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "weizen", label: "N-Düngung Weizen", cls: "fert", kwS: 8, kwE: 14, rate: 90, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "weizen", label: "PSM Weizen", cls: "spray", kwS: 15, kwE: 21, rate: 220, mode: "repeat", laborPerUnit: 1, hand: 0 },
-  { cropId: "weizen", label: "Ernte Weizen", cls: "combine", kwS: 27, kwE: 30, rate: 28, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "gerste_zw", label: "Aussaat Gerste", cls: "drill", kwS: 39, kwE: 42, rate: 55, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "gerste_zw", label: "Düngung Gerste", cls: "fert", kwS: 8, kwE: 14, rate: 85, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "gerste_zw", label: "PSM Gerste", cls: "spray", kwS: 14, kwE: 20, rate: 220, mode: "repeat", laborPerUnit: 1, hand: 0 },
-  { cropId: "gerste_zw", label: "Ernte Gerste", cls: "combine", kwS: 26, kwE: 29, rate: 26, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "soja_luzerne", label: "Aussaat Soja/Luzerne", cls: "drill", kwS: 16, kwE: 19, rate: 45, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "soja_luzerne", label: "PSM Soja/Luzerne", cls: "spray", kwS: 22, kwE: 26, rate: 220, mode: "repeat", laborPerUnit: 1, hand: 0 },
-  { cropId: "soja_luzerne", label: "Ernte Soja/Luzerne", cls: "combine", kwS: 39, kwE: 42, rate: 30, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "winterraps", label: "Aussaat Winterraps", cls: "drill", kwS: 35, kwE: 38, rate: 50, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "winterraps", label: "Düngung Winterraps", cls: "fert", kwS: 8, kwE: 14, rate: 90, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "winterraps", label: "PSM Winterraps", cls: "spray", kwS: 14, kwE: 20, rate: 220, mode: "repeat", laborPerUnit: 1, hand: 0 },
-  { cropId: "winterraps", label: "Ernte Winterraps", cls: "combine", kwS: 27, kwE: 29, rate: 28, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "mais", label: "Aussaat Körnermais", cls: "drill", kwS: 15, kwE: 18, rate: 40, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "mais", label: "Düngung Körnermais", cls: "fert", kwS: 17, kwE: 21, rate: 80, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "mais", label: "PSM Körnermais", cls: "spray", kwS: 20, kwE: 25, rate: 220, mode: "repeat", laborPerUnit: 1, hand: 0 },
-  { cropId: "mais", label: "Ernte Körnermais", cls: "combine", kwS: 40, kwE: 43, rate: 24, mode: "single", laborPerUnit: 1, hand: 0 },
-  { cropId: "mais", label: "Transport Körnermais", cls: "transp", kwS: 40, kwE: 44, rate: 60, mode: "single", laborPerUnit: 1, hand: 0 },
+  // ENTFERNT 31.07.2026: 20 Zeilen Ackerbau (Weizen, Gerste, Soja/Luzerne, Winterraps, Mais).
+  //  Diese Kulturen gehörten zum Gruppenmodell und stehen im Solo-Anbauplan mit 0 ha; die
+  //  Schleife übersprang sie, aber ihre KLASSEN standen weiter in der Tabelle — allen voran
+  //  der Mähdrescher mit drei Einheiten und leerem Balken. Mit ihnen entfällt die Klasse
+  //  „combine" ganz: es gibt kein Getreide mehr zu dreschen.
   { cropId: "kartoffel_pommes", label: "Pflanzung One-Pass (Pommes)", cls: "gross", kwS: 12, kwE: 16, rate: 5, mode: "single", laborPerUnit: 2, hand: 0 },
   { cropId: "kartoffel_pommes", label: "PSM Blight (Pommes)", cls: "spray", kwS: 20, kwE: 33, rate: 270, mode: "repeat", laborPerUnit: 1, hand: 0 },
   { cropId: "kartoffel_pommes", label: "Krautschlagen (Pommes)", cls: "gross", kwS: 33, kwE: 35, rate: 40, mode: "single", laborPerUnit: 1, hand: 0 },
@@ -4589,6 +4543,24 @@ const EN_OPS: EinsatzOp[] = [
   { cropId: "knollensellerie", label: "Pflanzung Knollensellerie", cls: "pflanz", kwS: 16, kwE: 20, rate: 9, mode: "single", laborPerUnit: 2, hand: 60 },
   { cropId: "knollensellerie", label: "PSM Knollensellerie", cls: "spray", kwS: 20, kwE: 38, rate: 250, mode: "repeat", laborPerUnit: 1, hand: 0 },
   { cropId: "knollensellerie", label: "Ernte Knollensellerie (Klemmband)", cls: "tomh", kwS: 41, kwE: 45, rate: 5, mode: "single", laborPerUnit: 3, hand: 90 },
+  // ERGÄNZT 31.07.2026 — DÜNGUNG. Der Plan kannte Düngeüberfahrten nur für die entfallenen
+  //  Ackerbaukulturen; für die sieben Wertkulturen fehlten sie vollständig, obwohl der
+  //  Bredal K135 in jedem Arbeitsgang steht. Fenster: von der Pflanzung bis kurz vor die
+  //  Ernte (Kulturkalender). Leistung 180 ha/Tag = 18,62 ha/h × 10 Feldstunden.
+  { cropId: "kartoffel_pommes", label: "Düngung (Pommes)", cls: "fert", kwS: 11, kwE: 26, rate: 180, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "kartoffel_chips", label: "Düngung (Chips)", cls: "fert", kwS: 12, kwE: 27, rate: 180, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "tomate", label: "Düngung Tomate", cls: "fert", kwS: 14, kwE: 30, rate: 180, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "zwiebel_moehre", label: "Düngung Zwiebel/Möhre", cls: "fert", kwS: 13, kwE: 28, rate: 180, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "suesskartoffel", label: "Düngung Süßkartoffel", cls: "fert", kwS: 18, kwE: 34, rate: 180, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "knoblauch", label: "Düngung Knoblauch (Frühjahr)", cls: "fert", kwS: 8, kwE: 20, rate: 180, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "knollensellerie", label: "Düngung Knollensellerie", cls: "fert", kwS: 15, kwE: 34, rate: 180, mode: "single", laborPerUnit: 1, hand: 0 },
+  // ERGÄNZT 31.07.2026 — ABTRANSPORT. Transportzeilen gab es nur für Kartoffel, Tomate und
+  //  den entfallenen Mais. Vier Wertkulturen ernteten, ohne dass jemand die Ware wegfuhr —
+  //  und genau ihre Erntefenster liegen im Oktober übereinander.
+  { cropId: "zwiebel_moehre", label: "Transport Zwiebel/Möhre", cls: "transp", kwS: 26, kwE: 40, rate: 55, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "suesskartoffel", label: "Transport Süßkartoffel", cls: "transp", kwS: 40, kwE: 45, rate: 55, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "knoblauch", label: "Transport Knoblauch", cls: "transp", kwS: 27, kwE: 31, rate: 55, mode: "single", laborPerUnit: 1, hand: 0 },
+  { cropId: "knollensellerie", label: "Transport Knollensellerie", cls: "transp", kwS: 41, kwE: 46, rate: 55, mode: "single", laborPerUnit: 1, hand: 0 },
 ];
 
 /** Kanonisches NEOS_CROP-Farbsystem (assets/crop-colors.js) — je Kultur eine Marke.
@@ -4619,18 +4591,45 @@ function enKwEnd(op: EinsatzOp, harvestStaffel: number, saatStaffel: number): nu
   return op.kwE;
 }
 
-function enUnitsOf(op: EinsatzOp, area: number, tf: number, kwEnd: number): number {
+/** BEDARF eines Arbeitsgangs in MASCHINEN — bewusst FRAKTIONIERT.
+ *
+ *  Bis 31.07.2026 rundete diese Funktion jeden Arbeitsgang auf eine GANZE Maschine auf, und
+ *  zwar für jede Woche seines Fensters. Eine Kultur, die rechnerisch 0,03 Streuer über sechzehn
+ *  Wochen braucht, belegte damit sechzehn Wochen lang einen ganzen Streuer. Bei sieben Kulturen
+ *  mit überlappenden Fenstern kam die Ampel auf 700 % Auslastung — nicht, weil es eng wäre,
+ *  sondern weil siebenmal aufgerundet wurde. Genau dagegen waren die Flottenkonstanten
+ *  (en.fert = 2, en.transp = 3 …) hochgesetzt worden: „damit die Einsatzplanung out-of-the-box
+ *  engpassfrei ist". Zwei Fehler, die sich gegenseitig verdeckten.
+ *
+ *  Der Bedarf bleibt jetzt gebrochen und wird erst je KLASSE und WOCHE summiert und dann gegen
+ *  die Flotte gestellt. Eine Maschine kann in derselben Woche mehrere Kulturen bedienen, solange
+ *  ihre Kapazität reicht — genau so arbeitet der Betrieb auch. */
+function enDemandOf(op: EinsatzOp, area: number, tf: number, kwEnd: number): number {
   if (area <= 0) return 0;
-  if (op.mode === "repeat") return Math.max(1, Math.ceil(area / (op.rate * tf * 6)));
+  // "repeat": jede Woche des Fensters eine Überfahrt (PSM-Spritzfolge).
+  if (op.mode === "repeat") return area / (op.rate * tf * 6);
+  // "single": EINE Überfahrt, verteilt über die Wochen des Fensters.
   const weeks = Math.max(1, kwEnd - op.kwS + 1);
-  return Math.max(1, Math.ceil(area / (op.rate * tf * 6 * weeks)));
+  return area / (op.rate * tf * 6 * weeks);
 }
 
 /** Bottom-up Wertkultur-Flotte: Pflanzmaschinen + Ernter (Tomate + Zwiebel/Möhre, ohne Kartoffel). */
 export function deriveValueFleet(domain: Domain, scenarioId: string): { plant: number; harv: number; plantArea: number; harvArea: number } {
   const tf = shiftFactorOf(domain, scenarioId);
+  // NULLBASIS-FALLE, die letzte im Bestand. Tomate und Zwiebel/Möhre stehen im Anbauplan
+  //  des STARTJAHRES mit 0 ha — sie beginnen 2028. plantArea war damit 0, plant und harv
+  //  fielen auf 0, und der Einsatzplan zeigte für „Gemüse-/Tomaten-Pflanzmaschinen" und
+  //  „Tomaten-/Gemüseernter" die Notfallzahl 1 aus Math.max(1, …) statt des echten Bedarfs.
+  //  Bemessen wird auf dem ZIELJAHR — der Einsatzplan zeigt die Saisonspitze des ausgebauten
+  //  Betriebs, genauso wie deriveEinsatzplan es weiter unten schon tut.
+  const areasVF = cropAreasMemo(domain).areas;
+  const zielVF = Math.max(0, (domain.growth?.years ?? 1) - 1);
   const areaByCrop = new Map<string, number>();
-  for (const a of domain.anbauplan) areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + a.areaHa);
+  for (const a of domain.anbauplan) {
+    const c = areasVF[a.cropId];
+    const ha = c ? (c[Math.min(zielVF, c.length - 1)] ?? 0) : a.areaHa;
+    areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + ha);
+  }
   const plantArea = (areaByCrop.get("tomate") ?? 0) + (areaByCrop.get("zwiebel_moehre") ?? 0);
   const harvArea = plantArea;
   const transRate = resolveScalar(domain, "val.trans_rate", scenarioId) || 1;
@@ -4682,15 +4681,19 @@ export function deriveEinsatzplan(domain: Domain, scenarioId: string): EinsatzPl
   // Bottom-up-getriebene Klassen: Spritzen (fenstergetrieben), Legekombi/Roder (Kartoffel-Kette),
   // Pflanz/Ernter (Wertkultur-Bottom-up). Übrige Klassen: editierbare Basiszahl × stageFactor.
   const classes: EinsatzClass[] = [
+    // ALLE Klassen zählen jetzt echte Maschinen aus dem Katalog. Sä-/Legetechnik,
+    //  Düngerstreuer und Transport standen zuvor auf Basiszahlen (en.drill/en.fert/
+    //  en.transp) aus dem Gruppenmodell und stimmten mit dem Maschinenpark nicht überein:
+    //  „Transport / Hakenlift" zeigte 3 Einheiten, im Katalog stehen 1 Hakenlift und
+    //  1 Shuttle. Der Mähdrescher ist ganz entfallen (kein Getreide mehr).
     { key: "gross", label: "Großschlepper / Legekombi", units: Math.max(1, cnt("onepass") + scaled("en.gross_extra")) },
-    { key: "drill", label: "Sä-/Einzelkorntechnik", units: scaled("en.drill") },
+    { key: "drill", label: "Sä-/Legetechnik (Knoblauch, Beetsaat)", units: Math.max(1, cnt("knobl_lege") + cnt("gem_saat")) },
     { key: "pflanz", label: "Gemüse-/Tomaten-Pflanzmasch.", units: Math.max(1, vf.plant) },
     { key: "spray", label: "Spritzen (Mischpark)", units: Math.max(1, spray.total) },
-    { key: "fert", label: "Düngerstreuer", units: scaled("en.fert") },
-    { key: "combine", label: "Mähdrescher", units: scaled("en.combine") },
+    { key: "fert", label: "Düngerstreuer", units: Math.max(1, cnt("streuer")) },
     { key: "roder", label: "Kartoffelroder", units: Math.max(1, cnt("roder_ropa")) },
     { key: "tomh", label: "Tomaten-/Gemüseernter", units: Math.max(1, vf.harv) },
-    { key: "transp", label: "Transport / Hakenlift", units: scaled("en.transp") },
+    { key: "transp", label: "Transport / Hakenlift", units: Math.max(1, cnt("transport") + cnt("shuttle")) },
   ];
   const demand: Record<string, number[]> = {};
   for (const c of classes) demand[c.key] = new Array(53).fill(0);
@@ -4701,11 +4704,14 @@ export function deriveEinsatzplan(domain: Domain, scenarioId: string): EinsatzPl
     const area = areaByCrop.get(op.cropId) ?? 0;
     if (area <= 0) continue;
     const kwEnd = enKwEnd(op, harvestStaffel, saatStaffel);
-    const u = enUnitsOf(op, area, tf, kwEnd);
+    const bedarf = enDemandOf(op, area, tf, kwEnd);
+    // Anzeige: aufgerundet auf ganze Maschinen (man fährt keine halbe). Gerechnet wird mit dem
+    //  gebrochenen Bedarf — sonst zählt jede Kultur eine ganze Maschine, die sie nie auslastet.
+    const u = Math.max(1, Math.ceil(bedarf));
     ops.push({ ...op, kwE: kwEnd, units: u, color: EN_CROP_COLOR[op.cropId] ?? "#7BB661" });
     for (let w = op.kwS; w <= kwEnd && w <= 52; w++) {
-      if (demand[op.cls]) demand[op.cls][w] += u;
-      labor[w] += u * op.laborPerUnit * shifts + (op.hand ? (op.hand * shifts) / Math.max(1, kwEnd - op.kwS + 1) : 0);
+      if (demand[op.cls]) demand[op.cls][w] += bedarf;
+      labor[w] += bedarf * op.laborPerUnit * shifts + (op.hand ? (op.hand * shifts) / Math.max(1, kwEnd - op.kwS + 1) : 0);
     }
   }
 
@@ -4828,44 +4834,7 @@ export function sizedRequired(domain: Domain, id: string, scenarioId: string): n
   return cap > 0 ? Math.max(0, Math.ceil(hours / cap)) : 0;
 }
 
-/** Bottom-up-Maschinensizing + Auslastungs-/Reserve-Analyse (über-/untermechanisiert?).
- *  Je Klasse: benötigtes Minimum (Schlagkraft), Bestand, Plan-Park, Auslastung ggü. Bestand
- *  und Park, Reserve/Defizit, Status. Treibt CAPEX & Personal (machineFleetCount). */
-export function deriveFleetSizing(domain: Domain, scenarioId: string): { machines: FleetSize[]; tractors: FleetSize[] } {
-  const tf = shiftFactorOf(domain, scenarioId);
-  const hpd = resolveScalar(domain, "en.hours_day", scenarioId) || 10;
-  const specById = new Map(domain.machineCatalog.map((m) => [m.id, m]));
-  const uniqCrops = (id: string): string[] => {
-    const s = new Set<string>();
-    for (const a of domain.anbauplan) if ((domain.arbeitsgaenge[a.cropId] ?? []).some((x) => x.m === id)) s.add(a.cropId);
-    return [...s];
-  };
-  const mk = (id: string, isT: boolean): FleetSize => {
-    const m = specById.get(id);
-    const feldTage = feldTageOf(domain, id);
-    const cEff = m?.cEff ?? 0;
-    const demandHours = fleetDemandHours(domain, id);
-    const capPerUnitHours = hpd * tf * Math.max(1, feldTage);
-    const required = capPerUnitHours > 0 ? Math.max(0, Math.ceil(demandHours / capPerUnitHours)) : 0;
-    const owned = Math.max(0, Math.round(m?.ownedUnits ?? 0));
-    const park = m ? machineFleetCount(domain, m, scenarioId) : required;
-    const utilOwnedPct = owned > 0 ? (demandHours / (owned * capPerUnitHours)) * 100 : Infinity;
-    const utilParkPct = park > 0 ? (demandHours / (park * capPerUnitHours)) * 100 : 0;
-    const reserve = park - required;
-    const status: FleetSize["status"] = required > owned ? "under" : park > required ? "reserve" : "min";
-    return {
-      machineId: id, label: m?.label ?? id, manufacturer: m?.manufacturer, crops: isT ? [] : uniqCrops(id),
-      cEff, feldTage, demandHours: Math.round(demandHours), capPerUnitHours: Math.round(capPerUnitHours),
-      required, owned, newUnits: Math.max(0, required - owned), park, utilOwnedPct, utilParkPct, reserve, status, isTractor: isT,
-    };
-  };
-  // Nur Maschinen zeigen, die im (ggf. gescopten) Katalog existieren — in Stufe 1 (nur Ackerbau)
-  //  sind die Wertkultur-Maschinen (Roder/Pflanz/Gemüse) aus dem Katalog entfernt und tauchen NICHT auf.
-  return {
-    machines: [...SIZED_MACHINE_IDS].filter((id) => specById.has(id)).map((id) => mk(id, false)),
-    tractors: [...SIZED_TRACTOR_IDS].filter((id) => specById.has(id)).map((id) => mk(id, true)),
-  };
-}
+/* ENTFERNT 31.07.2026: deriveFleetSizing — Sizing-Werkbank geloescht, kein Aufrufer. */
 
 /* ==========================================================================
  * MASCHINENPARK — Bedarf je Planjahr, Eigenkosten je ha, Kauf-/Miet-Vergleich.
@@ -5341,9 +5310,26 @@ export function deriveContribution(
   // Flächen aus dem TATSÄCHLICHEN (ggf. gescopten) Anbauplan — nicht aus dem fixen buildAnbauplan(stage),
   //  sonst zeigt der Kulturmix bei STUFE 1 (Cash-only) Wertkulturen, die in der GuV nicht existieren.
   const areaByCrop = new Map(domain.anbauplan.map((a) => [a.cropId, a.areaHa]));
-  const capPerHa = resolveScalar(domain, "subsidy.per_ha", sc);
-  const coupledPerHa = resolveScalar(domain, "subsidy.coupled_freilandgemuese", sc);
-  const gersteZwPerHa = resolveScalar(domain, "rev.gerste_zweitfrucht", sc); // 0 falls fehlend
+  // FÖRDERUNG AUS DEM SUBVENTIONS-REGISTER, nicht aus zwei losgelösten Annahmen.
+  //  Bis 31.07.2026 rechnete diese Ansicht mit `subsidy.per_ha` (205 €/ha) und
+  //  `subsidy.coupled_freilandgemuese` (1.612 €/ha, nur Tomate und Zwiebel/Möhre). Beide Keys
+  //  liest die Engine nirgends — sie zahlt BISS 100,66 + Öko 70,00 = 170,66 €/ha auf die
+  //  gesamte Fläche und die gekoppelte Stützung auf FÜNF Kulturen (Tomate, Zwiebel/Möhre,
+  //  Sellerie, Süßkartoffel, Knoblauch). Der Deckungsbeitrag je ha wich damit für drei
+  //  Kulturen um 1.607 €/ha von der GuV ab, in die andere Richtung um 34 €/ha.
+  const subsidyFactor = domain.assumptions["subsidy.factor"] ? resolveScalar(domain, "subsidy.factor", sc) : 1;
+  const subsidyPerHaOf = (cropId: string): number => {
+    let cent = 0;
+    for (const s of domain.subsidies ?? []) {
+      if (s.active === false || s.basis !== "per_ha") continue;
+      // Staffelprämien (firstHaCap) lassen sich nicht je Hektar ausweisen — sie hängen an der
+      //  Betriebsgröße, nicht an der Kultur. Sie bleiben hier außen vor (heute alle inaktiv).
+      if (s.firstHaCap != null && s.firstHaCap > 0) continue;
+      if (s.cropIds && s.cropIds.length && !s.cropIds.includes(cropId)) continue;
+      cent += s.ratePerHaCent ?? 0;
+    }
+    return cent * subsidyFactor;
+  };
   const agronomyPerHaCent = (cat: CatalogEntry): number => {
     let cent = 0;
     for (const op of cat.ops) for (const ln of op.lines) cent += ln.quantityPerHa * resolveScalar(domain, ln.unitCostKey, sc);
@@ -5362,11 +5348,9 @@ export function deriveContribution(
     const y = resolveScalar(domain, cat.yieldKey, sc);       // t/ha
     const price = resolveScalar(domain, cat.priceKey, sc);   // CENT/t
     const loss = resolveScalar(domain, cat.lossKey, sc);     // Rate
-    let revenueCent = Math.round(area * y * price * (1 - loss));
-    if (cropId === "gerste_zw" && gersteZwPerHa) revenueCent += Math.round(area * gersteZwPerHa);
+    const revenueCent = Math.round(area * y * price * (1 - loss));
     const isValue = VALUE_CROP_IDS.includes(cropId);
-    const coupled = cropId === "tomate" || cropId === "zwiebel_moehre" ? coupledPerHa : 0;
-    const subsidyCent = Math.round(area * (capPerHa + coupled));
+    const subsidyCent = Math.round(area * subsidyPerHaOf(cropId));
     const cogsCent = Math.round(area * (agronomyPerHaCent(cat) + machineOpCostPerHaCent(domain, cropId, sc)));
     const contributionCent = revenueCent + subsidyCent - cogsCent;
     const contribPerHaCent = area > 0 ? contributionCent / area : 0;
@@ -6053,7 +6037,6 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   };
   if (years > 1) {
     for (const cr of CROP_IDS) curveInfl(`price.${cr}`, iOut);
-    curveInfl("rev.gerste_zweitfrucht", iOut);
     for (const k of ["price.per_euro", "psm.per_euro", "price.diesel_l", "irrig.eur_mm",
       "fert.n", "fert.p", "fert.k", "fert.s", "fert.n_fert", "fert.p_fert", "fert.k_fert"]) curveInfl(k, iIn);
     for (const cr of CROP_IDS) curveInfl(`seed.${cr}`, iIn);
@@ -6101,7 +6084,6 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       scaleAssum(`price.${cr}`, ov.priceFactor(cr));
     }
     scaleAssum("yield.soja_zw", ov.yieldFactor("soja_luzerne"));      // Zweitfrucht-Soja (secondCrop)
-    scaleAssum("rev.gerste_zweitfrucht", ov.priceFactor("gerste_zw"));
 
     // (3) WASSERNORM. Die mm/ha je Kultur sind Stammdaten; kostenseitig ist eine höhere
     //  Norm äquivalent zu einem proportional höheren €/mm·ha-Satz.
@@ -6114,8 +6096,10 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // Subventionen — je Jahr als Pauschale, Anspruchsfläche KULTURSCHARF (Politik-Kurven), Cap absolut.
   //  HINWEIS: Der frühere synthetische "sub-gerste-zw"-Strom ist ENTFERNT — der Doppel-Soja-Erlös
   //  läuft vollständig über secondCrop in der Engine (SSOT, sonst Doppelzählung ~+1,7 M€/a im Endausbau).
+  // Ein Regler auf alle Registersaetze (Foerderrisiko-Szenario), Default 1,0.
+  const subsidyFactorMY = domain.assumptions["subsidy.factor"] ? resolveScalar(domain, "subsidy.factor", scenarioId) : 1;
   const baseSubs: { s: Subsidy; baseHa: number; perHa: number }[] =
-    domain.subsidies.map((s) => ({ s, baseHa: areaFor(s.cropIds), perHa: s.ratePerHaCent ?? 0 }));
+    domain.subsidies.map((s) => ({ s, baseHa: areaFor(s.cropIds), perHa: (s.ratePerHaCent ?? 0) * subsidyFactorMY }));
   // Förderfähige GESAMTfläche je Jahr = beregnet + trocken (Σ aller Kultur-Flächenkurven). Die
   //  flächenpauschalen CAP-Direktzahlungen (BISS/Eco) gelten für die gesamte bewirtschaftete
   //  Ackerfläche — auch die Trockenrotation ist förderfähig (sonst ~1 Mio€/a Unterzählung).
@@ -6581,8 +6565,8 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "spray.pivot_ha", "spray.boom48_prem", "spray.res48_hair",
   ]},
   { group: "Einsatzplanung & Wertkultur-Bottom-up", keys: [
-    "en.shifts", "en.shift_eff", "en.hours_day", "en.harvest_staffel", "en.saat_staffel", "en.staff", "en.avail_h_year",
-    "en.drill", "en.fert", "en.combine", "en.transp", "en.gross_extra",
+    "en.shifts", "en.shift_eff", "en.hours_day", "en.harvest_staffel", "en.saat_staffel", "en.avail_h_year",
+    "en.gross_extra",
     "val.trans_rate", "val.trans_win", "val.tomh_rate", "val.tomh_win",
   ]},
   { group: "TCO Maschinenkosten", keys: ["tco.discount", "tco.res_trail", "tco.res_self", "tco.hold_years", "tco.zug_8rx.service_h", "tco.ops_6r.service_h", "tco.maehdr.service_h"] },
@@ -6609,6 +6593,6 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "store.active", "store.capex_shell", "store.capex_tech", "store.months", "store.from_month", "store.service_mode", "store.fee_per_t_month", "store.energy_per_t_month",
     "store.handling_per_t", "store.loss_rate",
   ] },
-  { group: "Subventionen", keys: ["subsidy.per_ha", "subsidy.coupled_freilandgemuese", "rev.gerste_zweitfrucht"] },
+  { group: "Subventionen", keys: ["subsidy.factor"] },
   { group: "Covenants", keys: ["covenant.dscr_min", "covenant.leverage_max"] },
 ];

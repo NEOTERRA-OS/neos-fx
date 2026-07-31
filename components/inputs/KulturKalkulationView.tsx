@@ -373,7 +373,7 @@ export function KulturKalkulationView() {
         <div className="overflow-x-auto px-2 py-2">
           <table className="w-full text-[12px]">
             <thead><tr>
-              <th className={th + " text-left"}>{t("Kultur")}</th><th className={th + " text-right"}>{t("Fläche ha")}</th>
+              <th className={th + " text-left"}>{t("Kultur")}</th><th className={th + " text-right"}>{t("Fläche ha (Endausbau)")}</th>
               <th className={th + " text-right"}>€/ha</th><th className={th + " text-right"}>{t("Maschinen €/ha")}</th>
               <th className={th + " text-right"}>{t("BM €/ha")}</th><th className={th + " text-right"}>Diesel l/ha</th>
               <th className={th + " text-right"}>{t("Fahrer Ak-h")}</th><th className={th + " text-right"}>{t("Σ Direktkosten")}</th>

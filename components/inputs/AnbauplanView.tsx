@@ -62,7 +62,6 @@ export function AnbauplanView() {
   const { domain, view, patch } = useModelStore();
   const sc = view.scenarioId;
   const [tab, setTab] = React.useState<"anbau" | "ertraege" | "preise">("anbau");
-  const stageCashOnly = false;   // Ackerbau-Benchmark entfallen: es gibt nur den Wertkultur-Plan
   const planDomain = domain;
   const plan = planDomain.anbauplan;
   // ZUSAMMENGEFÜHRT 31.07.2026: der Skalierungspfad steckt jetzt in DIESER Tabelle. Eine Kultur,
@@ -73,14 +72,21 @@ export function AnbauplanView() {
   const myAreas = React.useMemo(() => deriveCropAreasMY(domain).areas, [domain]);
   const haOf = (cropId: string, y: number) => Math.round(myAreas[cropId]?.[Math.min(y, jahre.length - 1)] ?? 0);
   // Trockenrotation läuft jetzt NATIV im Anbauplan (pool:"dryland"). Aufteilung rein über das pool-Feld.
+  // NULLBASIS-FALLE im Kopf und in der Summenspalte. `e.areaHa` ist die Flaeche des
+  //  STARTJAHRES; fuenf der sieben Kulturen beginnen erst 2028 und stehen dort mit 0 ha.
+  //  Die Kopfzeile meldete deshalb "Gesamtbetrieb Sigma 300 ha" fuer einen Plan, dessen
+  //  Jahresspalten direkt daneben bis 2.334 ha laufen, und die Spalte "Sigma EUR Jahr 1"
+  //  stand fuer diese Kulturen auf null. Bezug ist jetzt das ZIELJAHR.
+  const zielJ = jahre.length - 1;
+  const haZiel = (cropId: string) => myAreas[cropId]?.[Math.min(zielJ, (myAreas[cropId]?.length ?? 1) - 1)] ?? 0;
   const agroOf = (e: { cropId: string; areaHa: number }) => {
     const entry = planDomain.catalog.find((c) => c.cropId === e.cropId);
-    return (entry ? fieldCostPerHaCent(planDomain, entry, sc) : 0) * e.areaHa;
+    return (entry ? fieldCostPerHaCent(planDomain, entry, sc) : 0) * haZiel(e.cropId);
   };
   const irrRows = plan.filter((e) => e.pool !== "dryland");
   const dryPlanRows = plan.filter((e) => e.pool === "dryland");
-  const beregHa = irrRows.reduce((a, e) => a + e.areaHa, 0);
-  const dryHa = dryPlanRows.reduce((a, e) => a + e.areaHa, 0);
+  const beregHa = irrRows.reduce((a, e) => a + haZiel(e.cropId), 0);
+  const dryHa = dryPlanRows.reduce((a, e) => a + haZiel(e.cropId), 0);
   const totalHa = beregHa + dryHa;
   const beregAgroCent = irrRows.reduce((a, e) => a + agroOf(e), 0);
   const dryAgroCent = dryPlanRows.reduce((a, e) => a + agroOf(e), 0);
@@ -101,16 +107,11 @@ export function AnbauplanView() {
     <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
         <div>
-          <h2 className="text-[14px] font-semibold">{stageCashOnly ? t("Anbauplan (Stufe 1: reiner Ackerbau)") : t("Anbauplan — Kulturen & Flächen")}</h2>
+          <h2 className="text-[14px] font-semibold">{t("Anbauplan — Kulturen & Flächen")}</h2>
           <div className="text-[10.5px] text-nx-text-muted">{showDry ? t("Beregnete Kulturen + unberegnete Trockenrotation in einer Tabelle. Jede Kultur mit eigener Bottom-up-Kalkulation.") : t("Agronomie-Kosten aus dem Katalog (Maschinen separat).")}</div>
         </div>
-        <span className="caption text-[10.5px] text-nx-text-muted">{t("Gesamtbetrieb · Σ")} {fmtNumber(totalHa, 0)} ha</span>
+        <span className="caption text-[10.5px] text-nx-text-muted">{t("Gesamtbetrieb im Endausbau · Σ")} {fmtNumber(totalHa, 0)} ha</span>
       </div>
-      {stageCashOnly && (
-        <div className="border-b px-4 py-2 text-[11px]" style={{ borderColor: "var(--nx-border)", background: "color-mix(in srgb, var(--nx-warn, #C9A227) 12%, transparent)", color: "var(--nx-warn, #C9A227)" }}>
-          {t("Stufe 1 zeigt die abgeleitete Benchmark-Rotation (reiner Ackerbau, ohne Wertkulturen) — schreibgeschützt. Zum Bearbeiten des Basis-Plans Stufe 1a / 2b / 3c wählen.")}
-        </div>
-      )}
       <div className="overflow-x-auto px-2 py-2">
         <table className="w-full text-[12.5px]">
           <thead>
@@ -121,7 +122,7 @@ export function AnbauplanView() {
               <th className="px-2 py-2 text-right">{t("Ernte (M)")}</th>
               {jahre.map((y) => <th key={y} className="px-1.5 py-2 text-right">{START_YEAR + y}</th>)}
               <th className="px-2 py-2 text-right">{t("€/ha")}</th>
-              <th className="px-2 py-2 text-right">{t("Σ € Jahr 1")}</th>
+              <th className="px-2 py-2 text-right">{t("Σ € Endausbau")}</th>
               <th className="px-1 py-2 text-center" title={t("Linear vom Start- auf den Zielwert hochlaufen lassen")}>↗</th>
               <th className="px-2 py-2"></th>
             </tr>
@@ -134,9 +135,7 @@ export function AnbauplanView() {
               return (
                 <tr key={e.id} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
                   <td className="px-2 py-2">
-                    {stageCashOnly ? (
-                      <span className="font-semibold" style={{ color: "var(--nx-text-secondary)" }}>{cropLabel}</span>
-                    ) : (
+                    {(
                       <select className="rounded-control border px-2 text-[12.5px]" style={{ height: 34, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)", fontWeight: 600 }}
                         value={e.cropId}
                         onChange={(ev) => patch((d) => { d.anbauplan[i].cropId = ev.target.value; })}>
@@ -146,9 +145,7 @@ export function AnbauplanView() {
                   </td>
                   <td className="px-2 py-2"><BeregBadge kind={e.pool === "dryland" ? "trocken" : "beregnet"} /></td>
                   <td className="px-2 py-2 text-right">
-                    {stageCashOnly
-                      ? <span className="num text-nx-text-secondary">{e.plantingPeriod}</span>
-                      : <NumCell value={e.plantingPeriod} width={56} onCommit={(n) => patch((d) => { d.anbauplan[i].plantingPeriod = Math.round(n); })} />}
+                    <NumCell value={e.plantingPeriod} width={56} onCommit={(n) => patch((d) => { d.anbauplan[i].plantingPeriod = Math.round(n); })} />
                   </td>
                   <td className="num px-2 py-2 text-right text-nx-text-secondary">{e.harvestPeriods.join(", ")}</td>
                   {jahre.map((y) => (
@@ -158,7 +155,7 @@ export function AnbauplanView() {
                     </td>
                   ))}
                   <td className="num px-2 py-2 text-right">{fmtMoney(perHa)}</td>
-                  <td className="num px-2 py-2 text-right font-semibold">{fmtMoney(perHa * e.areaHa)}</td>
+                  <td className="num px-2 py-2 text-right font-semibold">{fmtMoney(perHa * haZiel(e.cropId))}</td>
                   <td className="px-1 py-2 text-center">
                     <button title={t("Linear vom Start- auf den Zielwert hochlaufen lassen")}
                       onClick={() => patch((d) => rampCropPath(d, e.cropId, jahre.length))}
@@ -166,10 +163,8 @@ export function AnbauplanView() {
                       style={{ height: 24, borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)", background: "var(--nx-surface)" }}>↗</button>
                   </td>
                   <td className="px-2 py-2 text-right">
-                    {!stageCashOnly && (
-                      <button className="text-[11px] text-nx-error" title={t("Zeile entfernen")}
-                        onClick={() => patch((d) => { d.anbauplan.splice(i, 1); })}><X size={13} strokeWidth={2.5} aria-hidden /></button>
-                    )}
+                    <button className="text-[11px] text-nx-error" title={t("Zeile entfernen")}
+                      onClick={() => patch((d) => { d.anbauplan.splice(i, 1); })}><X size={13} strokeWidth={2.5} aria-hidden /></button>
                   </td>
                 </tr>
               );
@@ -205,7 +200,7 @@ export function AnbauplanView() {
         </table>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t px-4 py-2" style={{ borderColor: "var(--nx-border)" }}>
-        {!stageCashOnly && (
+        {(
           <button
             className="rounded-control border px-3 text-[12px] font-semibold"
             style={{ height: 34, borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)", background: "var(--nx-surface)" }}
@@ -216,9 +211,7 @@ export function AnbauplanView() {
           >{t("+ Kultur hinzufügen")}</button>
         )}
         <span className="text-[11px] text-nx-text-muted">
-          {stageCashOnly
-            ? t("Stufe 1: reine Cash-Crop-Rotation (abgeleitet, nicht editierbar).")
-            : t("Fläche ändern → Kosten & Maschinen rechnen automatisch nach.")}
+          {t("Fläche ändern → Kosten & Maschinen rechnen automatisch nach.")}
           {showDry ? " " + t("Trockenkulturen laufen nativ mit eigener Kalkulation (☀ trocken); Maschinen über die volle Fläche.") : ""}
         </span>
       </div>
@@ -258,12 +251,19 @@ function ProduktionsTabelle() {
   const sc = view.scenarioId;
   // Native Zeilen: beregnet + trocken kommen beide aus dem Anbauplan (pool). Die Trockenkulturen
   // (weizen_dry …) tragen ihre eigenen Rain-fed-Ertragsannahmen — kein separater Abschlag mehr.
+  // Flaeche je PLANJAHR statt e.areaHa (Startjahr). Fuenf der sieben Kulturen beginnen 2028
+  //  und standen hier mit 0 ha, 0 t und 0 % Anteil — die Tabelle zeigte den Betrieb von 2027
+  //  und nannte ihn "Anbaustruktur & Produktion". Jahr waehlbar, Vorbelegung Endausbau.
+  const my = React.useMemo(() => deriveCropAreasMY(domain), [domain]);
+  const [jahrIdx, setJahrIdx] = React.useState<number>(my.years - 1);
+  const yi = Math.min(Math.max(0, jahrIdx), my.years - 1);
   const allRows = domain.anbauplan.map((e) => {
+    const ha = my.areas[e.cropId]?.[Math.min(yi, (my.areas[e.cropId]?.length ?? 1) - 1)] ?? e.areaHa;
     const y = cropYield(domain, e.cropId, sc);
     const loss = cropLoss(domain, e.cropId, sc);
-    const t = netTonnes(domain, e.cropId, sc, e.areaHa, false);
+    const t = netTonnes(domain, e.cropId, sc, ha, false);
     const entry = domain.catalog.find((c) => c.cropId === e.cropId);
-    return { id: e.id, cropId: e.cropId, name: entry?.name ?? e.cropId, ha: e.areaHa, y, loss, t, pool: e.pool ?? "irrigated" };
+    return { id: e.id, cropId: e.cropId, name: entry?.name ?? e.cropId, ha, y, loss, t, pool: e.pool ?? "irrigated" };
   });
   const rows = allRows.filter((r) => r.pool !== "dryland");
   const dryRows = allRows.filter((r) => r.pool === "dryland");
@@ -277,7 +277,18 @@ function ProduktionsTabelle() {
   return (
     <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
-        <h2 className="text-[14px] font-semibold">{t("Anbaustruktur & Produktion")}</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-[14px] font-semibold">{t("Anbaustruktur & Produktion")}</h2>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: my.years }, (_, y) => (
+              <button key={y} onClick={() => setJahrIdx(y)}
+                className="rounded-control border px-2 text-[11px] font-semibold"
+                style={{ height: 24, borderColor: "var(--nx-border)",
+                  color: y === yi ? "var(--nx-app-bg)" : "var(--nx-text-secondary)",
+                  background: y === yi ? "var(--nx-brand-lift)" : "var(--nx-surface)" }}>{START_YEAR + y}</button>
+            ))}
+          </div>
+        </div>
         <span className="caption text-[10.5px] text-nx-text-muted">{t("Fläche × Ertrag × (1 − Verlust) → Netto-Erntemenge ·")} {fmtNumber(grandT, 0)} t</span>
       </div>
       <div className="overflow-x-auto px-2 py-2">
