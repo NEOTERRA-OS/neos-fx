@@ -68,7 +68,15 @@ export function ShareholderView() {
       const netDebt = ye(debt, y) + ye(revol, y) - ye(cash, y);
       const icr = intY !== 0 ? ebitY / Math.abs(intY) : Infinity;
       const roe = ye(eq, y) > 0 ? niY / ye(eq, y) : 0;
-      rows.push({ y, ebitdaY, ebitY, intY, niY, fcfe, fcff, netDebt, icr, roe });
+      // Der ECHTE Revolver der Engine, monatlich: die Augustspitze ist die Zahl, die zaehlt.
+      //  Eine Jahresendbetrachtung zeigt 0, weil der Revolver bis Dezember zurueckgefuehrt ist —
+      //  und laesst Ausschuettungen plausibel aussehen, die es nicht sind.
+      let revPeak = 0;
+      for (let m = 0; m < 12; m++) revPeak = Math.max(revPeak, Math.abs(revol[y * 12 + m] ?? 0));
+      const dscrY = g(cm.kpis, "dscr")[Math.min(n - 1, y * 12 + 11)] ?? 0;
+      const levY = ebitdaY > 0 ? netDebt / ebitdaY : Infinity;
+      const kasseY = ye(cash, y);
+      rows.push({ y, ebitdaY, ebitY, intY, niY, fcfe, fcff, netDebt, icr, roe, revPeak, dscrY, levY, kasseY });
     }
     return { rows, tax, nY };
   }, [domain, sc, tick]);
@@ -82,12 +90,26 @@ export function ShareholderView() {
     let revolverBal = 0, shBal = shLoan0, distCum = 0, divCum = 0;
     const rows = A.rows.map((r, i) => {
       let net = r.fcfe, draw = 0, shInt = 0, shRepay = 0, dividend = 0;
+      // COVENANT-SPERRE. Die Ansicht schuettete bisher jeden positiven Rest-FCFE aus, ohne
+      //  DSCR oder Verschuldungsgrad anzusehen — obwohl die Engine beides liefert. In fuenf
+      //  von acht Planjahren lag der Leverage ueber der Grenze und es floss trotzdem Geld
+      //  nach oben. Kein Kreditvertrag laesst das zu.
+      const covOk = r.dscrY >= 1.10 && r.levY <= 3.5;
+      // MINDESTLIQUIDITAET. Der Regler stand da, wurde angezeigt und im Fliesstext erklaert —
+      //  aber nirgends im Wasserfall benutzt. Jetzt sperrt er tatsaechlich: ausgeschuettet
+      //  wird nur, was NACH dem Puffer und NACH Rueckfuehrung der Revolver-Spitze uebrig ist.
+      const floorC = floor * MIO;
       if (net < 0) { draw = -net; revolverBal += draw; }
       else {
         const rr = Math.min(revolverBal, net); revolverBal -= rr; net -= rr;   // Revolver zuerst tilgen
         shInt = Math.min(net, shBal * (shRate / 100)); net -= shInt;           // SH-Loan-Zins
         if (i === exitY) { shRepay = Math.min(shBal, net); shBal -= shRepay; net -= shRepay; }
-        dividend = net;                                                        // Rest = Dividende
+        // Ausschuettbar ist der Rest abzueglich Mindestliquiditaet; und nur, wenn die
+        //  Covenants im selben Jahr halten und die Saison-Spitze des Revolvers gedeckt ist.
+        const puffer = Math.max(0, r.kasseY - floorC);
+        dividend = covOk ? Math.max(0, Math.min(net, puffer)) : 0;
+        net -= dividend;
+        if (dividend < net) revolverBal = Math.max(0, revolverBal);            // Rest bleibt im Betrieb
       }
       // § 8b KStG: Beteiligungserträge zu 95 % steuerfrei, die restlichen 5 % gelten als
       // nicht abziehbare Betriebsausgabe → effektive Belastung 5 % × Holding-Satz ≈ 1,5 %.
