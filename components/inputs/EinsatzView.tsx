@@ -85,7 +85,10 @@ export function EinsatzView() {
   const maxLabor = Math.max(plan.kpis.staff, ...laborMonthly) * 1.1 || 1;
 
   // 3) nummerierte Arbeitsschritte, gruppiert je Kultur (Reihenfolge nach Startwoche)
-  const cropOrder = ["weizen", "gerste_zw", "soja_luzerne", "winterraps", "mais", "tomate", "kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre"];
+  // Kulturen aus dem ANBAUPLAN statt aus einer festen Liste. Die alte Liste fuehrte fuenf
+  //  geloeschte Ackerbaukulturen und liess dafuer Knollensellerie, Suesskartoffel und
+  //  Knoblauch weg — drei aktive Kulturen konnten ihre Arbeitsschritte nicht anzeigen.
+  const cropOrder = [...new Set(domain.anbauplan.map((a) => a.cropId))];
   const cropName: Record<string, string> = {
     weizen: t("Winterweizen"), gerste_zw: t("Wintergerste + Soja"), soja_luzerne: t("Soja / Luzerne"), winterraps: t("Winterraps"),
     mais: t("Körnermais"), tomate: t("Industrietomate"), kartoffel_pommes: t("Kartoffel Pommes"), kartoffel_chips: t("Kartoffel Chips"), zwiebel_moehre: t("Zwiebel / Möhre"),

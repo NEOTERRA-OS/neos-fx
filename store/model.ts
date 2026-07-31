@@ -4552,8 +4552,19 @@ export function deriveEinsatzplan(domain: Domain, scenarioId: string): EinsatzPl
   const saatStaffel = resolveScalar(domain, "en.saat_staffel", scenarioId);
   const staff = resolveScalar(domain, "en.staff", scenarioId);
 
+  // NULLBASIS-FALLE: die Flaechen des STARTJAHRES. Tomate, Zwiebel/Moehre, Sellerie,
+  //  Suesskartoffel und Knoblauch stehen dort mit 0 ha und wurden von der Schleife unten
+  //  (area <= 0 -> continue) komplett uebersprungen — der Einsatzplan zeigte ausschliesslich
+  //  Kartoffel, samt fehlender Handarbeit der fuenf Kulturen. Jetzt: Flaechen des ZIELJAHRES,
+  //  denn der Einsatzplan bemisst die Saisonspitze des ausgebauten Betriebs.
+  const areasEP = cropAreasMemo(domain).areas;
+  const jahreEP = Math.max(1, domain.growth?.years ?? 1);
   const areaByCrop = new Map<string, number>();
-  for (const a of domain.anbauplan) areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + a.areaHa);
+  for (const a of domain.anbauplan) {
+    const c = areasEP[a.cropId];
+    const ha = c ? (c[Math.min(jahreEP - 1, c.length - 1)] ?? 0) : a.areaHa;
+    areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + ha);
+  }
   const cnt = (id: string): number => {
     const m = domain.machineCatalog.find((x) => x.id === id);
     return m ? machineFleetCount(domain, m, scenarioId) : 0;
