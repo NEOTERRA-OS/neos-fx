@@ -355,48 +355,120 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
   const years = annual.timeline.periodCount;
   const p: any = annual.pnl, k: any = annual.kpis;
   const M = (c: number) => fmtNumber(c / 100000000, 2);          // CENT → Mio €
-  const rows: { label: string; vals: number[]; fmt: (v: number) => string; strong?: boolean }[] = [
-    { label: t("Umsatz"), vals: p.revenue.values, fmt: M },
-    { label: "EBITDA", vals: p.ebitda.values, fmt: M, strong: true },
-    { label: t("Jahresergebnis"), vals: p.netIncome.values, fmt: M },
-    { label: "DSCR", vals: k.dscr.values, fmt: (v: number) => fmtNumber(v, 2) },
-    { label: t("Net Debt / EBITDA"), vals: k.netDebtToEbitda.values, fmt: (v: number) => fmtNumber(v, 1) },
+  const P1 = (v: number) => fmtNumber(v * 100, 1) + " %";
+  const X = (v: number) => fmtNumber(v, 2);
+  const V = (li: any, y: number): number => li?.values?.[y] ?? 0;
+  const umsatz = (y: number) => V(p.revenue, y) + V(p.subsidies, y);
+
+  /** Zeilentypen: „geld" zeigt Mio € mit Vorjahresvergleich, „quote" eine Kennzahl in %,
+   *  „ratio" einen Faktor mit Covenant-Schwelle. Der Vorjahresvergleich steht NUR bei den
+   *  Geldgrößen — bei Margen und Covenants ist die absolute Höhe die Aussage, nicht die
+   *  Veränderung. */
+  type Zeile = {
+    label: string; hint?: string; kind: "geld" | "quote" | "ratio" | "trenner";
+    val?: (y: number) => number; fmt?: (v: number) => string;
+    stark?: boolean; grenze?: (v: number) => boolean;
+  };
+  const rows: Zeile[] = [
+    { label: t("Umsatz inkl. Subventionen"), kind: "geld", val: umsatz, fmt: M, stark: true },
+    { label: t("davon Subventionen"), kind: "geld", val: (y) => V(p.subsidies, y), fmt: M },
+    { label: "—", kind: "trenner" },
+    { label: "EBITDA", kind: "geld", val: (y) => V(p.ebitda, y), fmt: M, stark: true },
+    { label: t("EBITDA-Marge"), hint: t("EBITDA / Umsatz"), kind: "quote",
+      val: (y) => (umsatz(y) ? V(p.ebitda, y) / umsatz(y) : 0), fmt: P1 },
+    { label: "EBIT", kind: "geld", val: (y) => V(p.ebit, y), fmt: M },
+    { label: t("Jahresergebnis"), kind: "geld", val: (y) => V(p.netIncome, y), fmt: M, stark: true },
+    { label: t("Umsatzrendite"), hint: t("Jahresergebnis / Umsatz"), kind: "quote",
+      val: (y) => (umsatz(y) ? V(p.netIncome, y) / umsatz(y) : 0), fmt: P1 },
+    { label: "—", kind: "trenner" },
+    { label: t("Free Cash Flow"), hint: "NI + AfA − CapEx", kind: "geld", val: (y) => V(k.fcf, y), fmt: M },
+    { label: "DSCR", hint: t("Covenant ≥ 1,10"), kind: "ratio", val: (y) => V(k.dscr, y), fmt: X,
+      grenze: (v) => v < 1.1 },
+    { label: t("Net Debt / EBITDA"), hint: t("Covenant ≤ 3,50"), kind: "ratio",
+      val: (y) => V(k.netDebtToEbitda, y), fmt: (v) => fmtNumber(v, 1), grenze: (v) => v > 3.5 },
   ];
-  const tone = (label: string, v: number) =>
-    label === "DSCR" ? (v < 1.1 ? "var(--nx-error)" : "var(--nx-text)")
-    : label === t("Net Debt / EBITDA") ? (v > 3.5 ? "var(--nx-error)" : "var(--nx-text)")
-    : v < 0 ? "var(--nx-error)" : "var(--nx-text)";
+
+  /** Veränderung zum Vorjahr in Prozent. Null im ersten Planjahr (kein Vorjahr) und dort,
+   *  wo das Vorjahr 0 oder negativ war — eine Wachstumsrate auf einem Verlust ist keine
+   *  Information, sondern eine Zahl, die groß aussieht und nichts bedeutet. */
+  const yoy = (r: Zeile, y: number): number | null => {
+    if (y === 0 || !r.val) return null;
+    const v = r.val(y), pv = r.val(y - 1);
+    if (!isFinite(v) || !isFinite(pv) || pv <= 0) return null;
+    return (v - pv) / pv;
+  };
+  const Pfeil = ({ d }: { d: number }) => (
+    <span style={{ color: d >= 0 ? "var(--nx-success)" : "var(--nx-error)" }}>
+      {d >= 0 ? "▲" : "▼"} {fmtNumber(Math.abs(d) * 100, 0)} %
+    </span>
+  );
+  /** Balkenlänge relativ zum größten Absolutwert der Zeile — macht den Verlauf sichtbar,
+   *  ohne ein zweites Diagramm daneben zu stellen. */
+  const maxOf = (r: Zeile) => {
+    if (!r.val) return 0;
+    let m = 0; for (let y = 0; y < years; y++) m = Math.max(m, Math.abs(r.val(y)));
+    return m || 1;
+  };
 
   return (
     <section className="rounded-tile border" style={TBL_CARD}>
       <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
-        <h3 className="text-[13px] font-semibold">{t("Ergebnis je Planjahr (Mio €)")}</h3>
+        <h3 className="text-[13px] font-semibold">{t("Ergebnis je Planjahr")}</h3>
         <p className="mt-0.5 text-[11px] text-nx-text-muted">
-          {t("Aktives Szenario. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,5.")}
+          {t("Aktives Szenario, Geldgrößen in Mio €. Unter jedem Wert die Veränderung zum Vorjahr; Balken zeigen den Verlauf innerhalb der Zeile. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,50.")}
         </p>
       </div>
       <div className="overflow-x-auto px-2 py-2">
         <table className="w-full text-[12px]">
           <thead>
             <tr>
-              <th className={TBL_TH + " text-left"}>{t("Position")}</th>
+              <th className={TBL_TH + " text-left"} style={{ minWidth: 190 }}>{t("Position")}</th>
               {Array.from({ length: years }, (_, y) => (
                 <th key={y} className={TBL_TH + " text-right"}>{START_YEAR + y}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.label} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-                <td className={"px-3 py-1.5 " + (r.strong ? "font-semibold" : "")}>{r.label}</td>
-                {Array.from({ length: years }, (_, y) => (
-                  <td key={y} className={"num px-3 py-1.5 text-right " + (r.strong ? "font-semibold" : "")}
-                      style={{ color: tone(r.label, r.vals[y] ?? 0) }}>
-                    {r.fmt(r.vals[y] ?? 0)}
+            {rows.map((r, i) => {
+              if (r.kind === "trenner") return <tr key={"t" + i}><td colSpan={years + 1} style={{ height: 6 }} /></tr>;
+              const mx = maxOf(r);
+              return (
+                <tr key={r.label} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                  <td className={"px-3 py-1.5 " + (r.stark ? "font-semibold" : "")}>
+                    {r.label}
+                    {r.hint && <div className="text-[9.5px] text-nx-text-muted">{r.hint}</div>}
                   </td>
-                ))}
-              </tr>
-            ))}
+                  {Array.from({ length: years }, (_, y) => {
+                    const v = r.val ? r.val(y) : 0;
+                    const d = yoy(r, y);
+                    const verletzt = r.grenze?.(v) ?? false;
+                    const farbe = verletzt ? "var(--nx-error)"
+                      : r.kind === "quote" ? (v < 0 ? "var(--nx-error)" : "var(--nx-brand-lift)")
+                      : v < 0 ? "var(--nx-error)" : "var(--nx-text)";
+                    return (
+                      <td key={y} className="px-3 py-1.5 text-right align-top">
+                        <div className={"num " + (r.stark ? "font-semibold text-[13px]" : "")} style={{ color: farbe }}>
+                          {r.fmt ? r.fmt(v) : v}
+                        </div>
+                        {r.kind === "geld" && (
+                          <>
+                            <div className="num text-[9.5px] leading-tight" style={{ minHeight: 12 }}>
+                              {d === null ? <span className="text-nx-text-muted">·</span> : <Pfeil d={d} />}
+                            </div>
+                            <div className="mt-0.5 ml-auto" style={{ width: 44, height: 3, background: "var(--nx-border-divider)", borderRadius: 2, overflow: "hidden" }}>
+                              <div style={{
+                                width: `${Math.min(100, (Math.abs(v) / mx) * 100)}%`, height: "100%",
+                                background: v < 0 ? "var(--nx-error)" : r.stark ? "var(--nx-brand-lift)" : "var(--nx-text-muted)",
+                              }} />
+                            </div>
+                          </>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

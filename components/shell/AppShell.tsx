@@ -12,9 +12,7 @@ import { getSupabase } from "../../lib/supabaseClient";
 import { t } from "../../lib/i18n";
 import { Lock } from "lucide-react";
 import { MaschinenView } from "../inputs/MaschinenView";
-import { MaschinenHub } from "../inputs/MaschinenHub";
-import { InvestitionenView } from "../inputs/InvestitionenView";
-import { LeistungsparameterView } from "../inputs/LeistungsparameterView";
+import { MaschinenparkView } from "../inputs/MaschinenparkView";
 import { PersonalView } from "../inputs/PersonalView";
 import { FinanzierungView } from "../inputs/FinanzierungView";
 import { SubventionenView } from "../inputs/SubventionenView";
@@ -25,19 +23,15 @@ import { ScenarioStudioView } from "../inputs/ScenarioStudioView";
 import { HoldingView } from "../inputs/HoldingView";
 import { BewertungView } from "../inputs/BewertungView";
 import { ShareholderView } from "../inputs/ShareholderView";
-import { LohnarbeitView } from "../inputs/LohnarbeitView";
 import { PachtView } from "../inputs/PachtView";
 import { LagerKostenstelleView } from "../inputs/LagerKostenstelleView";
-import { CapexScenarienView } from "../inputs/CapexScenarienView";
 import { OverheadView } from "../inputs/OverheadView";
 import { EinsatzView } from "../inputs/EinsatzView";
 import { VerwaltungView } from "../inputs/VerwaltungView";
 import { MehrjahresplanView } from "../inputs/MehrjahresplanView";
-import { ErsatzView } from "../inputs/ErsatzView";
 import { LiquiditaetView } from "../inputs/LiquiditaetView";
 import { ExecutiveDashboard } from "../dashboard/ExecutiveDashboard";
 import { CheckPanel } from "../statements/CheckPanel";
-import { KpiBand } from "../kpi/KpiBand";
 import { useModelStore, selectComputed, selectComputedAnnual } from "../../store/modelStore";
 import { deriveMassnahmenChecks, type Domain } from "../../store/model";
 import { autoLoadLatest, autoSave, getMyMaxRole, localLoad, localSave } from "../../store/persistence";
@@ -119,28 +113,15 @@ export function AppShell() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recalcTick]);
-  const annualLabel = annual.timeline.periods[annual.timeline.periods.length - 1]?.label;
-  // KPI-BAND nur dort, wo die Konzern-Kennzahlen der Bezugsrahmen SIND — also auf den
-  // Ergebnis- und Kapitalansichten. Auf Eingabe- und Stammdatenschirmen (Personal, Overhead,
-  // Maschinen, Kulturkalkulation, Annahmen …) beantwortet das Band keine Frage, die man dort
-  // stellt: man pflegt Mengen und Sätze, nicht den Jahresüberschuss. Es kostete dort nur die
-  // oberen 120 px und drängte die eigentliche Tabelle unter die Falz. Deshalb Positivliste
-  // statt Ausnahmeliste — neue Ansichten sind erst einmal ohne Band, und das ist der
-  // richtige Default.
-  //
-  // Bewusst NICHT dabei: Szenario-Studio (eigene Wirkungszeile mit Δ gegen die Basis, das
-  // globale Band würde doppeln) und Pacht-Simulator (rechnet seine eigene Vergleichsgröße).
-  const KPI_VIEWS: ViewId[] = [
-    "dashboard",                                        // Übersicht
-    "pnl", "balance", "cashflow", "liquiditaet",        // Abschlüsse
-    "finanzierung", "eroeffnung", "holding",            // Kapital & Struktur
-    "bewertung", "shareholder",                         // Bewertung & Ausschüttung
-    "mehrjahr",                                         // Ergebnisrechnung über die Jahre
-  ];
-  const showKpi = KPI_VIEWS.includes(view);
+  // KPI-BAND ENTFERNT (31.07.2026). Es zeigte EIN Jahr in einem Modell, dessen ganze Aussage
+  // die ENTWICKLUNG über acht Planjahre ist — mit einem Jahresumschalter davor, den man erst
+  // bedienen musste, um zu sehen, was ohnehin in „Ergebnis je Planjahr" steht. Der Block kostete
+  // auf jedem Screen die oberen 120 px und beantwortete keine Frage, die die Tabelle nicht
+  // besser beantwortet. Die Kennzahlen stehen jetzt an EINER Stelle, dafür über alle Jahre,
+  // mit Vorjahresvergleich und Margen.
   // Ansichten mit EIGENEM Mehrspalten-Layout (Navigator/Tabelle/Detail bzw. Regler/Grafik)
   // laufen über die volle Breite — die 320px-Seitenspalte würde ihre Tabellen abschneiden.
-  const BREITE_VIEWS: ViewId[] = ["annahmen", "annahmenSheet", "studio"];
+  const BREITE_VIEWS: ViewId[] = ["annahmen", "annahmenSheet", "studio", "maschinen", "leistung", "investitionen", "capexScenarien", "ersatz", "lohnarbeit"];
   const breit = BREITE_VIEWS.includes(view);
 
   React.useEffect(() => {
@@ -160,11 +141,6 @@ export function AppShell() {
             <button className="rounded-control border px-2 py-0.5 text-[11px]" style={{ borderColor: "currentColor" }} onClick={() => setReadOnly(false)}>{t("Bearbeiten aktivieren")}</button>
           </div>
         )}
-        {showKpi && (
-          <div className="px-6 pt-3 pb-1">
-            <KpiBand annual={annual} currency={currency} periodLabel={annualLabel} />
-          </div>
-        )}
         <main className="flex-1 overflow-auto px-6 py-5">
           {view === "dashboard" ? (
             <ExecutiveDashboard />
@@ -179,19 +155,19 @@ export function AppShell() {
                 : view === "annahmen" ? <AnnahmenView />
                 : view === "kommentare" ? <KommentareView />
                 : view === "team" ? <TeamAdminView />
-                : view === "capexScenarien" ? <CapexScenarienView />
-                : view === "maschinen" ? <MaschinenHub />
-                : view === "investitionen" ? <InvestitionenView />
-                : view === "leistung" ? <LeistungsparameterView />
+                : view === "capexScenarien" ? <MaschinenparkView />
+                : view === "maschinen" ? <MaschinenparkView />
+                : view === "investitionen" ? <MaschinenparkView />
+                : view === "leistung" ? <MaschinenparkView />
                 : view === "personal" ? <PersonalView />
                 : view === "overhead" ? <OverheadView />
                 : view === "finanzierung" ? <FinanzierungView />
                 : view === "subventionen" ? <SubventionenView />
                 : view === "mehrjahr" ? <MehrjahresplanView />
-                : view === "ersatz" ? <ErsatzView />
+                : view === "ersatz" ? <MaschinenparkView />
                 : view === "liquiditaet" ? <LiquiditaetView />
                 : view === "annahmenSheet" ? <AnnahmenView />
-                : view === "lohnarbeit" ? <LohnarbeitView />
+                : view === "lohnarbeit" ? <MaschinenparkView />
                 : view === "holding" ? <HoldingView />
                 : view === "eroeffnung" ? <EroeffnungsbilanzView />
                 : view === "arbeitszeit" ? <ArbeitszeitkontoView />

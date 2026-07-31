@@ -36,13 +36,8 @@ const IA: Group[] = [
     { id: "lagerkst", label: "Lager & Packhaus (Kostenstelle)", view: "lagerkst" },
   ]},
   { title: "Maschinen & Flotte", items: [
-    { id: "leistung", label: "Performance Review", view: "leistung" },
-    { id: "investitionen", label: "Investitionen (Bedarf & Vorschlag)", view: "investitionen" },
-    { id: "maschinen", label: "Maschinenbestand (Anlagenregister)", view: "maschinen" },
-    { id: "capexScenarien", label: "CAPEX Szenarien", view: "capexScenarien" },
+    { id: "maschinen", label: "Maschinenpark", view: "maschinen" },
     { id: "einsatz", label: "Einsatzplanung", view: "einsatz" },
-    { id: "ersatz", label: "Ersatzinvestitionen", view: "ersatz" },
-    { id: "lohnarbeit", label: "Lohnarbeit (Dienstleistungen)", view: "lohnarbeit" },
   ]},
   { title: "Wachstum", items: [
     { id: "mehrjahr", label: "Wachstum & Mehrjahresplan", view: "mehrjahr" },

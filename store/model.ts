@@ -4667,6 +4667,135 @@ export function deriveFleetSizing(domain: Domain, scenarioId: string): { machine
   };
 }
 
+/* ==========================================================================
+ * MASCHINENPARK — Bedarf je Planjahr, Eigenkosten je ha, Kauf-/Miet-Vergleich.
+ *
+ *  Eine Stelle für die drei Fragen, die bisher auf sechs Ansichten verteilt waren:
+ *  Was brauche ich, wann kommt es dazu, und lohnt es sich überhaupt selbst zu besitzen.
+ * ========================================================================== */
+
+/** Bedarfsstunden einer Maschinenklasse im Planjahr y — EXAKT, nicht hochskaliert.
+ *
+ *  Σ über die Kulturen, die diese Maschine nutzen: Überfahrten × Fläche des Jahres ÷ C_eff.
+ *  Ein Basiswert mit einem Flächenfaktor hochzurechnen scheitert zweifach: an der falschen
+ *  Bezugsfläche (die Betriebsfläche wächst 300 → 2.334 ha, die Kartoffel aber nur
+ *  300 → 1.000 ha — der Roder würde um Faktor 2,3 zu groß) und an der Nullbasis (Kulturen,
+ *  die erst 2028 anfangen, haben im Startjahr 0 ha und blieben für immer bei null).
+ *  Fremdvergebene Arbeitsgänge zählen NICHT: was der Lohnunternehmer fährt, braucht keine
+ *  eigene Maschine. */
+export function machineDemandHoursOfYear(domain: Domain, machineId: string, y: number): number {
+  const spec = domain.machineCatalog.find((m) => m.id === machineId);
+  const cEff = spec?.cEff ?? 0;
+  if (!cEff) return 0;
+  const areas = cropAreasMemo(domain).areas;
+  let h = 0;
+  for (const a of domain.anbauplan) {
+    const gaenge = (domain.arbeitsgaenge[a.cropId] ?? []).filter((g) => g.m === machineId);
+    if (!gaenge.length) continue;
+    if (lohnGaengeOf(domain, a.cropId, y).has(machineId)) continue;   // fremdvergeben
+    const curve = areas[a.cropId];
+    const ha = curve ? (curve[Math.min(y, curve.length - 1)] ?? 0) : a.areaHa;
+    h += gaenge.reduce((n, g) => n + g.passes, 0) * ha / cEff;
+  }
+  return h;
+}
+
+/** Fläche der Kulturen, die diese Maschine bedient, im Planjahr y. Der richtige Nenner für
+ *  jede €/ha-Aussage: durch die Betriebsfläche zu teilen macht jeden Spezialroder künstlich
+ *  billig — der Möhren-Klemmbandroder fährt 467 ha, nicht 2.334. */
+export function machineServedHaOfYear(domain: Domain, machineId: string, y: number): number {
+  const areas = cropAreasMemo(domain).areas;
+  let ha = 0;
+  for (const a of domain.anbauplan) {
+    if (!(domain.arbeitsgaenge[a.cropId] ?? []).some((g) => g.m === machineId)) continue;
+    const curve = areas[a.cropId];
+    ha += curve ? (curve[Math.min(y, curve.length - 1)] ?? 0) : a.areaHa;
+  }
+  return ha;
+}
+
+/** Kapazität EINER Einheit in Stunden je Saison: Feldstunden/Tag × Feldtage × Schichtfaktor. */
+export function machineCapPerUnitHours(domain: Domain, machineId: string, scenarioId: string): number {
+  const hpd = resolveScalar(domain, "en.hours_day", scenarioId) || 10;
+  return hpd * shiftFactorOf(domain, scenarioId) * Math.max(1, feldTageOf(domain, machineId));
+}
+
+export type MaschinenPfad = {
+  machineId: string; label: string; manufacturer?: string; category?: string;
+  crops: string[]; cEff: number; widthM: number; speedKmh: number; fieldEff: number;
+  feldTage: number; capPerUnitHours: number; preisCent: number;
+  /** Stückzahl je Planjahr (Index 0 = START_YEAR). */
+  units: number[];
+  /** Bedarfsstunden, bediente Fläche und Auslastung je Planjahr. */
+  hours: number[]; servedHa: number[]; utilPct: number[];
+  /** Eigenkosten je ha und Planjahr (null, wenn keine Fläche/keine Einheit). */
+  ownPerHa: (number | null)[];
+  /** Lohnarbeit je ha INKL. Diesel — damit beide Seiten dasselbe enthalten. */
+  rentPerHa: number | null;
+  /** Fixkosten je Einheit und Jahr, variable Kosten je Stunde (für den Kostenaufriss). */
+  fixPerYear: number; varPerHour: number;
+  /** Ist die Klasse aktuell vollständig fremdvergeben? */
+  gemietet: boolean;
+};
+
+/** Der ganze Maschinenpark als Pfad über die Planjahre — die Datengrundlage des
+ *  Maschinenpark-Screens. Ersetzt das Nebeneinander aus Sizing, Investitionsvorschlag,
+ *  Anlagenregister und Lohnarbeitstabelle. */
+export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: number): MaschinenPfad[] {
+  const dieselEur = (domain.assumptions["price.diesel_l"] ? resolveScalar(domain, "price.diesel_l", scenarioId) : 0) / 100;
+  const lohnFaktor = domain.assumptions["lohn.factor"] ? resolveScalar(domain, "lohn.factor", scenarioId) : 1;
+  const out: MaschinenPfad[] = [];
+
+  for (const spec of domain.machineCatalog) {
+    if (!SIZED_MACHINE_IDS.has(spec.id)) continue;
+    if (!spec.cEff) continue;
+    const crops = [...new Set(domain.anbauplan
+      .filter((a) => (domain.arbeitsgaenge[a.cropId] ?? []).some((g) => g.m === spec.id))
+      .map((a) => a.cropId))];
+    if (!crops.length) continue;                       // keine Wertkultur nutzt sie → nicht im Park
+
+    const cap = machineCapPerUnitHours(domain, spec.id, scenarioId);
+    const hours = Array.from({ length: years }, (_, y) => machineDemandHoursOfYear(domain, spec.id, y));
+    const servedHa = Array.from({ length: years }, (_, y) => machineServedHaOfYear(domain, spec.id, y));
+    const units = hours.map((h) => (cap > 0 ? Math.ceil(h / cap) : 0));
+    const utilPct = units.map((n, y) => (n > 0 && spec.refHoursPerYear ? Math.min(100, (hours[y] / (n * spec.refHoursPerYear)) * 100) : 0));
+
+    // AfA, Zins und Versicherung fallen je Einheit und JAHR an — unabhängig von den Stunden.
+    // Reparatur, Schmierstoff und Diesel je STUNDE. Genau diese Trennung macht sichtbar, warum
+    // eine Maschine im Anlaufjahr auf wenig Fläche unwirtschaftlich ist und später nicht mehr.
+    const refH = spec.refHoursPerYear ?? 0;
+    const fixPerYear = (((spec.afaPerHourCent ?? 0) + (spec.interestPerHourCent ?? 0) + (spec.insurancePerHourCent ?? 0)) / 100) * refH;
+    const varPerHour = ((spec.repairPerHourCent ?? 0) + (spec.lubePerHourCent ?? 0)) / 100 + (spec.dieselLPerHour ?? 0) * dieselEur;
+    const ownPerHa = units.map((n, y) => (n > 0 && servedHa[y] > 0 ? (n * fixPerYear + hours[y] * varPerHour) / servedHa[y] : null));
+
+    // Lohnsatz der Klasse: höchster hinterlegter Satz über die Kulturen (die Sätze sind je
+    // Arbeitsgang identisch). PLUS Diesel — die Sätze sind ausdrücklich exklusive Diesel, und
+    // wer sie roh gegen die Eigenkosten stellt, rechnet die Lohnarbeit systematisch zu billig.
+    const eintrag = (domain.lohnarbeit ?? []).find((e) => e.machineId === spec.id);
+    const dieselProHa = spec.cEff > 0 ? ((spec.dieselLPerHour ?? 0) * dieselEur) / spec.cEff : 0;
+    const rentPerHa = eintrag ? (eintrag.ratePerHaCent / 100) * lohnFaktor + (eintrag.dieselIncluded ? 0 : dieselProHa) : null;
+
+    const relevant = (domain.lohnarbeit ?? []).filter((e) => e.machineId === spec.id && crops.includes(e.cropId));
+    const gemietet = relevant.length > 0 && relevant.every((e) => e.active);
+
+    out.push({
+      machineId: spec.id, label: spec.label, manufacturer: spec.manufacturer, category: spec.category,
+      crops, cEff: spec.cEff, widthM: spec.widthM ?? 0, speedKmh: spec.speedKmh ?? 0, fieldEff: spec.fieldEff ?? 0,
+      feldTage: feldTageOf(domain, spec.id), capPerUnitHours: cap,
+      preisCent: machineUnitPriceCent(domain, spec, scenarioId),
+      units, hours, servedHa, utilPct, ownPerHa, rentPerHa, fixPerYear, varPerHour, gemietet,
+    });
+  }
+  return out.sort((a, b) => (a.category ?? "").localeCompare(b.category ?? "") || a.label.localeCompare(b.label));
+}
+
+/** Eine ganze Maschinenklasse fremdvergeben oder zurückholen: schaltet alle Lohnarbeits-Zeilen
+ *  dieser Maschine über alle Kulturen. Die Engine zieht daraus beides — die Kosten je ha UND
+ *  den Wegfall des CAPEX (bedarfsJahrOf überspringt fremdvergebene Arbeitsgänge). */
+export function setMachineOutsourced(d: Domain, machineId: string, aktiv: boolean): void {
+  for (const e of d.lohnarbeit ?? []) if (e.machineId === machineId) e.active = aktiv;
+}
+
 /* --------------------------------------------------------------------------
  * deriveTransportDecision — Transport ZUM ABNEHMER (~70 km), Make-or-Buy.
  *  KEIN Doppelzählen mit dem In-Field-Transport (Maschine 'transport' in COGS):
