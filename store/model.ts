@@ -744,6 +744,48 @@ const MONTH_END: string[] = Array.from({ length: N }, (_, i) => {
   const y = START_YEAR + Math.floor(i / 12), m = i % 12;
   return `${y}-${pad2(m + 1)}-${pad2(DAYS[m])}`;
 });
+/* --------------------------------------------------------------------------
+ * SKALIERUNGSPFAD der Spezialkulturen — ha je Planjahr, Index 0 = START_YEAR (2027).
+ *  Beschlossen 30.07.2026 (Benedikt): NEOTERRA plant für 2027 300 ha Kartoffel; weitere
+ *  Wertkulturen kommen ab 2028 dazu. Kartoffel läuft stufenweise auf 1.000 ha bis 2031
+ *  (= 25 % der beregneten Fläche, 4-Jahres-Anbaupause ⇒ Obergrenze der Rotation).
+ *  Werte sind auf Stufe 1 (4.000 ha beregnet) kalibriert und skalieren mit der Stufe.
+ *
+ *  Kultur              2027  2028  2029  2030  2031  2032  2033  2034
+ *  Kartoffel Pommes     150   225   300   400   500   500   500   500
+ *  Kartoffel Chips      150   225   300   400   500   500   500   500
+ *  Industrietomate        0   150   300   450   600   667   667   667
+ *  Zwiebel/Möhre          0   100   200   300   400   467   467   467
+ *  Knollensellerie        0    30    50    70    90   100   100   100
+ *  Süßkartoffel           0    20    30    40    50    50    50    50
+ *  Knoblauch              0    20    30    40    50    50    50    50
+ *  Σ Spezialkulturen    300   770 1.210 1.700 2.190 2.334 2.334 2.334
+ *  Rest = Ackerbau    3.700 3.230 2.790 2.300 1.810 1.666 1.666 1.666
+ */
+export const SKALIERUNG_HA: Record<string, number[]> = {
+  kartoffel_pommes: [150, 225, 300, 400, 500, 500, 500, 500],
+  kartoffel_chips:  [150, 225, 300, 400, 500, 500, 500, 500],
+  tomate:           [  0, 150, 300, 450, 600, 667, 667, 667],
+  zwiebel_moehre:   [  0, 100, 200, 300, 400, 467, 467, 467],
+  knollensellerie:  [  0,  30,  50,  70,  90, 100, 100, 100],
+  suesskartoffel:   [  0,  20,  30,  40,  50,  50,  50,  50],
+  knoblauch:        [  0,  20,  30,  40,  50,  50,  50,  50],
+};
+
+/** Skalierungspfad → CropPolicy-Eintrag je Kultur (mit Stufen-Skalierung). */
+export function skalierungPolicy(stage: Stage = 1): Record<string, CropPolicy> {
+  const sf = STAGES[String(stage)].beregneteFlaecheHa / 4000;
+  const out: Record<string, CropPolicy> = {};
+  for (const [id, path] of Object.entries(SKALIERUNG_HA))
+    out[id] = { mode: "path", haByYear: path.map((h) => Math.round(h * sf)) };
+  return out;
+}
+
+/** Σ Skalierungspfad je Planjahr (ha) — die bewirtschaftete Fläche der NEOTERRA-Variante.
+ *  Es gibt keinen Ackerbau-Residualblock mehr: die Betriebsfläche IST die Summe der Kulturpfade. */
+export const SKALIERUNG_TOTAL_HA: number[] = Array.from({ length: N_YEARS }, (_, y) =>
+  Object.values(SKALIERUNG_HA).reduce((s, path) => s + (path[Math.min(y, path.length - 1)] ?? 0), 0));
+
 const TIMELINE: Timeline = {
   baseGranularity: "month",
   startDate: `${START_YEAR}-01-01`,
@@ -857,32 +899,24 @@ export type FarmDeal = {
 export type ReplCfg = { cycleYears?: number; afaYears?: number; hoursPerYear?: number; enabled?: boolean };
 const GROWTH: GrowthPlan = {
   years: N_YEARS,
-  // BEREGNUNGS-Ramp 4.000 → 20.000 ha (= Stufen 1/2/3b; geglättet, kein Verdopplungssprung).
-  areaByYear: [4002, 6000, 9000, 12000, 15000, 18000, 20000, 20000],
-  // GESAMTFLÄCHE (beregnet + unberegnet). Heute ~10.000 ha; wächst über Zukauf, so dass
-  // neben dem Beregnungsausbau ~6.000 ha Trockenrotation erhalten bleibt/mitwächst.
-  //  Covenant-schonend gepaced: Gesamtfläche wächst auf ~20.500 ha (≈ beregnete 20.000 +
-  //  schlanker Trocken-Tail 500 ha), damit Net Debt/EBITDA ≤ 3,5 hält. Editierbar.
-  totalByYear: [10000, 10800, 11800, 12800, 14000, 15500, 17500, 20000],
-  startTotalHa: 10000,
-  startIrrigatedHa: 4000,
-  acqEurPerHaCent: 1000000,   // 10.000 €/ha Zukauf/Übernahme (Süd-Dolj, inkl. Übernahme)
-  acqDebtShare: 0.4,          // 40 % Übernahme-/Bodenkredit, 60 % Eigenmittel (Covenant-schonend)
-  acqLoanTermMonths: 360,     // 30 J. Laufzeit → niedriger Kapitaldienst, bessere DSCR
+  // NEOTERRA-SOLO: die bewirtschaftete Fläche IST der Skalierungspfad der Wertkulturen —
+  //  300 ha (2027) → 2.334 ha (2032+). Alles beregnet; es gibt keinen unberegneten Block mehr.
+  //  Stufe "s3b" heißt hier nur: Kurven werden VERBATIM übernommen (kein s1-Flach, kein s2-Ausbau);
+  //  Flächenzukauf/Akquisitionen sind bewusst leer — gewachsen wird über die Kulturen, nicht über Land.
+  areaByYear: SKALIERUNG_TOTAL_HA.slice(),
+  totalByYear: SKALIERUNG_TOTAL_HA.slice(),
+  startTotalHa: SKALIERUNG_TOTAL_HA[0],
+  startIrrigatedHa: SKALIERUNG_TOTAL_HA[0],
+  // Wachstum heißt hier: MEHR PACHTFLÄCHE, kein Landkauf. Der Zukaufpreis steht auf 0, sonst
+  //  bucht die Engine jedes zusätzliche Hektar als Landerwerb (2028 wären das 4,8 Mio € gewesen).
+  //  Die Fläche kostet laufende Pacht (opex.pacht ~300 €/ha), die Beregnung bleibt CAPEX.
+  acqEurPerHaCent: 0,
+  acqDebtShare: 0.4,
+  acqLoanTermMonths: 360,
   irrigEurPerHaCent: 300000,  // 3.000 €/ha Beregnungsausbau (Pivot + Verrohrung + Pumpe)
-  // REGEL: Soja (inkl. Doppel-Soja) & Mais NUR beregnet → Trockenrotation ist reine
-  //  Getreide-/Raps-Rotation (Weizen–Gerste–Raps). Gerste hier OHNE Doppel-Soja (Label!).
-  drylandRotation: [
-    { cropId: "weizen",     sharePct: 0.40, dbPerHaCent: 55000, yieldTHa: 5.5, lossPct: 0.05 },                          // 550 €/ha rain-fed
-    { cropId: "gerste_zw",  sharePct: 0.35, dbPerHaCent: 45000, label: "Wintergerste", yieldTHa: 4.8, lossPct: 0.05 },   // 450 €/ha — OHNE Doppel-Soja (trocken!)
-    { cropId: "winterraps", sharePct: 0.25, dbPerHaCent: 60000, yieldTHa: 2.8, lossPct: 0.05 },                          // 600 €/ha
-  ],
-  // Stufe 3b — Akquiseprofil: Mix aus Pachtübernahme (asset-light) und Betriebskauf (mit Assets).
-  acquisitions: [
-    { id: "d1", year: 5, name: "Pachtpaket Ost", dealType: "lease", totalHa: 4000, irrHa: 2000, eurPerHaCent: 50000, machineValueCent: 0, leaseRentPerHaCent: 30000, debtShare: 0.5 },
-    { id: "d2", year: 7, name: "Betrieb Süd (Kauf)", dealType: "asset", totalHa: 5000, irrHa: 2500, eurPerHaCent: 250000, machineValueCent: 900000000, debtShare: 0.65 },
-  ],
-  stage: "s1", // Default-Start: Stufe 1 (Status quo, 4.000 ha beregnet / 10.000 ha gesamt).
+  drylandRotation: [],        // Trockenrotation gehörte Isolde Farms — im Solo-Modell entfallen
+  acquisitions: [],           // kein Flächenzukauf, keine Betriebsübernahmen
+  stage: "s3b",
 };
 
 const SCENARIOS: Scenario[] = [
@@ -2136,68 +2170,16 @@ const MACHINE_CATALOG: MachineType[] = [
 ];
 
 /* --------------------------------------------------------------------------
- * SKALIERUNGSPFAD der Spezialkulturen — ha je Planjahr, Index 0 = START_YEAR (2027).
- *  Beschlossen 30.07.2026 (Benedikt): NEOTERRA plant für 2027 300 ha Kartoffel; weitere
- *  Wertkulturen kommen ab 2028 dazu. Kartoffel läuft stufenweise auf 1.000 ha bis 2031
- *  (= 25 % der beregneten Fläche, 4-Jahres-Anbaupause ⇒ Obergrenze der Rotation).
- *  Werte sind auf Stufe 1 (4.000 ha beregnet) kalibriert und skalieren mit der Stufe.
- *
- *  Kultur              2027  2028  2029  2030  2031  2032  2033  2034
- *  Kartoffel Pommes     150   225   300   400   500   500   500   500
- *  Kartoffel Chips      150   225   300   400   500   500   500   500
- *  Industrietomate        0   150   300   450   600   667   667   667
- *  Zwiebel/Möhre          0   100   200   300   400   467   467   467
- *  Knollensellerie        0    30    50    70    90   100   100   100
- *  Süßkartoffel           0    20    30    40    50    50    50    50
- *  Knoblauch              0    20    30    40    50    50    50    50
- *  Σ Spezialkulturen    300   770 1.210 1.700 2.190 2.334 2.334 2.334
- *  Rest = Ackerbau    3.700 3.230 2.790 2.300 1.810 1.666 1.666 1.666
- */
-export const SKALIERUNG_HA: Record<string, number[]> = {
-  kartoffel_pommes: [150, 225, 300, 400, 500, 500, 500, 500],
-  kartoffel_chips:  [150, 225, 300, 400, 500, 500, 500, 500],
-  tomate:           [  0, 150, 300, 450, 600, 667, 667, 667],
-  zwiebel_moehre:   [  0, 100, 200, 300, 400, 467, 467, 467],
-  knollensellerie:  [  0,  30,  50,  70,  90, 100, 100, 100],
-  suesskartoffel:   [  0,  20,  30,  40,  50,  50,  50,  50],
-  knoblauch:        [  0,  20,  30,  40,  50,  50,  50,  50],
-};
-
-/** Skalierungspfad → CropPolicy-Eintrag je Kultur (mit Stufen-Skalierung). */
-export function skalierungPolicy(stage: Stage = 1): Record<string, CropPolicy> {
-  const sf = STAGES[String(stage)].beregneteFlaecheHa / 4000;
-  const out: Record<string, CropPolicy> = {};
-  for (const [id, path] of Object.entries(SKALIERUNG_HA))
-    out[id] = { mode: "path", haByYear: path.map((h) => Math.round(h * sf)) };
-  return out;
-}
-
-/* --------------------------------------------------------------------------
- * ANBAUPLAN — Jahr 0 (= START_YEAR) der Spezialkulturen aus dem Skalierungspfad,
- *  Restfläche als Ackerbau-Rotation. Kartoffel-Feld auf Pommes + Chips gesplittet.
+ * ANBAUPLAN — NEOTERRA-SOLO (Entscheidung 30.07.2026, Benedikt).
+ *  Das Modell rechnet NUR die Wertkulturen der NEOTERRA SRL. Der Ackerbau-Block
+ *  (Weizen/Gerste/Mais/Raps/Soja) und die unberegnete Trockenrotation von Isolde Farms
+ *  sind vollständig entfallen — keine Residualfläche, keine Zwei-Pool-Logik.
+ *  Bewirtschaftete Fläche = Σ Skalierungspfad des Jahres (2027: 300 ha, 2032+: 2.334 ha).
+ *  Jahr 0 (= START_YEAR) steht im Anbauplan und ist Basis für CAPEX-, Flotten- und
+ *  Lagerbemessung; die Folgejahre liefert deriveCropAreasMY aus cropPolicy ("path").
  * ------------------------------------------------------------------------ */
 export function buildAnbauplan(stage: Stage): AnbauEntry[] {
-  const irr = STAGES[String(stage)].beregneteFlaecheHa;
-  const sf = irr / 4000;                      // SKALIERUNG_HA ist auf Stufe 1 (4.000 ha) kalibriert
-  // JAHR 0 (= START_YEAR) der Spezialkulturen kommt aus dem beschlossenen Skalierungspfad,
-  //  NICHT mehr aus der schematischen 6-Feld-Teilung: 2027 sind 300 ha Kartoffel geplant,
-  //  die übrigen Wertkulturen starten ab 2028. So sind Anbauplan (Jahr 0, Basis für CAPEX-,
-  //  Flotten- und Lager-Bemessung) und deriveCropAreasMY deckungsgleich.
-  const y0 = (id: string) => Math.round((SKALIERUNG_HA[id]?.[0] ?? 0) * sf);
-  const pommes = y0("kartoffel_pommes");
-  const chips = y0("kartoffel_chips");
-  const tomateA = y0("tomate");
-  const sellerie = y0("knollensellerie");
-  const suess = y0("suesskartoffel");
-  const knobl = y0("knoblauch");
-  const zwiebel = y0("zwiebel_moehre");
-  // Restfläche der Rotation trägt der Ackerbau (Weizen/Gerste/Mais je 1, Raps/Soja je ½) —
-  //  Σ beregnet bleibt exakt die beregnete Fläche der Stufe, keine Phantom-Hektar.
-  const specialSum = pommes + chips + tomateA + sellerie + suess + knobl + zwiebel;
-  const rest = Math.max(0, irr - specialSum);
-  const wA = Math.round(rest * 0.25), gA = Math.round(rest * 0.25), mA = Math.round(rest * 0.25);
-  const sojaA = Math.round(rest * 0.125);
-  const rapsA = rest - wA - gA - mA - sojaA;
+  const sf = STAGES[String(stage)].beregneteFlaecheHa / 4000; // SKALIERUNG_HA ist auf Stufe 1 kalibriert
   const mk = (cropId: CropId, area: number): AnbauEntry => ({
     id: `ab-${cropId}`,
     cropId,
@@ -2205,28 +2187,8 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
     plantingPeriod: CROP_CAL[cropId].plant,
     harvestPeriods: CROP_CAL[cropId].harvest.slice(),
   });
-  const mkDry = (cropId: CropId, area: number): AnbauEntry => ({ ...mk(cropId, area), pool: "dryland" });
-  // Unberegnete Trockenrotation (~1,5× beregnete Fläche in Süd-Dolj: 4.000 → 6.000 ha):
-  //  Weizen 40 % · Gerste 35 % · Raps 25 % (Rain-fed-Varianten mit eigener Kalkulation).
-  const dryBase = Math.round(STAGES[String(stage)].beregneteFlaecheHa * 1.5);
-  const wDry = Math.round(dryBase * 0.40), gDry = Math.round(dryBase * 0.35), rDry = dryBase - wDry - gDry;
-  return [
-    mk("weizen", wA),
-    mk("gerste_zw", gA),
-    mk("soja_luzerne", sojaA),
-    mk("winterraps", rapsA),
-    mk("mais", mA),
-    mk("tomate", tomateA),
-    mk("kartoffel_pommes", pommes),
-    mk("kartoffel_chips", chips),
-    mk("zwiebel_moehre", zwiebel),
-    mk("knollensellerie", sellerie),
-    mk("suesskartoffel", suess),
-    mk("knoblauch", knobl),
-    mkDry("weizen_dry", wDry),
-    mkDry("gerste_dry", gDry),
-    mkDry("raps_dry", rDry),
-  ];
+  return (Object.keys(SKALIERUNG_HA) as CropId[])
+    .map((cid) => mk(cid, Math.round((SKALIERUNG_HA[cid]?.[0] ?? 0) * sf)));
 }
 
 /** Forward-Migration gespeicherter Domänen (Cloud-AUTOSAVE / JSON-Import), die VOR der
@@ -2691,21 +2653,23 @@ const HOLDING: HoldingPlan = {
 
 // Multi-Entity-Register (Startbestand) — CUI per ANAF-Lookup befüllbar/prüfbar.
 //  Struktur: CY-Holding hält 100 % der RO-OpCo; PropCo (Eigentumsflächen) für Pacht-Modell.
+/** NEOTERRA-SOLO (Entscheidung 30.07.2026): EINE Gesellschaft. Holding (CY), Besitzgesellschaft
+ *  und Isolde Farms sind aus dem Modell entfernt — keine Konsolidierung, keine Entity-Umschaltung,
+ *  keine Intercompany-Miete. Die Konzernstruktur bleibt real, wird aber hier nicht mitgerechnet. */
 const ENTITIES: Entity[] = [
-  { id: "ent-holding", name: "NEOS Holding Ltd", role: "holding", country: "CY", ownershipPct: 100, cui: "", note: "Konzernmutter · Management & Control (Substanz CY)" },
-  { id: "ent-opco", name: "NEOTERRA SRL", role: "opco", country: "RO", ownershipPct: 100, cui: "", note: "Betriebsgesellschaft · Anbau & Vermarktung (Măceșu de Jos)" },
-  { id: "ent-propco", name: "NEOTERRA Land SRL", role: "propco", country: "RO", ownershipPct: 100, cui: "", note: "Besitzgesellschaft · Eigentumsflächen (Pacht an OpCo)" },
-  { id: "ent-isolde", name: "Isolde Farms SRL", role: "opco", country: "RO", ownershipPct: 100, cui: "", note: "Betriebsgesellschaft · Cash-Crop-/Trockenrotation (Getreide/Raps/Sonnenblume)" },
+  { id: "ent-opco", name: "NEOTERRA SRL", role: "opco", country: "RO", ownershipPct: 100, cui: "", note: "Betriebsgesellschaft · Wertkulturen (Măceșu de Jos)" },
 ];
 
 /** Operative Anbau-Entities (Kultur-Split). NEOTERRA-OpCo = Wertkulturen (Hauptentity),
  *  Isolde = Cash-/Trockenrotation. Default-Zuordnung, im Register frei überschreibbar. */
 export const ENTITY_NEOTERRA = "ent-opco";
-export const ENTITY_ISOLDE = "ent-isolde";
+/** Alt-Konstante: im Solo-Modell existiert Isolde nicht mehr. Bleibt nur, damit gespeicherte
+ *  Stände mit explizitem entityId nicht ins Leere zeigen — alles fällt auf NEOTERRA zurück. */
+export const ENTITY_ISOLDE = "ent-opco";
 /** Standard-Gesellschaft einer Kultur (falls kein explizites entityId gesetzt): Value → NEOTERRA,
  *  Cash/Trockenrotation → Isolde. */
-export function defaultEntityOf(cropId: string): string {
-  return VALUE_CROP_IDS.includes(cropId) ? ENTITY_NEOTERRA : ENTITY_ISOLDE;
+export function defaultEntityOf(_cropId: string): string {
+  return ENTITY_NEOTERRA;   // Solo-Modell: alle Kulturen gehören NEOTERRA
 }
 /** Effektive Entity einer Anbauplan-Zeile (explizit oder abgeleitet). */
 export function entityOfEntry(e: AnbauEntry): string {
@@ -2717,9 +2681,13 @@ export function entityOfEntry(e: AnbauEntry): string {
 // Eröffnungsbilanz ausbalanciert IST (Σ Aktiva = Σ Passiva) UND balance_zero grün
 // bleibt, ist ein nicht modellierbarer Alt-Schuldenstock ins Eröffnungs-Eigenkapital
 // gefaltet (debt → 0). Aktiva 7.000.000.000 = payables + shareCapital + retainedEarnings.
+// SOLO-MODELL: schlanke Startbilanz der NEOTERRA SRL zum 01.01.2027. Land gehört der (nicht
+// modellierten) Besitzgesellschaft → 0; Sachanlagen und Vorräte baut das Modell selbst auf.
+// Aktiva = Passiva: 2.000.000 € Kasse = 2.000.000 € Stammkapital. KALIBRIERUNGSPUNKT —
+// sobald der tatsächliche Eröffnungsstand vorliegt, hier eintragen.
 const OPENING_BALANCE: OpeningBalance = {
-  cash: 500000000, land: 4000000000, ppeNet: 2000000000, inventory: 300000000, receivables: 200000000,
-  payables: 300000000, debt: 0, shareCapital: 6000000000, retainedEarnings: 700000000,
+  cash: 200000000, land: 0, ppeNet: 0, inventory: 0, receivables: 0,
+  payables: 0, debt: 0, shareCapital: 200000000, retainedEarnings: 0,
 };
 
 const BIO: BiologicalAssetPolicy = { enabled: false, fairValueAssumptionKeys: {} };
@@ -2794,6 +2762,13 @@ const SEED_OVERHEAD: OverheadItem[] = [
   OV(OTH, "Sonstige Gemeinkosten / Contingency", 1500),
 ];
 export const OVERHEAD_GROUPS: string[] = [GA, FIN, IT, HR, PH, WH, LOG, MKT, SM, INS, QA, OTH];
+/** Overhead-Gruppen, die mit der PRODUKTIONSMENGE laufen (Nachernte, Lager, Logistik, Handel) —
+ *  im Gegensatz zum Corporate-Block (G&A, Finanzen, IT, HR, Vertrieb, Versicherung, QS, Sonstiges),
+ *  der weitgehend fix ist. Die Seed-Beträge sind auf den ZIELZUSTAND des Programms kalibriert
+ *  (letztes Planjahr), nicht auf das Startjahr — deshalb wird relativ zum Ziel skaliert und nicht
+ *  vom Startjahr hochmultipliziert. Ohne diese Trennung trüge 2027 mit 300 ha den vollen
+ *  Gemeinkostenblock eines 2.334-ha-Programms. */
+export const OVERHEAD_VOLUME_GROUPS: ReadonlySet<string> = new Set([PH, WH, LOG, MKT]);
 
 /* --------------------------------------------------------------------------
  * ABNAHMEVERTRÄGE (Off-take) — aus den drei geprüften Kartoffelkontrakten.
@@ -2866,8 +2841,23 @@ export const OFFTAKE_SEED: OfftakeContract[] = [
 /* --------------------------------------------------------------------------
  * SEED — die vollständig vorbefüllte Domäne (Default: Stufe 1).
  * ------------------------------------------------------------------------ */
+/** Flotte auf die Wertkulturen zuschneiden: Feldmaschinen nur, wenn ein Arbeitsgang einer
+ *  Wertkultur sie nutzt; Träger, wenn ihr Anbaugerät genutzt wird. Beregnung, Lager und
+ *  Logistik (Radlader/Shuttle) bleiben immer. Gleiche Regel wie scopeToValueOnly — hier
+ *  aber schon im SEED, weil das Solo-Modell gar keinen Ackerbau mehr kennt. */
+function valueCropMachineCatalog(catalog: MachineType[]): MachineType[] {
+  const used = new Set<string>();
+  for (const cid of Object.keys(SKALIERUNG_HA)) for (const g of ARBEITSGAENGE[cid as CropId] ?? []) used.add(g.m);
+  return catalog.filter((m) => {
+    if (m.mode !== "fixedFleet") return true;
+    if (m.cEff) return used.has(m.id);
+    if (m.serviceHoursLike) return used.has(m.serviceHoursLike);
+    return true;
+  });
+}
+
 export const SEED: Domain = {
-  meta: { id: "neos-fx", name: "NEOTERRA · Eigenmechanisierung (Stufe 1, 4.000 ha beregnet)", reportingCurrency: "EUR" },
+  meta: { id: "neos-fx", name: "NEOTERRA SRL · Wertkulturen (Skalierungspfad ab 2027)", reportingCurrency: "EUR" },
   stage: 1,
   scope: "full",
   timeline: TIMELINE,
@@ -2875,7 +2865,9 @@ export const SEED: Domain = {
   baseScenarioId: base,
   assumptions: ASSUMPTIONS,
   catalog: CATALOG,
-  machineCatalog: MACHINE_CATALOG,
+  // Flotte NUR die von den Wertkulturen genutzte Technik — Mähdrescher & Getreidekette
+  //  gehörten zum Ackerbau (Isolde) und sind im Solo-Modell entfallen.
+  machineCatalog: valueCropMachineCatalog(MACHINE_CATALOG),
   anbauplan: buildAnbauplan(1),
   arbeitsgaenge: ARBEITSGAENGE,
   decisions: { transportToBuyer: "own" },
@@ -2887,7 +2879,7 @@ export const SEED: Domain = {
   vat: VAT,
   subsidies: SUBSIDIES,
   personnel: PERSONNEL,
-  holding: HOLDING,
+  // holding: entfällt im Solo-Modell (keine CY-Konzernmutter in der Rechnung).
   entities: ENTITIES,
   consolidation: { active: false }, // opt-in: Konzern-Sicht erst per Schalter im Register einblenden
   openingBalance: OPENING_BALANCE,
@@ -2939,12 +2931,15 @@ export const SEED: Domain = {
     ],
     // Cash Crops @ Stufe 1: 6.000 ha Trockenrotation (Getreide/Raps) — 10.000 ha gesamt = 4.000 ha
     //  Wertkulturen (beregnet) + 6.000 ha Cash Crops. +33 % Schlagkraft (24,1 → 32,1 ha/h) am Spritz-Peak.
-    cash: { areaHa: 6000, passes: 4, cEffBaseHaH: 24.1, windowDays: 10, hoursDay: 16, sprayerCapexCent: 40000000, operatorYearCent: 5000000 },
+    // Cash-Crop-Block (6.000 ha Trockenrotation) gehörte Isolde — im Solo-Modell auf 0.
+    cash: { areaHa: 0, passes: 4, cEffBaseHaH: 24.1, windowDays: 10, hoursDay: 16, sprayerCapexCent: 40000000, operatorYearCent: 5000000 },
   },
   transport: { ...TRANSPORT_DEFAULT },
   // Pacht: ~2.500 ha Eigentum der Besitzgesellschaft, an die OpCo verpachtet. Süd-Dolj-Arendă
   //  ~300 €/ha, Index-Stufe +8 % alle 5 Jahre (≈ 1,5 %/Jahr CPI-nah). Editierbar im Simulator.
-  pacht: { ownedHa: 2500, baseRentPerHaCent: 30000, indexPct: 0.08, intervalYears: 5, indexBasis: "cpi",
+  // Solo-Modell: NEOTERRA besitzt keine Fläche (die Besitzgesellschaft ist nicht Teil des Modells) —
+  //  die gesamte bewirtschaftete Fläche ist Dritt-Pacht zum Süd-Dolj-Satz.
+  pacht: { ownedHa: 0, baseRentPerHaCent: 30000, indexPct: 0.08, intervalYears: 5, indexBasis: "cpi",
     indexSteps: [{ atYear: 5, pct: 0.08 }, { atYear: 10, pct: 0.08 }, { atYear: 15, pct: 0.08 }],
     ifrs16: true, leaseTermYears: 15, discountRate: 0.05,
     payMonths: [{ month: 8, share: 0.6 }, { month: 10, share: 0.4 }] },
@@ -5081,6 +5076,16 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     const curve = cropAreasMY.areas[cropId];
     return base > 0 && curve ? curve[Math.min(y, curve.length - 1)] / base : scale[y];
   };
+  /** ABSOLUTE Fläche der Kultur im Planjahr y (ha). Ersetzt das Faktor-Modell überall dort,
+   *  wo eine Kultur im Startjahr 0 ha hat: base = 0 ⇒ jeder Faktor bleibt 0 und die Kultur
+   *  taucht NIE auf. Genau das passiert im Skalierungspfad (Tomate/Zwiebel/Sellerie/
+   *  Süßkartoffel/Knoblauch starten erst 2028) — ohne diese Funktion rechnet das Modell
+   *  acht Jahre lang nur Kartoffel. */
+  const cropHaOfYear = (cropId: string, y: number): number => {
+    const curve = cropAreasMY.areas[cropId];
+    if (curve) return curve[Math.min(y, curve.length - 1)] ?? 0;
+    return (cropBaseHa.get(cropId) ?? 0) * scale[y];
+  };
   // Kulturscharfe Vintage-Treiber: Lager folgt Lager-Tonnage, Maschinen ihren Nutzer-Kulturen.
   const yieldOfCropMY = (cid: string) => { const yk = domain.catalog.find((c) => c.cropId === cid)?.yieldKey; return yk ? resolveScalar(domain, yk, scenarioId) : 0; };
   const shareOfStoreMY = (cid: string) => { const k = `store.share.${cid}`; return domain.assumptions[k] ? Math.max(0, Math.min(1, resolveScalar(domain, k, scenarioId))) : 1; };
@@ -5125,7 +5130,27 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     assumptions[key] = { id: b?.id ?? key, key, label: b?.label ?? key, unit: (b?.unit ?? unit) as any,
       scenarioProfiles: { [domain.baseScenarioId]: { kind: "curve", values } }, meta: b?.meta };
   };
-  const sgaDamp = (y: number) => 1 + 0.55 * (scale[y] - 1); // Corporate-Overhead wächst gedämpft
+  // Overhead-Faktor RELATIV ZUM ZIELZUSTAND (letztes Planjahr), nicht zum Startjahr:
+  //  · Corporate-Block (fix): 55 % Sockel + 45 % mit der Fläche — ein 300-ha-Start braucht
+  //    Geschäftsführung, Buchhaltung und IT, aber nicht die Struktur des Endausbaus.
+  //  · Volumen-Block (Packhaus/Lager/Logistik/Handel): linear mit der Erntemenge des Jahres.
+  const ovVolumeMonthly = (domain.overhead ?? []).filter((o) => OVERHEAD_VOLUME_GROUPS.has(o.group))
+    .reduce((sum, o) => sum + (o.monthlyCent || 0), 0);
+  const ovFixedMonthly = Math.max(0, overheadMonthly - ovVolumeMonthly);
+  const tonnesOfYear = (y: number) => Object.entries(cropAreasMY.areas)
+    .reduce((sum, [cid, curve]) => sum + (curve[Math.min(y, curve.length - 1)] ?? 0) * yieldOfCropMY(cid), 0);
+  const tTarget = tonnesOfYear(years - 1) || 1;
+  const aTarget = scale[years - 1] || 1;
+  /** Fläche des Jahres relativ zum Zielzustand (letztes Planjahr). */
+  const relToTarget = (y: number) => (scale[years - 1] > 0 ? scale[y] / scale[years - 1] : 1);
+  /** Gedämpft: 55 % Sockel + 45 % mit der Fläche (Leitung/Werkstatt skalieren unterproportional). */
+  const persDamp = (y: number) => 0.55 + 0.45 * relToTarget(y);
+  const sgaDamp = (y: number) => {
+    if (overheadMonthly <= 0) return 1;
+    const fixedY = ovFixedMonthly * (0.55 + 0.45 * (scale[y] / aTarget));
+    const volY = ovVolumeMonthly * (tonnesOfYear(y) / tTarget);
+    return (fixedY + volY) / overheadMonthly;
+  };
   // Phase 8 — Inflationsindizes je Jahr (getrennt Output/Input/Lohn/CAPEX). Jahr 0 = 1,0 (keine Inflation Jahr 1).
   const inflPow = (r: number) => (y: number) => Math.pow(1 + r, y);
   const iOut = inflPow(resolveScalar(domain, "infl.output", scenarioId));
@@ -5192,7 +5217,9 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   for (const key of ["pers.leitung.n", "pers.stamm.n", "pers.bewaesserung.n", "pers.lager.n", "pers.service.n", "pers.saison.n", "pers.prakt.n"]) {
     const b = domain.assumptions[key];
     const baseVal = resolveScalar(domain, key, domain.baseScenarioId) * personnelScale;
-    const persScaleY = (y: number) => DAMPED_PERS.has(key) ? sgaDamp(y) : scale[y];
+    // Kopfzahlen sind — wie der Overhead — auf den ZIELZUSTAND kalibriert, nicht auf das Startjahr.
+    //  Sonst trüge 2027 mit 300 ha die Mannschaft des Endausbaus und 2034 das 7,8-fache davon.
+    const persScaleY = (y: number) => DAMPED_PERS.has(key) ? persDamp(y) : relToTarget(y);
     if (years <= 1) {
       if (personnelScale !== 1) assumptions[key] = { id: b?.id ?? key, key, label: b?.label ?? key, unit: (b?.unit ?? "count") as any,
         scenarioProfiles: { [domain.baseScenarioId]: { kind: "constant", value: baseVal } }, meta: b?.meta };
@@ -5337,7 +5364,9 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // Kultur-Skalierungspolitik: je Kultur eigener Flächenpfad (cropFactor, oben abgeleitet).
   const cropPlansMY: CropPlan[] = years <= 1 ? cropPlans : cropPlans.flatMap((cp) =>
     Array.from({ length: years }, (_, y) => ({
-      ...cp, id: `${cp.id}-y${y}`, areaHa: cp.areaHa * cropFactor(cp.cropId, y),
+      // Absolute Jahresfläche, anteilig auf die Anbauplan-Zeilen derselben Kultur verteilt.
+      ...cp, id: `${cp.id}-y${y}`,
+      areaHa: cropHaOfYear(cp.cropId, y) * ((cropBaseHa.get(cp.cropId) ?? 0) > 0 ? cp.areaHa / (cropBaseHa.get(cp.cropId) as number) : 1 / Math.max(1, cropPlans.filter((x) => x.cropId === cp.cropId).length)),
       plantingPeriod: cp.plantingPeriod + y * 12,
       harvestPeriods: cp.harvestPeriods.map((h) => h + y * 12),
       secondCrop: cp.secondCrop ? { ...cp.secondCrop, harvestPeriod: cp.secondCrop.harvestPeriod + y * 12 } : undefined,

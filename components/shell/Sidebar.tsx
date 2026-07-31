@@ -56,7 +56,7 @@ const IA: Group[] = [
   { title: "Financials", items: [
     { id: "finanzierung", label: "Finanzierung", view: "finanzierung" },
     { id: "subventionen", label: "Subventionen", view: "subventionen" },
-    { id: "holding", label: "Holding (Zypern)", view: "holding" },
+    // Solo-Modell NEOTERRA SRL: Holding (CY) ist nicht Teil der Rechnung — Ansicht ausgeblendet.
     { id: "eroeffnung", label: "Eröffnungsbilanz", view: "eroeffnung" },
     { id: "pacht", label: "Pacht-Simulator", view: "pacht" },
     { id: "preise", label: "Makro & Finanzen", view: "preise" },
@@ -74,7 +74,7 @@ const IA: Group[] = [
   { title: "Verwaltung", items: [
     { id: "annahmen", label: "Annahmen-Register (Team-Review)", view: "annahmen" },
     { id: "kommentare", label: "Kommentare", view: "kommentare" },
-    { id: "gesellschaften", label: "Gesellschaften-Register", view: "gesellschaften" },
+    // Solo-Modell: keine Konzernstruktur, kein Entity-Split — Register ausgeblendet.
     { id: "team", label: "Team & Zugriff", view: "team" },
     { id: "verwaltung", label: "Speichern & Versionen", view: "verwaltung" },
   ]},
