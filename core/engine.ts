@@ -901,7 +901,12 @@ function computeOperating(
    * Der Schwund mindert die lieferbare MENGE, nicht die Kosten — die Herstellungskosten der
    * verdorbenen Ware stecken bereits im Feldbestand. */
   const has = (k: string) => !!state.assumptions[k];
+  // MASTER-SCHALTER: store.active = 0 → gar keine Einlagerung. Weder Lagererlös noch Lager-
+  //  kosten noch Verwahrerhaftung; die gesamte Ernte wird bei der Ernte direkt verkauft.
+  const storeAktiv = !has("store.active")
+    || (resolveAssumption(state, "store.active", chain, n, ppy)[0] ?? 1) >= 0.5;
   const storeShareOf = (cropId: string): number => {
+    if (!storeAktiv) return 0;
     const k = `store.share.${cropId}`;
     if (!has(k)) return 0;                       // ohne Quote: alles direkt ab Feld
     const v = resolveAssumption(state, k, chain, n, ppy)[0] ?? 0;

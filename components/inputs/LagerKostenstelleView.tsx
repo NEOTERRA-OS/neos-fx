@@ -19,12 +19,13 @@ import { AlertTriangle } from "lucide-react";
 const MON = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 
 export function LagerKostenstelleView() {
-  const { domain } = useModelStore();
+  const { domain, patch } = useModelStore();
   const sc = useModelStore((s) => s.view.scenarioId);
   const currency = useModelStore((s) => s.view.currency);
   const ms = useModelStore(selectModelState);
 
   const st = React.useMemo(() => computeStorage(ms, sc), [ms, sc]);
+  const lagerAktiv = !domain.assumptions["store.active"] || resolveScalar(domain, "store.active", sc) >= 0.5;
   const ppy = 12;
   const years = Math.max(1, Math.floor(st.balanceT.length / ppy));
   const [year, setYear] = React.useState(() => Math.max(0, years - 1));
@@ -92,11 +93,55 @@ export function LagerKostenstelleView() {
       {/* --- Kopf + Kennzahlen ---------------------------------------------- */}
       <div className="rounded-tile border" style={card}>
         <div className="px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
-          <h2 className="text-[14px] font-semibold">{t("Lager & Packhaus — Kostenstelle")}</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-[14px] font-semibold">{t("Lager & Packhaus — Kostenstelle")}</h2>
+            <label className="inline-flex items-center gap-2 text-[11px] font-semibold"
+                   style={{ color: lagerAktiv ? "var(--nx-brand-lift)" : "var(--nx-text-muted)" }}>
+              <input type="checkbox" checked={lagerAktiv}
+                onChange={(e) => patch((d) => {
+                  const a = d.assumptions["store.active"]; if (!a) return;
+                  const prof = a.scenarioProfiles[d.baseScenarioId];
+                  if (prof && prof.kind === "constant") prof.value = e.target.checked ? 1 : 0;
+                })} />
+              {lagerAktiv ? t("Lagerbau aktiv") : t("Lagerbau ausgesetzt")}
+            </label>
+          </div>
+          {lagerAktiv && (
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-[11px] text-nx-text-secondary">
+              <span className="caption text-[10px] text-nx-text-muted">{t("Einzeln entscheiden:")}</span>
+              {([["store.capex_shell", "Hülle & Bau selbst investieren"], ["store.capex_tech", "Technik selbst investieren"]] as const).map(([key, lbl]) => {
+                const on = !domain.assumptions[key] || resolveScalar(domain, key, sc) >= 0.5;
+                return (
+                  <label key={key} className="inline-flex items-center gap-1.5">
+                    <input type="checkbox" checked={on}
+                      onChange={(e) => patch((d) => {
+                        const a2 = d.assumptions[key]; if (!a2) return;
+                        const prof = a2.scenarioProfiles[d.baseScenarioId];
+                        if (prof && prof.kind === "constant") prof.value = e.target.checked ? 1 : 0;
+                      })} />
+                    {t(lbl)}
+                  </label>
+                );
+              })}
+              <span className="text-[10.5px] text-nx-text-muted">
+                {t("Abgewählt heißt: keine eigene Investition (Miete/Dienstleister). Steuerlich relevant — die Reinvestitionsbefreiung greift auf Technik, nicht auf Gebäude.")}
+              </span>
+            </div>
+          )}
           <p className="caption mt-0.5 text-[10.5px] text-nx-text-muted">
             {t("Die Ware wird bei der Ernte verkauft, das Eigentum geht auf den Abnehmer über, die Einlagerung wird als Dienstleistung berechnet. Gebaut werden muss die gleichzeitige Spitzenbelegung, nicht der Jahresdurchsatz.")}
           </p>
         </div>
+        {!lagerAktiv && (
+          <div className="flex items-start gap-2 border-b px-4 py-2.5 text-[11px]"
+               style={{ borderColor: "var(--nx-border)", color: "var(--nx-warning)" }}>
+            <AlertTriangle size={14} className="mt-px shrink-0" />
+            <span>
+              <b>{t("Der Lagerbau ist aus dem Modell genommen.")}</b>{" "}
+              {t("Keine Einlagerung, keine Lagererlöse, keine Lagerkosten und keine Lager-CAPEX — die gesamte Ernte wird direkt ab Feld verkauft. Die Rechenlogik unten bleibt vollständig erhalten und zeigt, was ein Lager brächte; scharf wird sie erst mit dem Schalter oben.")}
+            </span>
+          </div>
+        )}
         <div className="grid gap-px" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", background: "var(--nx-border)" }}>
           <Kpi label={t("Spitzenbelegung")} value={`${fmtNumber(peakYear, 0)} t`} hint={`${t("Kapazität Jahr")} ${y + 1} · ${t("Horizont-Spitze")} ${fmtNumber(st.peakT, 0)} t`} />
           <Kpi label={t("Lager-CAPEX")} value={fmtMoney(capexTotal, currency)} hint={`${fmtNumber(capexPerT / 100, 0)} €/t ${t("Kapazität")}`} />

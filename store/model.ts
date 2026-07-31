@@ -1411,6 +1411,19 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Ab welchem Planmonat kann überhaupt eingelagert werden. HEUTE GIBT ES KEIN LAGER — es muss
   //  erst gebaut werden. Vorher geht die gesamte Ernte direkt ab Feld weg. Standard 12 = ab
   //  Jahr 2, passend zur CAPEX-Phasierung (Anschaffung Jahr 0/1).
+  // MASTER-SCHALTER Lager/Packhaus. 0 = kein Lagerbau: keine Einlagerung, keine Lagererlöse,
+  //  keine Lagerkosten, KEINE Lager-CAPEX. Die gesamte Ernte geht direkt ab Feld weg.
+  //  Entscheidung 31.07.2026 (Benedikt): erst einmal komplett raus — der Lagerbau ist im
+  //  Detail zu analysieren. Die vollständige Lagermechanik (Dienstleistungsmodell,
+  //  Spitzenbelegung, Break-even-Gebühr) bleibt im Modell und ist mit einer 1 wieder scharf.
+  A("store.active", "store.active", "Lager/Packhaus aktiv (1) oder komplett aus (0)", "count", 0),
+  // Die beiden Bauteile werden EINZELN entschieden (Beschluss 31.07.2026): Hülle und Technik
+  //  sind getrennte Investitionen mit getrennter Nutzungsdauer, getrennter Steuerwirkung
+  //  (Art. 22 Reinvestitionsbefreiung greift auf Technik, nicht auf Gebäude) und getrennter
+  //  Make-or-Buy-Frage — eine Halle lässt sich mieten, eine Packlinie kaum.
+  //  Wirken erst, wenn store.active = 1 steht.
+  A("store.capex_shell", "store.capex_shell", "Lager: Hülle & Bau selbst investieren (1/0)", "count", 1),
+  A("store.capex_tech", "store.capex_tech", "Lager: Technik selbst investieren (1/0)", "count", 1),
   A("store.from_month", "store.from_month", "Lager verfügbar ab Planmonat", "count", 12),
   // DER Verhandlungswert: Aufschlag, den der Abnehmer für Lagerware zahlt, je Tonne und Monat.
   // VERHANDLUNGSANNAHME — kein vorliegender Vertrag sagt ihn zu; PepsiCo verlangt Lagerung
@@ -3791,7 +3804,9 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
   //  nur lagerpflichtige Kartoffel + Zwiebel/Möhre); 'valueCrops' → alle Wertkulturen; sonst alle.
   // Einlagerungsquote je Kultur (nur Lager/store, driver 'crops'): Anteil der Ernte, der eingelagert
   //  wird. Rest fährt direkt Feld → Verarbeiter → keine Lager-CAPEX. Fehlt der Key → 100 %.
+  const storeAktiv = !domain.assumptions["store.active"] || resolveScalar(domain, "store.active", scenarioId) >= 0.5;
   const storeShare = (cropId: string): number => {
+    if (!storeAktiv) return 0;                   // Master-Schalter aus → keine Lager-CAPEX
     const k = `store.share.${cropId}`;
     return domain.assumptions[k] ? Math.max(0, Math.min(1, resolveScalar(domain, k, scenarioId))) : 1;
   };
@@ -3887,7 +3902,10 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
       const tonnes = driverTonnes(m.driver);
       area = driverArea(m.driver);
       count = tonnes;
-      amount = Math.round(unitPrice * tonnes);
+      // Hülle und Technik einzeln abwählbar (z. B. Halle mieten, Packlinie selbst kaufen).
+      const bauTeil = m.id === "store" ? "store.capex_shell" : m.id === "store_tech" ? "store.capex_tech" : null;
+      const bauen = !bauTeil || !domain.assumptions[bauTeil] || resolveScalar(domain, bauTeil, scenarioId) >= 0.5;
+      amount = bauen ? Math.round(unitPrice * tonnes) : 0;
     } else {
       // Legacy perUnit (nicht mehr genutzt): konservativ 0.
       area = totalArea;
@@ -5080,7 +5098,12 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   };
   // Kulturscharfe Vintage-Treiber: Lager folgt Lager-Tonnage, Maschinen ihren Nutzer-Kulturen.
   const yieldOfCropMY = (cid: string) => { const yk = domain.catalog.find((c) => c.cropId === cid)?.yieldKey; return yk ? resolveScalar(domain, yk, scenarioId) : 0; };
-  const shareOfStoreMY = (cid: string) => { const k = `store.share.${cid}`; return domain.assumptions[k] ? Math.max(0, Math.min(1, resolveScalar(domain, k, scenarioId))) : 1; };
+  const storeAktivMY = !domain.assumptions["store.active"] || resolveScalar(domain, "store.active", scenarioId) >= 0.5;
+  const shareOfStoreMY = (cid: string) => {
+    if (!storeAktivMY) return 0;                 // Master-Schalter aus → keine Lager-Vintages
+    const k = `store.share.${cid}`;
+    return domain.assumptions[k] ? Math.max(0, Math.min(1, resolveScalar(domain, k, scenarioId))) : 1;
+  };
   /** Spitzenbelegung des gemeinsamen Lagers im Jahr y (t) — die zu bauende Kapazität.
    *  Analog zu storePeakConcurrentT, aber auf den Mehrjahres-Flächenkurven. */
   const storeMonthsMY = Math.max(0, Math.min(12, domain.assumptions["store.months"]
@@ -5739,7 +5762,7 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
   { group: "Lagerkanal (Feld vs. Lager)", keys: [
     "store.share.kartoffel_pommes", "store.share.kartoffel_chips", "store.share.zwiebel_moehre",
     "store.share.suesskartoffel", "store.share.knoblauch", "store.share.knollensellerie",
-    "store.months", "store.from_month", "store.service_mode", "store.fee_per_t_month", "store.energy_per_t_month",
+    "store.active", "store.capex_shell", "store.capex_tech", "store.months", "store.from_month", "store.service_mode", "store.fee_per_t_month", "store.energy_per_t_month",
     "store.handling_per_t", "store.loss_rate",
   ] },
   { group: "Subventionen", keys: ["subsidy.per_ha", "subsidy.coupled_freilandgemuese", "rev.gerste_zweitfrucht"] },

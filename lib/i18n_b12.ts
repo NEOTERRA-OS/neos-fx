@@ -461,5 +461,16 @@ const B12: Record<string, string> = {
   "Jede Zelle ist eine Variable \u2014 Fl\u00e4che je Kultur und Planjahr direkt editierbar. Das ganze Modell rechnet sofort neu: Umsatz, Maschinenbedarf, Lagerkapazit\u00e4t, Personal, Finanzierung. Der Pfeil rechts l\u00e4sst eine Zeile linear vom Start- auf den Zielwert laufen.": "Every cell is a variable \u2014 area per crop and plan year, directly editable. The whole model recomputes at once: revenue, machinery demand, storage capacity, staffing, financing. The arrow on the right ramps a row linearly from its start to its target value.",
   "Linear vom Start- auf den Zielwert hochlaufen lassen": "Ramp linearly from start to target value",
   "Das Startjahr wird zus\u00e4tzlich in den Anbauplan gespiegelt \u2014 er ist die Bemessungsgrundlage f\u00fcr Maschinenpark, Lager und Beregnung. Anbaupausen (Kartoffel \u2264 25 %, Doldenbl\u00fctler \u2264 20 %) und die Markt-Obergrenzen bleiben als W\u00e4chter aktiv und melden sich in der Pr\u00fcfliste.": "The start year is mirrored into the cropping plan \u2014 it is the sizing basis for machinery, storage and irrigation. Rotation breaks (potato \u2264 25 %, Apiaceae \u2264 20 %) and the market caps stay active as guards and report in the check list.",
+  "Lager/Packhaus aktiv (1) oder komplett aus (0)": "Storage/pack house active (1) or fully off (0)",
+  "Lagerbau aktiv": "Storage build active",
+  "Lagerbau ausgesetzt": "Storage build suspended",
+  "Der Lagerbau ist aus dem Modell genommen.": "The storage build is taken out of the model.",
+  "Keine Einlagerung, keine Lagererl\u00f6se, keine Lagerkosten und keine Lager-CAPEX \u2014 die gesamte Ernte wird direkt ab Feld verkauft. Die Rechenlogik unten bleibt vollst\u00e4ndig erhalten und zeigt, was ein Lager br\u00e4chte; scharf wird sie erst mit dem Schalter oben.": "No storage, no storage revenue, no storage cost and no storage capex \u2014 the entire harvest is sold straight from the field. The logic below stays fully intact and shows what a store would deliver; it only takes effect via the switch above.",
+  "Lager: H\u00fclle & Bau selbst investieren (1/0)": "Storage: invest in shell & building ourselves (1/0)",
+  "Lager: Technik selbst investieren (1/0)": "Storage: invest in technology ourselves (1/0)",
+  "Einzeln entscheiden:": "Decide individually:",
+  "H\u00fclle & Bau selbst investieren": "Invest in shell & building ourselves",
+  "Technik selbst investieren": "Invest in technology ourselves",
+  "Abgew\u00e4hlt hei\u00dft: keine eigene Investition (Miete/Dienstleister). Steuerlich relevant \u2014 die Reinvestitionsbefreiung greift auf Technik, nicht auf Geb\u00e4ude.": "Unchecked means no own investment (rent/service provider). Tax-relevant \u2014 the reinvestment exemption applies to technology, not to buildings.",
 };
 export default B12;
