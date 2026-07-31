@@ -1,8 +1,9 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
-import { buildModelState, buildAnbauplan, type Domain } from "../../store/model";
+import { buildModelState, SKALIERUNG_TOTAL_HA, START_YEAR } from "../../store/model";
 import { computeModel } from "../../core/engine";
+import { aggregateComputed } from "../../core/aggregate";
 import { npv, irr } from "../../design/finance";
 import { fmtMoney, fmtNumber, fmtPct } from "../../design/format";
 import { t } from "../../lib/i18n";
@@ -46,26 +47,28 @@ export function BewertungView() {
   const [lboLo, setLboLo] = React.useState(5.5);  const [lboHi, setLboHi] = React.useState(7.5);
 
   const model = React.useMemo(() => {
-    // Basis: Anbauplan des Startjahrs → Per-ha-Kennzahlen (Cent).
-    //  KORREKTUR 30.07.2026: der Nenner war fest STAGES["1"].beregneteFlaecheHa = 4.000 ha,
-    //  während buildAnbauplan(1) seit der Solo-Umstellung die 300 ha des Skalierungspfads
-    //  liefert. Jede Per-ha-Kennzahl der Bewertung war dadurch um Faktor ~13 zu niedrig.
-    //  Der Nenner kommt jetzt aus DEMSELBEN Anbauplan, auf dem gerechnet wird.
-    const d1: Domain = structuredClone(domain);
-    d1.stage = 1; d1.anbauplan = buildAnbauplan(1);
-    const cm = computeModel(buildModelState(d1, sc), sc, { outputGranularity: "month" });
-    const sum = (v: number[]) => v.reduce((a, b) => a + b, 0);
-    const area1 = Math.max(1, d1.anbauplan.reduce((acc, e) => acc + e.areaHa, 0));
-    // JAHRES-Per-ha (Cent): Summe über den Horizont ÷ Anzahl Jahre ÷ Fläche — NICHT kumuliert
-    //  (sonst 8×-Überhöhung, wird in proj als Jahresrate × Fläche verwendet).
-    const yrs = Math.max(1, cm.timeline.periodCount / 12);
-    const ebitdaPerHa = sum(cm.pnl.ebitda.values) / yrs / area1;
-    const ebitPerHa = sum(cm.pnl.ebit.values) / yrs / area1;
-    const afaPerHa = sum(cm.pnl.depreciation.values) / yrs / area1;
-    const capexPerHa = Math.abs(sum(cm.cashFlow.capex.values)) / yrs / area1;
-    const revPerHa = sum(cm.pnl.revenue.values) / yrs / area1;
+    // KEINE Per-ha-Hochrechnung mehr. Die Ansicht baute aus einem Ein-Jahres-Lauf
+    //  Kennzahlen JE HEKTAR und multiplizierte sie mit einem eigenen Flächen-Ramp von
+    //  4.000 auf 20.000 ha — Flächen aus dem alten Gruppenmodell, die NEOTERRA nie erreicht
+    //  (Zielzustand 2.334 ha). Ergebnis waren ein EBITDA von 425 Mio statt 9,6 Mio und ein
+    //  Enterprise Value von 3,2 Mrd. Dazu kam ein zweiter Fehler: der Nenner war die
+    //  300-ha-Startfläche, der Zähler die Achtjahressumme über 300 → 2.334 ha — jede
+    //  Je-ha-Größe zusätzlich um Faktor 5,4 zu hoch.
+    //  Jetzt: die Bewertung liest die JAHRESWERTE der Engine, dieselben Zahlen, die in GuV
+    //  und Cashflow stehen. Kein zweiter Rechenweg, keine Flächenannahme.
+    const cm = computeModel(buildModelState(domain, sc), sc, { outputGranularity: "month" });
+    const an = aggregateComputed(cm, "year");
+    const g = (o: any, k: string): number[] => o?.[k]?.values ?? [];
     const tax = readAssumption(domain, "tax.rate", sc) ?? 0.16;
-    return { ebitdaPerHa, ebitPerHa, afaPerHa, capexPerHa, revPerHa, tax };
+    return {
+      jahre: an.timeline.periodCount,
+      ebitda: g(an.pnl, "ebitda"),
+      ebit: g(an.pnl, "ebit"),
+      afa: g(an.pnl, "depreciation"),
+      capex: g(an.cashFlow, "capex").map((v) => Math.abs(v)),
+      revenue: g(an.pnl, "revenue"),
+      tax,
+    };
   }, [domain, sc, tick]);
 
   // Net Debt (heute) aus dem echten Mehrjahres-Modell für die EV→Equity-Brücke.
@@ -91,45 +94,45 @@ export function BewertungView() {
 
   const proj = React.useMemo(() => {
     const w = wacc / 100;
-    const areaAt = (y: number) => y <= 0 ? startHa : Math.min(startHa + (endHa - startHa) * (y / rampY), endHa);
+    const n = Math.max(1, model.jahre);
     const rows: { y: number; area: number; ebitda: number; afa: number; capex: number; fcff: number; disc: number }[] = [];
     const cf: number[] = [];
-    // t0: Aufbau der Startflotte
-    const initCapex = model.capexPerHa * startHa;
-    cf.push(-initCapex);
-    rows.push({ y: 0, area: startHa, ebitda: 0, afa: 0, capex: initCapex, fcff: -initCapex, disc: -initCapex });
-    let prevArea = startHa;
-    for (let y = 1; y <= horizon; y++) {
-      const area = areaAt(y);
-      const ebitda = model.ebitdaPerHa * area;
-      const ebit = model.ebitPerHa * area;
-      const afa = model.afaPerHa * area;
-      const incrCapex = model.capexPerHa * Math.max(0, area - prevArea);
-      const fcff = ebit * (1 - model.tax) + afa - incrCapex;
-      prevArea = area;
+    // Jahr 0 ist im Modell das ERSTE Planjahr (2027) — es hat bereits Umsatz UND CAPEX.
+    //  Ein künstliches t0 mit reiner Anfangsinvestition gibt es nicht mehr.
+    for (let y = 0; y < n; y++) {
+      const ebitda = model.ebitda[y] ?? 0;
+      const ebit = model.ebit[y] ?? 0;
+      const afa = model.afa[y] ?? 0;
+      const capex = model.capex[y] ?? 0;
+      const fcff = ebit * (1 - model.tax) + afa - capex;
       cf.push(fcff);
-      rows.push({ y, area, ebitda, afa, capex: incrCapex, fcff, disc: fcff / Math.pow(1 + w, y) });
+      rows.push({ y, area: SKALIERUNG_TOTAL_HA[Math.min(y, SKALIERUNG_TOTAL_HA.length - 1)] ?? 0,
+                  ebitda, afa, capex, fcff, disc: fcff / Math.pow(1 + w, y) });
     }
-    const ebitdaFinal = model.ebitdaPerHa * areaAt(horizon);
-    const salesFinal = model.revPerHa * areaAt(horizon);
-    const withTV = (m: number) => { const c = cf.slice(); c[horizon] += m * ebitdaFinal; return c; };
+    const last = n - 1;
+    // Terminal Value auf dem EINGESCHWUNGENEN Endjahr (2034, 2.334 ha) — vorher war das
+    //  Basisjahr das zehnte Jahr eines erfundenen Ramps bei 20.000 ha.
+    const ebitdaFinal = model.ebitda[last] ?? 0;
+    const salesFinal = model.revenue[last] ?? 0;
+    const withTV = (m: number) => { const c = cf.slice(); c[last] += m * ebitdaFinal; return c; };
     const base = withTV(exitM);
     const npvBase = npv(base, w);
     const irrBase = irr(base);
     const tv = exitM * ebitdaFinal;
     const peak = cf.reduce((acc, _, i) => { const c = cf.slice(0, i + 1).reduce((a, b) => a + b, 0); return Math.min(acc, c); }, 0);
-    const sens = [5, 7, 9].map((m) => { const c = withTV(m); return { m, npv: npv(c, w), irr: irr(c) }; });
+    const sens = [exitM - 2, exitM, exitM + 2].map((m) => { const c = withTV(m); return { m, npv: npv(c, w), irr: irr(c) }; });
     const totalCapex = rows.reduce((a, r) => a + r.capex, 0);
+    const horizon = last;
 
     // Investoren-Kennzahlen
-    const pvOps = rows.filter((r) => r.y >= 1).reduce((a, r) => a + r.disc, 0) + tv / Math.pow(1 + w, horizon); // Enterprise Value (Ops)
+    const pvOps = rows.reduce((a, r) => a + r.disc, 0) + tv / Math.pow(1 + w, horizon); // Enterprise Value (Ops)
     const ev = pvOps;
     const equityValue = ev - fin.netDebtNow;
-    const entryEbitda = model.ebitdaPerHa * areaAt(1);
-    const entrySales = model.revPerHa * areaAt(1);
+    const entryEbitda = model.ebitda[0] ?? 0;
+    const entrySales = model.revenue[0] ?? 0;
     const evEbitda = entryEbitda > 0 ? ev / entryEbitda : 0;
     const evSales = entrySales > 0 ? ev / entrySales : 0;
-    const nopatFinal = model.ebitPerHa * (1 - model.tax) * areaAt(horizon);
+    const nopatFinal = (model.ebit[last] ?? 0) * (1 - model.tax);
     const roic = totalCapex > 0 ? nopatFinal / totalCapex : 0;
     const ebitdaMargin = salesFinal > 0 ? ebitdaFinal / salesFinal : 0;
     const fcffFinal = rows[rows.length - 1]?.fcff ?? 0;
