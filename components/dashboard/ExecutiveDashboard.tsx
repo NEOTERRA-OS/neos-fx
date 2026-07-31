@@ -64,8 +64,12 @@ export function ExecutiveDashboard() {
           einer Tabelle verschmolzen — eine Kultur, eine Zeile. Hier bleibt das Ergebnisband. */}
       <ErgebnisTabelle annual={annual} />
 
-      {/* Financial Evolution — alle Jahre, nicht nur das Zieljahr */}
-      <FinancialEvolution annual={annual} />
+      {/* ENTFERNT 31.07.2026: Financial Evolution. Die Tabelle darüber zeigt Umsatz, EBITDA und
+          Jahresergebnis bereits Jahr für Jahr — das Diagramm war dieselbe Zahl ein zweites Mal. */}
+
+      {/* Direkt unter den Financials: WORAUS die Zahlen kommen. Die Anbaustruktur stand vorher
+          weit unten — man las erst das Ergebnis und fand die Mengen drei Blöcke später. */}
+      <CropStructureProd domain={sdomain} scenarioId={scenarioId} yearIndex={i} yearLabel={yearLabel} />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Waterfall annual={annual} idx={i} yearLabel={yearLabel} />
@@ -76,8 +80,6 @@ export function ExecutiveDashboard() {
         <SeasonCurve monthly={monthly} />
         <CropMix contrib={contrib} />
       </div>
-
-      <CropStructureProd domain={sdomain} scenarioId={scenarioId} yearIndex={i} yearLabel={yearLabel} />
 
       {/* Ergebnisbeitrag je Kultur (DB/Vollkosten-Toggle) — direkt unter der Anbaustruktur */}
       <ContributionView />
@@ -102,121 +104,8 @@ function Tile({ title, hint, children }: { title: string; hint?: string; childre
   );
 }
 
-/** Financial Evolution — Umsatz/EBITDA/Jahresüberschuss über ALLE Jahre (gruppierte Säulen)
- *  + FCF als Linie. Pixel-Koordinaten (feste Höhe, kein Riesen-Scaling) + Hover-Tooltip je Balken/Punkt. */
-function FinancialEvolution({ annual }: { annual: ComputedModel }) {
-  const n = annual.timeline.periodCount;
-  const years = annual.timeline.periods.map((p) => p.label);
-  const v = (li: { values: number[] }, i: number) => li.values[i] ?? 0;
-  const rev = (i: number) => v(annual.pnl.revenue, i) + v(annual.pnl.subsidies, i);
-  const ebitda = (i: number) => v(annual.pnl.ebitda, i);
-  const ni = (i: number) => v(annual.pnl.netIncome, i);
-  const fcf = (i: number) => annual.kpis.fcf.values[i] ?? 0;
-  // Farblich klar getrennt: Umsatz = Emerald-Verlauf · EBITDA = Blau (Locate) ·
-  //  Jahresüberschuss = Brand-Lift. FCF-Linie dadurch NEUTRAL (gestrichelt), damit Blau eindeutig EBITDA ist.
-  const series = [
-    { key: t("Umsatz"), col: "url(#nxSeriesV)", leg: "var(--nx-series)", get: rev },
-    { key: "EBITDA", col: "var(--nx-locate)", leg: "var(--nx-locate)", get: ebitda },
-    { key: t("Jahresüberschuss"), col: "var(--nx-brand-lift)", leg: "var(--nx-brand-lift)", get: ni },
-  ];
-  const FCF_COL = "var(--nx-text-secondary)";
-  const [tip, setTip] = React.useState<{ x: number; y: number; text: string } | null>(null);
-  const boxRef = React.useRef<HTMLDivElement>(null);
-  const M = (c: number) => `${fmtNumber(c / 1e8, 1)} M€`;
-  const show = (e: React.MouseEvent, text: string) => {
-    const r = boxRef.current?.getBoundingClientRect();
-    if (!r) return;
-    setTip({ x: e.clientX - r.left, y: e.clientY - r.top, text });
-  };
+/* FinancialEvolution entfernt 31.07.2026 — doppelt zur Tabelle "Ergebnis je Planjahr". */
 
-  // Pixel-Geometrie: feste Höhe, Breite responsiv via viewBox-Breite 1000.
-  const W = 1000, H = 190, padX = 10, padB = 8, padT = 8;
-  const maxV = Math.max(1, ...Array.from({ length: n }, (_, i) => rev(i)));
-  const minV = Math.min(0, ...Array.from({ length: n }, (_, i) => Math.min(ni(i), fcf(i))));
-  const span = maxV - minV || 1;
-  const yOf = (val: number) => padT + (1 - (val - minV) / span) * (H - padT - padB);
-  const zeroY = yOf(0);
-  const groupW = (W - padX * 2) / n;
-  const barW = Math.min(26, (groupW - 18) / series.length);
-  const fcfPts = Array.from({ length: n }, (_, i) => `${padX + groupW * (i + 0.5)},${yOf(fcf(i))}`).join(" ");
-
-  return (
-    <Tile title="Financial Evolution" hint={t("Umsatz · EBITDA · Jahresüberschuss (Säulen) + Free Cash Flow (Linie) — alle Jahre")}>
-      <div ref={boxRef} className="relative" onMouseLeave={() => setTip(null)}>
-        {/* preserveAspectRatio="none" + feste Höhe: Balken spannen IMMER die volle Breite →
-             Jahreslabels (HTML-Flex darunter) bleiben auf jeder Bildschirmbreite bündig. */}
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" height={H + 10} preserveAspectRatio="none" style={{ display: "block" }}>
-          <SeriesDefs />
-          <line x1={padX} x2={W - padX} y1={zeroY} y2={zeroY} stroke="var(--nx-border)" strokeWidth={1} />
-          {Array.from({ length: n }, (_, i) => (
-            <g key={i}>
-              {series.map((s, si) => {
-                const val = s.get(i);
-                const y0 = Math.min(yOf(val), zeroY), h = Math.max(2, Math.abs(yOf(val) - zeroY));
-                const x = padX + groupW * i + (groupW - series.length * barW) / 2 + si * barW;
-                return (
-                  <rect key={s.key} x={x} y={y0} width={barW - 3} height={h} rx={3}
-                    fill={val < 0 ? "var(--nx-error)" : s.col}
-                    style={{ cursor: "pointer" }}
-                    onMouseMove={(e) => show(e, `${years[i]} · ${s.key}: ${M(val)}`)}
-                    onMouseLeave={() => setTip(null)} />
-                );
-              })}
-            </g>
-          ))}
-          <polyline points={fcfPts} fill="none" stroke={FCF_COL} strokeWidth={2.5} strokeDasharray="6 4" opacity={0.95} style={{ pointerEvents: "none" }} />
-          {Array.from({ length: n }, (_, i) => (
-            <circle key={i} cx={padX + groupW * (i + 0.5)} cy={yOf(fcf(i))} r={4.5} fill={FCF_COL}
-              style={{ cursor: "pointer" }} opacity={0.9}
-              onMouseMove={(e) => show(e, `${years[i]} · FCF: ${M(fcf(i))}`)}
-              onMouseLeave={() => setTip(null)} />
-          ))}
-        </svg>
-        {/* Jahreslabels als HTML (feste Schriftgröße — skaliert nicht mit dem SVG) */}
-        <div className="flex" style={{ padding: `0 ${padX / W * 100}%` }}>
-          {years.map((y) => <span key={y} className="num flex-1 text-center text-[10.5px] text-nx-text-muted">{y}</span>)}
-        </div>
-        {tip && (
-          <div className="pointer-events-none absolute z-10 rounded-md border px-2.5 py-1.5 num text-[11.5px] font-semibold"
-            style={{ left: Math.min(tip.x + 12, (boxRef.current?.clientWidth ?? 300) - 150), top: Math.max(0, tip.y - 34),
-              background: "var(--nx-elevated)", borderColor: "var(--nx-border)", color: "var(--nx-text)", boxShadow: "var(--nx-el-pop)" }}>
-            {tip.text}
-          </div>
-        )}
-      </div>
-      <div className="mt-2 flex flex-wrap gap-4 caption text-[10px] text-nx-text-muted">
-        {series.map((s) => <span key={s.key} className="inline-flex items-center gap-1"><span style={{ width: 10, height: 6, background: s.leg, display: "inline-block", borderRadius: 1 }} /> {s.key}</span>)}
-        <span className="inline-flex items-center gap-1"><span style={{ width: 12, height: 0, borderTop: `2px dashed ${FCF_COL}`, display: "inline-block" }} /> FCF</span>
-      </div>
-      <div className="overflow-x-auto mt-2">
-        <table className="w-full text-[11px]">
-          <thead><tr>
-            <th className="caption text-[9px] text-nx-text-muted text-left px-1 py-0.5">€</th>
-            {years.map((y) => <th key={y} className="caption text-[9px] text-nx-text-muted text-right px-1 py-0.5">{y}</th>)}
-          </tr></thead>
-          <tbody>
-            {([[t("Umsatz"), rev], ["EBITDA", ebitda], [t("JÜ"), ni], ["FCF", fcf]] as [string, (i: number) => number][]).map(([label, fn]) => (
-              <tr key={label} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-                <td className="px-1 py-0.5 text-nx-text-secondary">{label}</td>
-                {years.map((_, i) => { const val = fn(i); return (
-                  <td key={i} className="num px-1 py-0.5 text-right" style={{ color: val < 0 ? "var(--nx-error)" : "var(--nx-text)" }}>{fmtNumber(val / 1e8, 1)} M</td>
-                ); })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Tile>
-  );
-}
-
-/* ENTFERNT 31.07.2026: StufenBoard (Meilensteine des Skalierungspfads). Zeigte Fläche,
-   Mengen, Umsatz, EBITDA und Jahresüberschuss in drei Stichjahren — die Tabellen
-   "Skalierungspfad der Wertkulturen" und "Ergebnis je Planjahr" zeigen dasselbe über
-   alle acht Jahre. */
-
-/** Anbaustruktur & Produktion — Fläche (ha), Anteil, Ertrag (t/ha) und Netto-Produktion (t) je Kultur
- *  für das angezeigte Jahr (beregneter Block + Trockenrotation). */
 function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domain: any; scenarioId: string; yearIndex: number; yearLabel: string }) {
   const my = deriveCropAreasMY(domain);
   const yi = Math.min(yearIndex, my.years - 1);

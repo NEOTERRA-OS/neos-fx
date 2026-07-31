@@ -2526,8 +2526,10 @@ export function migrateDomain(dIn: Domain): Domain {
   //  Maschinenbedarf und Personal rechnen mit. Es reicht also nicht, sie in den Ansichten
   //  auszublenden; sie müssen aus der Domäne heraus, sonst zeigt das Modell eine Struktur, die
   //  es nicht mehr gibt. Der Kulturkatalog behält ihre Stammdaten als Referenz.
+  //  KEIN frueher Rücksprung, wenn der Anbauplan schon sauber ist: Zeitachse, Wachstumskurve
+  //  und Katalog können unabhängig davon veraltet sein. Genau daran ist die erste Fassung
+  //  gescheitert — der Plan war bereinigt, die Jahresbeschriftung lief trotzdem ab 2026.
   const fremd = d.anbauplan.filter((a) => !VALUE_CROP_IDS.includes(a.cropId));
-  if (!fremd.length) return d;
   const anbauplan = d.anbauplan.filter((a) => VALUE_CROP_IDS.includes(a.cropId));
   let cropPolicy = { ...(d.cropPolicy ?? {}) };
   for (const a of fremd) delete cropPolicy[a.cropId];
@@ -2578,7 +2580,15 @@ export function migrateDomain(dIn: Domain): Domain {
     acquisitions: undefined,
   } : d.growth;
 
-  return { ...d, anbauplan, cropPolicy, catalog, growth, scope: "full", stage: 1, entityView: undefined };
+  // ZEITACHSE: Altstände tragen das alte Basisjahr (2026). Die Engine rechnet zwar rein über
+  //  Periodenindizes, aber JEDE Beschriftung — Diagramme, Jahresspalten, Stichtage der Bilanz —
+  //  kommt aus timeline.startDate. Ohne Nachziehen liest sich der ganze Plan um ein Jahr
+  //  verschoben, obwohl die Zahlen zum Startjahr 2027 gehören.
+  const timeline = d.timeline && !String(d.timeline.startDate ?? "").startsWith(String(START_YEAR))
+    ? SEED.timeline
+    : d.timeline;
+
+  return { ...d, anbauplan, cropPolicy, catalog, growth, timeline, scope: "full", stage: 1, entityView: undefined };
 }
 
 /* --------------------------------------------------------------------------
