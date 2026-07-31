@@ -17,7 +17,6 @@ import { PersonalView } from "../inputs/PersonalView";
 import { FinanzierungView } from "../inputs/FinanzierungView";
 import { SubventionenView } from "../inputs/SubventionenView";
 import { EroeffnungsbilanzView } from "../inputs/EroeffnungsbilanzView";
-import { ArbeitszeitkontoView } from "../inputs/ArbeitszeitkontoView";
 import { AnnahmenView } from "../inputs/AnnahmenView";
 import { ScenarioStudioView } from "../inputs/ScenarioStudioView";
 import { HoldingView } from "../inputs/HoldingView";
@@ -169,7 +168,7 @@ export function AppShell() {
                 : view === "lohnarbeit" ? <MaschinenparkView />
                 : view === "holding" ? <HoldingView />
                 : view === "eroeffnung" ? <EroeffnungsbilanzView />
-                : view === "arbeitszeit" ? <ArbeitszeitkontoView />
+                : view === "arbeitszeit" ? <PersonalView />
                 : view === "einsatz" ? <EinsatzView />
                 : view === "studio" ? <ScenarioStudioView />
                 : view === "lagerkst" ? <LagerKostenstelleView />

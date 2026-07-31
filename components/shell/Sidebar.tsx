@@ -42,7 +42,6 @@ const IA: Group[] = [
   { title: "Personal", items: [
     { id: "personal", label: "Personalplanung", view: "personal" },
     { id: "overhead", label: "Overhead / SG&A", view: "overhead" },
-    { id: "arbeitszeit", label: "Arbeitszeitkonto", view: "arbeitszeit" },
   ]},
   { title: "Financials", items: [
     { id: "finanzierung", label: "Finanzierung", view: "finanzierung" },
