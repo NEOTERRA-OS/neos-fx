@@ -1422,7 +1422,11 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("mprice.roder_ropa", "mprice.roder_ropa", "Roder ROPA Keiler II (Liste netto o. MwSt, mit WD-Triebachse)", "money", 22500000),
   // Reale John-Deere-Angebotswerte (Liste) — Overrides für Rabatt/Restwert an der MachineType.
   A("mprice.zug_8rx", "mprice.zug_8rx", "Zugschlepper JD 8RX 410 (Liste, JD-Angebot)", "money", 68644700),
-  A("mprice.zug_9r", "mprice.zug_9r", "Zugschlepper JD 9R 590 (Liste, JD-Angebot; Prime Mover 12-m-Boden/Saat)", "money", 70033600),
+  // 9R 590 -> 8R 410 (Entscheidung 31.07.2026). Fuer 300 ha Startflaeche ist die 590-PS-Klasse
+  //  ueberdimensioniert. Anker: dasselbe JD-Angebot vom 23.07.2026 wie fuer 8RX und 9R —
+  //  Liste 523.813 EUR gegen 700.336 EUR, also -25,2 %. Der 8R 410 zieht den 6,2-m-Grubber
+  //  (HORSCH gibt max. 435 PS an) mit Reserve.
+  A("mprice.zug_9r", "mprice.zug_9r", "Zugschlepper JD 8R 410 (Liste, JD-Angebot 23.07.2026)", "money", 52381300),
   A("mprice.ops_6r", "mprice.ops_6r", "Pflege/Ernte-Schlepper JD 6R 260 (Liste = 6R 250 +3 %)", "money", 32509400),
   A("mprice.lkw_sattel", "mprice.lkw_sattel", "LKW mit Sattelauflieger (Straßentransport/Auslieferung)", "money", 13000000),
   A("mprice.radlader", "mprice.radlader", "JCB Radlader (Lager/Verladung)", "money", 10000000),
@@ -1997,7 +2001,7 @@ const SPEC: Spec[] = [
   //  6,20 m, bis 30 cm Arbeitstiefe, ~435 PS empfohlen (→ 9R 590), Liste ~71.230 € (profi-Test).
   //  cEff = 6,2 m × 8 km/h × 0,72 ÷ 10 ≈ 3,57 ha/h (halbe Schlagkraft ggü. dem alten 12-m-Fantasieprofil).
   { id: "pflug",      label: "Grubber HORSCH Fortis 6.4 LT · bis 30 cm (6,20 m)", priceKey: "mprice.pflug", cat: "gezogen", neupreis: 7200000, nutzung: 10, hJ: 600, restw: 0.25, dieselLh: 22, afa: 1800, zins: 600, vers: 480, rep: 1920, schmier: 260, cEff: 3.57, fleet: 4, tractorId: "zug_9r" },
-  { id: "saatbett",   label: "Saatbettkombi HORSCH Cruiser 12 XL · 12,0 m",              priceKey: "mprice.saatbett",   cat: "gezogen", neupreis: 7000000, nutzung: 10, hJ: 500, restw: 0.25, dieselLh: 18, afa: 2400, zins: 800, vers: 640, rep: 2240, schmier: 270, cEff: 9.60, fleet: 1, tractorId: "zug_9r" },
+  { id: "saatbett",   label: "Saatbettkombi Väderstad NZ Extreme · 12,5 m (passiv)",              priceKey: "mprice.saatbett",   cat: "gezogen", neupreis: 7000000, nutzung: 10, hJ: 500, restw: 0.25, dieselLh: 18, afa: 2400, zins: 800, vers: 640, rep: 2240, schmier: 270, cEff: 9.60, fleet: 1, tractorId: "zug_9r" },
   { id: "drille",     label: "Getreidedrille HORSCH Pronto 9 DC · 9,0 m", priceKey: "mprice.drille", cat: "gezogen", neupreis: 13000000, nutzung: 12, hJ: 350, restw: 0.25, dieselLh: 14, afa: 3036, zins: 1214, vers: 971, rep: 2429, schmier: 210, cEff: 6.00, fleet: 1, tractorId: "zug_9r" },
   { id: "einzelkorn", label: "Einzelkorn HORSCH Maestro 24.50 SX · 24 R 50 cm (12,0 m)", priceKey: "mprice.einzelkorn", cat: "gezogen", neupreis: 24000000, nutzung: 12, hJ: 300, restw: 0.25, dieselLh: 12, afa: 3958, zins: 1583, vers: 1267, rep: 3167, schmier: 180, cEff: 4.02, fleet: 2, tractorId: "zug_9r" },
   // FEINGEMÜSE-SÄTECHNIK. Der Maestro ist eine Mais-/Soja-/Raps-Einzelkornsämaschine mit
@@ -2061,7 +2065,7 @@ type CapexOnlySpec = {
 const CAPEX_ONLY_SPEC: CapexOnlySpec[] = [
   // Reale JD-Angebotswerte 9R 590: Liste 700.336 € / Rabatt 35,03 % / Restwert 29,24 % v. Liste.
   // BESTAND 3× — Prime Mover für die 12-m-Boden/Saat/Drille (590-PS-Klasse, ≠ 8RX 410).
-  { id: "zug_9r",   label: "Zug JD 9R 590 (12-m-Boden/Saat)", priceKey: "mprice.zug_9r", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
+  { id: "zug_9r",   label: "Zug JD 8R 410 (Boden/Saat)", priceKey: "mprice.zug_9r", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
     discountPct: 0.3503, residualPctList: 0.2924, serviceRateKey: "tco.zug_8rx.service_h", serviceHoursLike: "pflug", owned: 0 },
   // Reale JD-Angebotswerte: Liste 686.447 € / Rabatt 36,05 % / Restwert 30,06 % v. Liste / Wartung 2,91 €/h.
   { id: "zug_8rx",  label: "Zug JD 8RX 410",       priceKey: "mprice.zug_8rx",  cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
@@ -2082,11 +2086,15 @@ const CAPEX_ONLY_SPEC: CapexOnlySpec[] = [
 //  Klare Struktur nach Feld-Arbeitsfolge (Bodenbearbeitung → Aussaat/Pflanzung → Düngung →
 //  Pflanzenschutz → Ernte) plus Trag-/Infrastruktur-Klassen. Kanonisch via CAT_ORDER sortiert.
 const MACHINE_META: Record<string, { category: string; manufacturer: string; product: string }> = {
-  zug_9r:      { category: "Zugmaschinen", manufacturer: "John Deere", product: "9R 590" },
+  zug_9r:      { category: "Zugmaschinen", manufacturer: "John Deere", product: "8R 410 (Rad, 411 PS)" },
   zug_8rx:     { category: "Zugmaschinen", manufacturer: "John Deere", product: "8RX 410" },
   ops_6r:      { category: "Zugmaschinen", manufacturer: "John Deere", product: "6R 260" },
   pflug:       { category: "Bodenbearbeitung", manufacturer: "HORSCH", product: "Fortis 6.4 LT · Universalgrubber bis 30 cm (6,20 m)" },
-  saatbett:    { category: "Bodenbearbeitung", manufacturer: "HORSCH", product: "Cruiser 12 XL · Flachgrubber/Saatbett (max 15 cm)" },
+  // GERAETEWECHSEL 31.07.2026: Der HORSCH Cruiser 12 XL verlangt laut Herstellerprospekt
+  //  500-600 PS — das IST die 9R-590-Klasse und haette den Wechsel auf den 8R 410 unmoeglich
+  //  gemacht. Die passive Zinken-Saatbettkombi derselben Breite braucht laut Vaederstad
+  //  300-500 PS und wird vom 8R 410 gezogen.
+  saatbett:    { category: "Bodenbearbeitung", manufacturer: "Väderstad", product: "NZ Extreme 1250 · passive Saatbettkombination 12,5 m (300–500 PS)" },
   sc360:       { category: "Bodenbearbeitung", manufacturer: "Dewulf", product: "SC-Front Frontfräse (Kartoffelbeet)" },
   drille:      { category: "Aussaat & Pflanzung", manufacturer: "HORSCH", product: "Getreidedrille Pronto 9 DC · 9,0 m" },
   einzelkorn:  { category: "Aussaat & Pflanzung", manufacturer: "HORSCH", product: "Maestro 24.50 SX · 24-reihig 50 cm (12,0 m)" },
@@ -4005,6 +4013,47 @@ export function machineFleetCount(domain: Domain, m: MachineType, scenarioId: st
   if (m.id === "krautschl") {
     const rod = domain.machineCatalog.find((x) => x.id === "roder_ropa");
     return rod ? machineFleetCount(domain, rod, scenarioId) : Math.ceil((m.fleetStage1 ?? 0) * stageFactorOf(domain.stage));
+  }
+  // LKW-SATTELZUEGE und FELD-SHUTTLES: Bedarf aus der TONNAGE, nicht aus einer festen Zahl.
+  //  Beide standen mit fleetStage1 = 8 bzw. 9 im Katalog — Groessen aus dem alten
+  //  Gruppenmodell (20.000 ha). Im Basisjahr mit 300 ha Kartoffeln kaufte das Modell damit
+  //  acht Sattelzuege und neun Shuttles, und die Vintage-Mechanik skalierte diese Basis
+  //  anschliessend mit der Flaechenkurve hoch: 7,30 Mio EUR LKW und 3,16 Mio Shuttles ueber
+  //  den Horizont. Als einzige Klassen durchliefen sie nie eine Bedarfspruefung.
+  if (m.id === "lkw_sattel" || m.id === "shuttle") {
+    const hpd = resolveScalar(domain, "en.hours_day", scenarioId) || 10;
+    const tf = shiftFactorOf(domain, scenarioId);
+    // Vermarktete Nettotonnage der Wertkulturen im Bemessungsjahr.
+    const nettoT = domain.anbauplan.reduce((sum, a) => {
+      const y = resolveScalar(domain, `yield.${a.cropId}`, scenarioId) || 0;
+      const l = domain.assumptions[`loss.${a.cropId}`] ? resolveScalar(domain, `loss.${a.cropId}`, scenarioId) : 0;
+      return sum + a.areaHa * y * (1 - l);
+    }, 0);
+    if (nettoT <= 0) return 0;
+    if (m.id === "lkw_sattel") {
+      // Zyklus je Fahrt = 2 x Distanz / Geschwindigkeit + Lade-/Entladezeit.
+      const t = domain.transport;
+      const dist = t?.distanceKm ?? 70, sp = t?.speedKmh ?? 60;
+      const payload = t?.payloadT ?? 27, lu = t?.loadUnloadH ?? 0.75;
+      const zyklusH = (2 * dist) / Math.max(1, sp) + lu;
+      const tageErnte = 90;                                   // Abtransportfenster der Kampagne
+      const fahrtenJeLkw = (hpd * tf * tageErnte) / Math.max(0.1, zyklusH);
+      return Math.max(1, Math.ceil(nettoT / Math.max(1, fahrtenJeLkw * payload)));
+    }
+    // SHUTTLE: Feld -> Feldrand/Ueberladestation. Kurzer Zyklus, folgt der Rodeleistung.
+    const shuttleTpH = 40;                                    // t/h je Shuttle im Pendelverkehr
+    const tageRodung = 60;
+    return Math.max(1, Math.ceil(nettoT / Math.max(1, shuttleTpH * hpd * tf * tageRodung)));
+  }
+  // ZUGMASCHINEN: Stueckzahl aus den STUNDEN IHRER ANBAUGERAETE, nicht aus fleetStage1 = 3.
+  //  Der Maschinenpark rechnet diese Stunden bereits korrekt; jetzt treiben sie auch den CAPEX.
+  if (SIZED_TRACTOR_IDS.has(m.id)) {
+    const geraete = domain.machineCatalog.filter((im) => im.tractorId === m.id && im.cEff);
+    if (!geraete.length) return Math.max(0, Math.round(m.fleetStage1 ?? 0));
+    const cap = machineCapPerUnitHours(domain, m.id, scenarioId);
+    if (cap <= 0) return Math.max(0, Math.round(m.fleetStage1 ?? 0));
+    const h = geraete.reduce((sum, im) => sum + machineDemandHoursOfYear(domain, im.id, 0), 0);
+    return h > 0 ? Math.max(1, Math.ceil(h / cap)) : 0;
   }
   // FIELDLOADER: Bedarf aus der ÜBERLADELEISTUNG — Kartoffel-/Süßkartoffel-Bruttotonnage ÷
   //  (t/h × Erntefenster). Eine Station puffert mehrere Roder (150 t/h ≫ 1 Roder ~36 t/h).
