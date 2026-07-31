@@ -360,6 +360,12 @@ export type Domain = {
   /** Pacht an die Besitzgesellschaft (Eigentumsflächen außerhalb der OpCo). */
   pacht?: PachtConfig;
   /** Detail-CAPEX-Planung (Infrastruktur): editierbare Einzelpositionen je Block. */
+  /** Treiberverhaeltnis je Personalposition (ha/FTE, h/FTE, Stk/FTE bzw. Ziel-FTE). */
+  personalRatio?: Record<string, number>;
+  /** MANUELLE Kopfzahl je Position und Planjahr. Schlaegt den Treiber. null = Treiber gilt.
+   *  Der Treiber ist ein Vorschlag, keine Vorschrift: wer den Betrieb kennt, weiss besser,
+   *  ob 2029 ein Agronom mehr noetig ist, als es jede Verhaeltniszahl hergibt. */
+  personalOverride?: Record<string, (number | null)[]>;
   capexPlan?: CapexPlanItem[];
   /** Hybrid-Schalter je Block: true → Detailzeilen zählen & Auto-Block (Beregnung/Lager) aus;
    *  false → Auto-Block läuft, Detailzeilen sind reine Planung (zählen nicht). */
@@ -4858,6 +4864,107 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
     || (a.category ?? "").localeCompare(b.category ?? "") || a.label.localeCompare(b.label));
 }
 
+/* ==========================================================================
+ * PERSONAL — Kopfzahlen aus TREIBERN, nicht aus Phantom-Zahlen.
+ *
+ *  Der alte Weg: je Position eine editierbare FTE-Zahl, die im Screen wie die Mannschaft
+ *  aussah, tatsächlich aber die Kalibrierungsbasis für den Endausbau war und über eine
+ *  Wachstumskurve auf die Jahre verteilt wurde. Daneben ein "Personalplaner", der aus den
+ *  Zahlen des STARTJAHRES eigene Vorschläge rechnete. Drei Darstellungen derselben Größe,
+ *  keine davon beschriftet — und bei den Maschinenführern steuerte das Feld seit der
+ *  Umstellung auf gefahrene Stunden gar nichts mehr.
+ *
+ *  Der neue Weg: jede Position hat EINEN benannten Treiber und EIN Verhältnis. Wie viele
+ *  Hektar betreut eine Kraft, wie viele Stunden faehrt ein Fahrer, wie viele Maschinen
+ *  betreut ein Techniker. Daraus faellt die Kopfzahl je Planjahr — und sie reagiert
+ *  automatisch, wenn Flaeche waechst oder Arbeit fremdvergeben wird.
+ * ========================================================================== */
+
+export type PersonalTreiberArt = "flaeche" | "stunden" | "maschinen" | "gedaempft";
+export type PersonalPosition = {
+  key: string; label: string; grossKey: string;
+  art: PersonalTreiberArt; treiberLabel: string; einheit: string;
+  standard: number;
+};
+export const PERSONAL_POSITIONEN: PersonalPosition[] = [
+  { key: "pers.leitung.n", label: "Betriebsleitung & Agronomie", grossKey: "pers.leitung.gross",
+    art: "gedaempft", treiberLabel: "Ziel-FTE im Endausbau (gedämpft: Sockel + Fläche)", einheit: "FTE", standard: 3 },
+  { key: "pers.stamm.n", label: "Stamm-Maschinenführer", grossKey: "pers.stamm.gross",
+    art: "stunden", treiberLabel: "selbst gefahrene Feldstunden je Fahrer und Jahr", einheit: "h/FTE", standard: 1240 },
+  { key: "pers.bewaesserung.n", label: "Bewässerung / Pivot-Steuerung", grossKey: "pers.bewaesserung.gross",
+    art: "flaeche", treiberLabel: "betreute Fläche je Kraft", einheit: "ha/FTE", standard: 584 },
+  { key: "pers.lager.n", label: "Lager & Aufbereitung", grossKey: "pers.lager.gross",
+    art: "flaeche", treiberLabel: "Fläche je Kraft", einheit: "ha/FTE", standard: 584 },
+  { key: "pers.service.n", label: "Werkstatt & Service/Technik", grossKey: "pers.service.gross",
+    art: "maschinen", treiberLabel: "betreute Maschinen je Techniker", einheit: "Stk/FTE", standard: 14 },
+  { key: "pers.saison.n", label: "Saisonkräfte (Kampagne)", grossKey: "pers.saison.gross",
+    art: "flaeche", treiberLabel: "Fläche je Saison-FTE", einheit: "ha/FTE", standard: 199 },
+  { key: "pers.prakt.n", label: "Praktikanten / Trainees", grossKey: "pers.prakt.gross",
+    art: "flaeche", treiberLabel: "Fläche je Trainee", einheit: "ha/FTE", standard: 584 },
+];
+
+export function personalRatioOf(domain: Domain, key: string): number {
+  const def = PERSONAL_POSITIONEN.find((p) => p.key === key)?.standard ?? 1;
+  const v = domain.personalRatio?.[key];
+  return v != null && v > 0 ? v : def;
+}
+export function setPersonalRatio(d: Domain, key: string, wert: number): void {
+  d.personalRatio = { ...(d.personalRatio ?? {}), [key]: Math.max(0.0001, wert) };
+}
+/** Kopfzahl von Hand setzen (oder mit null wieder dem Treiber ueberlassen). */
+export function setPersonalOverride(d: Domain, key: string, y: number, wert: number | null): void {
+  const jahre = Math.max(1, d.growth?.years ?? 1);
+  const alt = d.personalOverride?.[key] ?? [];
+  const neu = Array.from({ length: jahre }, (_, i) => (i === y ? wert : (alt[i] ?? null)));
+  d.personalOverride = { ...(d.personalOverride ?? {}), [key]: neu };
+}
+/** Traegt die Position in irgendeinem Jahr eine Handeingabe? */
+export function hasPersonalOverride(domain: Domain, key: string): boolean {
+  return (domain.personalOverride?.[key] ?? []).some((v) => v != null);
+}
+
+/** Kopfzahl (FTE) einer Position im Planjahr y — die EINE Wahrheit, die Engine und Ansicht
+ *  gemeinsam benutzen. Vorher rechneten beide getrennt und kamen auf verschiedene Zahlen. */
+export function personalFteOfYear(domain: Domain, key: string, y: number, scenarioId: string): number {
+  const pos = PERSONAL_POSITIONEN.find((p) => p.key === key);
+  if (!pos) return 0;
+  const manuell = domain.personalOverride?.[key]?.[y];
+  if (manuell != null && isFinite(manuell)) return manuell;   // Hand schlaegt Treiber
+  const r = personalRatioOf(domain, key);
+  const areas = cropAreasMemo(domain).areas;
+  const haOf = (yy: number) => domain.anbauplan.reduce((sum, a) => {
+    const c = areas[a.cropId];
+    return sum + (c ? (c[Math.min(yy, c.length - 1)] ?? 0) : a.areaHa);
+  }, 0);
+  const haY = haOf(y);
+  const haZiel = haOf(Math.max(0, (domain.growth?.years ?? 1) - 1)) || 1;
+
+  switch (pos.art) {
+    case "stunden":
+      return Math.max(1, Math.ceil(selfOperatedFieldHoursOfYear(domain, y) / Math.max(1, r)));
+    case "flaeche":
+      return haY > 0 ? haY / Math.max(1, r) : 0;
+    case "maschinen": {
+      // Nur Maschinen, die der Betrieb SELBST haelt — gemietete und im Lohn gefahrene
+      // Technik wartet der Vermieter bzw. der Lohnunternehmer.
+      let n = 0;
+      for (const m of domain.machineCatalog) {
+        if (!m.cEff || (m.rentedUnits ?? 0) > 0) continue;
+        const cap = machineCapPerUnitHours(domain, m.id, scenarioId);
+        if (cap > 0) n += Math.ceil(machineDemandHoursOfYear(domain, m.id, y) / cap);
+      }
+      return n > 0 ? Math.max(1, n / Math.max(1, r)) : 0;
+    }
+    case "gedaempft":
+    default: {
+      // Skaleneffekt: ein achtmal so grosser Betrieb braucht keine achtfache Leitung.
+      //  Sockel 45 % + 55 % flaechenproportional, normiert auf den Endausbau.
+      const rel = haZiel > 0 ? haY / haZiel : 1;
+      return r * (0.45 + 0.55 * rel);
+    }
+  }
+}
+
 /** Mietsatz je Betriebsstunde (CENT) einer Maschinenklasse.
  *
  *  Bewusst NICHT aus einer eigenen Preisliste, sondern aus den Stundenkosten der Maschine
@@ -5689,32 +5796,20 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   //  Leitung & Service (Overhead-nah) skalieren GEDÄMPFT wie SG&A (Skaleneffekte: 1+0,55·(scale−1)) —
   //  ein 5×-Betrieb braucht keine 5× Geschäftsführung/Werkstatt. Bewässerung, Lager, Saison, Stamm und
   //  Praktikanten bleiben LINEAR (echte Flächen-/Tonnage-/Maschinen-Treiber).
-  const DAMPED_PERS = new Set(["pers.leitung.n", "pers.service.n"]);
-  for (const key of ["pers.leitung.n", "pers.stamm.n", "pers.bewaesserung.n", "pers.lager.n", "pers.service.n", "pers.saison.n", "pers.prakt.n"]) {
-    const b = domain.assumptions[key];
-    const baseVal = resolveScalar(domain, key, domain.baseScenarioId) * personnelScale;
-    // Kopfzahlen sind — wie der Overhead — auf den ZIELZUSTAND kalibriert, nicht auf das Startjahr.
-    //  Sonst trüge 2027 mit 300 ha die Mannschaft des Endausbaus und 2034 das 7,8-fache davon.
-    const persScaleY = (y: number) => DAMPED_PERS.has(key) ? persDamp(y) : relToTarget(y);
-    // STAMM-MASCHINENFÜHRER folgen den selbst gefahrenen Feldstunden, nicht der Fläche.
-    //  Peak-Deckung 0,62: durch die Saisonballung ist nur rund ein Drittel bis zwei Drittel
-    //  der Jahresstunden eines Fahrers überhaupt für Feldarbeit im Fenster nutzbar
-    //  (dieselbe Kalibrierung wie in derivePersonnelProposal).
-    const stammKurve = key === "pers.stamm.n" ? (() => {
-      const availH = resolveScalar(domain, "en.avail_h_year", scenarioId) || 2000;
-      return Array.from({ length: years }, (_, y) =>
-        Math.max(1, Math.ceil(selfOperatedFieldHoursOfYear(domain, y) / (availH * 0.62))));
-    })() : null;
+  // PERSONAL: eine einzige Quelle — personalFteOfYear. Vorher rechnete der Composer mit
+  //  Basiswert x Wachstumskurve, die Ansicht zeigte den Basiswert, und ein "Planer" schlug
+  //  aus den Zahlen des Startjahres etwas Drittes vor. Drei Zahlen fuer dieselbe Groesse.
+  for (const pos of PERSONAL_POSITIONEN) {
+    const b = domain.assumptions[pos.key];
     if (years <= 1) {
-      if (personnelScale !== 1) assumptions[key] = { id: b?.id ?? key, key, label: b?.label ?? key, unit: (b?.unit ?? "count") as any,
-        scenarioProfiles: { [domain.baseScenarioId]: { kind: "constant", value: baseVal } }, meta: b?.meta };
+      assumptions[pos.key] = { id: b?.id ?? pos.key, key: pos.key, label: b?.label ?? pos.key,
+        unit: (b?.unit ?? "count") as any,
+        scenarioProfiles: { [domain.baseScenarioId]: { kind: "constant", value: personalFteOfYear(domain, pos.key, 0, scenarioId) * personnelScale } },
+        meta: b?.meta };
     } else {
-      const values = Array.from({ length: nPer }, (_, p) => {
-        const y = yearOf(p);
-        return stammKurve ? stammKurve[Math.min(y, stammKurve.length - 1)] * personnelScale
-                          : baseVal * persScaleY(y);
-      });
-      assumptions[key] = { id: b?.id ?? key, key, label: b?.label ?? key, unit: (b?.unit ?? "count") as any,
+      const values = Array.from({ length: nPer }, (_, p) => personalFteOfYear(domain, pos.key, yearOf(p), scenarioId) * personnelScale);
+      assumptions[pos.key] = { id: b?.id ?? pos.key, key: pos.key, label: b?.label ?? pos.key,
+        unit: (b?.unit ?? "count") as any,
         scenarioProfiles: { [domain.baseScenarioId]: { kind: "curve", values } }, meta: b?.meta };
     }
   }
