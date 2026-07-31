@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
-import { getProductCatalog, CROP_NAME } from "../../store/model";
+import { getProductCatalog, CROP_NAME, VALUE_CROP_IDS } from "../../store/model";
 import {
   DEFAULT_PRODUCTS, exportProductCatalog, PRODUCT_CATEGORY_LABEL, PSM_TYPE_LABEL,
   type CatalogProduct, type ProductCategory, type RoAuth,
@@ -18,13 +18,23 @@ const RO_OPTS: { v: RoAuth; label: string }[] = [
  *  Sync-ready (id/source/updatedAt) für den Abgleich mit der NEOS Web App (Export JSON). */
 export function ProduktkatalogView() {
   const { domain, patch } = useModelStore();
-  const products = getProductCatalog(domain);
+  // Produkte, die AUSSCHLIESSLICH Kulturen bedienen, die der Betrieb nicht mehr anbaut
+  //  (Getreide-/Raps-Sorten, Beizungen dafür), werden nicht angezeigt. Sie bleiben als
+  //  Stammdaten im Katalog erhalten und tauchen wieder auf, sobald eine solche Kultur
+  //  in den Anbauplan zurückkehrt.
+  const products = React.useMemo(
+    () => getProductCatalog(domain).filter((p) => p.crops.includes("*") || p.crops.some((c) => VALUE_CROP_IDS.includes(c))),
+    [domain],
+  );
   const [cat, setCat] = React.useState<ProductCategory | "all">("all");
   const [cropF, setCropF] = React.useState<string>("all");
   const [q, setQ] = React.useState("");
   const [editId, setEditId] = React.useState<string | null>(null);
 
-  const cropIds = [...new Set(products.flatMap((p) => p.crops).filter((c) => c !== "*"))].sort();
+  // Nur Wertkulturen anbieten/anzeigen — die Produkte selbst bleiben als Stammdaten vollständig,
+  //  auch wenn sie in ihren Kulturlisten noch Ackerbau-Kulturen führen.
+  const cropIds = [...new Set(products.flatMap((p) => p.crops).filter((c) => c !== "*" && VALUE_CROP_IDS.includes(c)))].sort();
+  const zeigeCrops = (cs: string[]) => cs.filter((c) => VALUE_CROP_IDS.includes(c));
 
   const patchCatalog = (fn: (list: CatalogProduct[]) => void) => patch((d) => {
     if (!d.productCatalog || !d.productCatalog.length) d.productCatalog = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
@@ -112,7 +122,7 @@ export function ProduktkatalogView() {
                     <td className="px-2 py-1.5 text-nx-text-muted" style={{ maxWidth: 220 }}>
                       <div className="truncate" title={ingredientText(p)}>{ingredientText(p)}</div>
                     </td>
-                    <td className="px-2 py-1.5 text-nx-text-muted">{p.crops.includes("*") ? t("alle") : p.crops.map((c) => (CROP_NAME as Record<string, string>)[c] ?? c).join(", ")}</td>
+                    <td className="px-2 py-1.5 text-nx-text-muted">{p.crops.includes("*") ? t("alle") : (zeigeCrops(p.crops).map((c) => (CROP_NAME as Record<string, string>)[c] ?? c).join(", ") || "—")}</td>
                     <td className="px-2 py-1.5 text-center"><RoDot ro={p.roAuthorized} /></td>
                     <td className="num px-2 py-1.5 text-right text-nx-text-muted">{p.rateMin != null ? `${p.rateMin}${p.rateMax != null && p.rateMax !== p.rateMin ? "–" + p.rateMax : ""} ${p.rateUnit ?? ""}` : "–"}</td>
                     <td className="px-2 py-1.5 text-right whitespace-nowrap">

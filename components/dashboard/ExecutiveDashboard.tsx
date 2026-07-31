@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, selectComputedAnnual, selectComputedMonthly } from "../../store/modelStore";
-import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, setCropPathHa, rampCropPath, START_YEAR } from "../../store/model";
+import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, setCropPathHa, rampCropPath, VALUE_CROP_IDS, START_YEAR } from "../../store/model";
 import { useModelStore as useStore, readAssumption } from "../../store/modelStore";
 import { cropName, cropColor, cropYield, cropLoss } from "../inputs/cropCalc";
 import { NumberInput } from "../inputs/NumberInput";
@@ -284,13 +284,15 @@ function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domai
     const y = cropYield(domain, cropId, scenarioId), loss = cropLoss(domain, cropId, scenarioId);
     return { cropId, name: cropName(cropId), color: cropColor(cropId), ha,
       yieldTHa: y, lossPct: loss, tonnes: ha * y * (1 - loss), dry: dryIds.has(cropId) };
-  }).filter((r) => r.ha > 0.5).sort((a, b) => b.ha - a.ha);
+  // NUR WERTKULTUREN — gespeicherte Altstände können weiterhin Ackerbau- und Trockenkulturen
+  //  im Anbauplan tragen; die gehören nicht in die Anbaustruktur des Wertkultur-Modells.
+  }).filter((r) => r.ha > 0.5 && VALUE_CROP_IDS.includes(r.cropId)).sort((a, b) => b.ha - a.ha);
   const totHa = rows.reduce((s, r) => s + r.ha, 0) || 1;
   const totT = rows.reduce((s, r) => s + r.tonnes, 0);
   const maxHa = Math.max(1, ...rows.map((r) => r.ha));
   const f0 = (v: number) => fmtNumber(v, 0);
   return (
-    <Tile title={t("Anbaustruktur & Produktion")} hint={`${t("Jahr")} ${yearLabel} · ${f0(totHa)} ha · ${f0(totT)} t ${t("netto")}`}>
+    <Tile title={t("Anbaustruktur & Produktion — Wertkulturen")} hint={`${t("Jahr")} ${yearLabel} · ${f0(totHa)} ha · ${f0(totT)} t ${t("netto")}`}>
       <div className="overflow-x-auto">
         <table className="w-full text-[12px]">
           <thead><tr>
@@ -542,10 +544,19 @@ function SkalierungspfadTabelle({ domain }: { domain: any }) {
   const my = React.useMemo(() => deriveCropAreasMY(domain), [domain]);
   const years = my.years;
   // Zeilen in Anbauplan-Reihenfolge, Kartoffel-Zwischensumme direkt nach den beiden Sorten.
+  // NUR WERTKULTUREN. Gespeicherte Stände (Cloud-Autosave, JSON-Import) können weiterhin
+  //  Ackerbau- und Trockenkulturen im Anbauplan tragen — die gehören nicht in den
+  //  Skalierungspfad der Wertkulturen und würden die Tabelle unlesbar machen.
   const ids = React.useMemo(() => {
     const seen: string[] = [];
     for (const e of domain.anbauplan ?? []) if (!seen.includes(e.cropId)) seen.push(e.cropId);
-    return seen.filter((id) => my.areas[id]);
+    return seen.filter((id) => my.areas[id] && VALUE_CROP_IDS.includes(id));
+  }, [domain, my]);
+  /** Übrige Kulturen im Plan (Ackerbau/Trockenrotation aus Altständen) — nur als Kontextzeile. */
+  const restIds = React.useMemo(() => {
+    const seen: string[] = [];
+    for (const e of domain.anbauplan ?? []) if (!seen.includes(e.cropId)) seen.push(e.cropId);
+    return seen.filter((id) => my.areas[id] && !VALUE_CROP_IDS.includes(id));
   }, [domain, my]);
   const kart = ids.filter((id) => id.startsWith("kartoffel"));
   const at = (id: string, y: number) => Math.round(my.areas[id]?.[y] ?? 0);
@@ -569,7 +580,7 @@ function SkalierungspfadTabelle({ domain }: { domain: any }) {
   return (
     <section className="rounded-tile border" style={TBL_CARD}>
       <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
-        <h3 className="text-[13px] font-semibold">{t("Skalierungspfad der Kulturen (ha)")}</h3>
+        <h3 className="text-[13px] font-semibold">{t("Skalierungspfad der Wertkulturen (ha)")}</h3>
         <p className="mt-0.5 text-[11px] text-nx-text-muted">
           {readOnly
             ? t("Fläche je Kultur und Planjahr. Σ Betriebsfläche = bewirtschaftete Fläche des Jahres.")
@@ -614,12 +625,24 @@ function SkalierungspfadTabelle({ domain }: { domain: any }) {
               </React.Fragment>
             ))}
             <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
-              <td className="px-3 py-2 font-semibold">{t("Σ Betriebsfläche")}</td>
+              <td className="px-3 py-2 font-semibold">{t("Σ Wertkulturen")}</td>
               {Array.from({ length: years }, (_, y) => (
                 <td key={y} className="num px-3 py-2 text-right font-semibold">{fmtNumber(sumAt(ids, y), 0)}</td>
               ))}
               {!readOnly && <td />}
             </tr>
+            {restIds.length > 0 && (
+              <>
+                <Row label={t("Übrige Kulturen im Plan (nicht dargestellt)")} get={(y) => sumAt(restIds, y)} />
+                <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                  <td className="px-3 py-1.5 text-nx-text-muted">{t("Σ Betriebsfläche gesamt")}</td>
+                  {Array.from({ length: years }, (_, y) => (
+                    <td key={y} className="num px-3 py-1.5 text-right text-nx-text-muted">{fmtNumber(sumAt([...ids, ...restIds], y), 0)}</td>
+                  ))}
+                  {!readOnly && <td />}
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>

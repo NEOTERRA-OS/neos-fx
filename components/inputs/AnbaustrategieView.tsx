@@ -68,13 +68,12 @@ export function AnbaustrategieView() {
   const allocIrr = (rot: { crop: string; s: number }[], ha: number) => rot.map((r) => ({ crop: r.crop, ha: ha * r.s, db: eco.dbIrr(r.crop), rev: eco.revIrr(r.crop) }));
   const allocDry = (rot: { crop: string; s: number }[], ha: number) => rot.map((r) => ({ crop: r.crop, ha: ha * r.s, db: eco.dbDry(r.crop), rev: eco.revIrr(r.crop) * 0.6 }));
 
-  const scenA = calc(allocIrr(ROT_VALUE, irrHa));                                     // nur Wertkulturen (beregnet)
-  const scenB = calc([...allocIrr(ROT_CASH, irrHa), ...allocDry(ROT_CASH, nonIrr)]);  // nur Cash Crops (volle Fläche)
-  const scenC = calc([...allocIrr(ROT_VOLL, irrHa), ...allocDry(ROT_CASH, nonIrr)]);  // gemischt
+  // Nur noch die Wertkultur-Rotation. Die Vergleichsszenarien "nur Cash Crops" und "gemischt"
+  //  sind entfallen — der Betrieb baut keine Cash Crops mehr an, die Gegenüberstellung hätte
+  //  eine Betriebsform verglichen, die es im Modell nicht gibt.
+  const scenA = calc(allocIrr(ROT_VALUE, irrHa));
   const scenarios = [
-    { id: "a", name: t("a) Nur Wertkulturen"), sub: `${fmtNumber(irrHa, 0)} ${t("ha beregnet · nicht-beregnet brach")}`, k: scenA, rot: ROT_VALUE, dry: null },
-    { id: "b", name: t("b) Nur Cash Crops (volle Fläche)"), sub: `${fmtNumber(totalHa, 0)} ${t("ha gesamt")}`, k: scenB, rot: ROT_CASH, dry: ROT_CASH },
-    { id: "c", name: t("c) Gemischt (Voll-Rotation + Cash Crops)"), sub: `${fmtNumber(irrHa, 0)} ${t("beregnet")} + ${fmtNumber(nonIrr, 0)} ${t("trocken")}`, k: scenC, rot: ROT_VOLL, dry: ROT_CASH },
+    { id: "a", name: t("Wertkultur-Rotation"), sub: `${fmtNumber(irrHa, 0)} ${t("ha")}`, k: scenA, rot: ROT_VALUE, dry: null },
   ];
   const maxDb = Math.max(1, ...scenarios.map((s) => s.k.db));
 
@@ -101,7 +100,8 @@ export function AnbaustrategieView() {
         return { rev, ebitda, machCapex, margin: rev > 0 ? ebitda / rev : 0, ok: c.checks.every((k: any) => k.passed || k.severity !== "error") };
       } catch { return { rev: 0, ebitda: 0, machCapex: 0, margin: 0, ok: false }; }
     };
-    return { a: run(ROT_VALUE), b: run(ROT_CASH), c: run(ROT_VOLL) };
+    const nur = run(ROT_VALUE);
+    return { a: nur, b: nur, c: nur };   // nur noch die Wertkultur-Rotation
   }, [domain, sc, irrHa, tick]);
   const engById: Record<string, typeof engine.a> = { a: engine.a, b: engine.b, c: engine.c };
 
@@ -180,10 +180,10 @@ export function AnbaustrategieView() {
         </div>
       </section>
 
-      {/* Fruchtfolgen + Visualisierung (3 Mockup-Alternativen) */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <RotationCard title={t("Beregnete Vollrotation (optimal)")} rot={ROT_VOLL} db={eco.dbIrr} note={t("Wert + Mais/Soja + Getreide-Break; Solanaceae (Tomate/Kartoffel) max. 1-in-3–4 Jahre, Soja als N-Fixierer.")} />
-        <RotationCard title={t("Unberegnete Cash-Crop-Rotation (optimal)")} rot={ROT_CASH} db={eco.dbDry} note={t("Winterweizen → Winterraps (Ölsaat-Break) → Wintergerste; trockentolerant, Raps als Vorfrucht für Weizen.")} />
+      {/* Fruchtfolge der Wertkulturen. Die Ackerbau- und Trockenrotationen sind entfallen —
+          der Betrieb baut sie nicht mehr an. */}
+      <div className="grid grid-cols-1 gap-4">
+        <RotationCard title={t("Wertkultur-Rotation")} rot={ROT_VALUE} db={eco.dbIrr} note={t("Solanaceae (Tomate/Kartoffel) max. 1-in-3–4 Jahre, Doldenblütler (Sellerie/Möhre) max. 1-in-5. Ohne Getreide-Break in der Rotation ist die Anbaupause über die Flächenanteile einzuhalten — die Wächter melden sich in der Prüfliste.")} />
       </div>
 
       {/* Maschinen → Crop-Zuordnung */}

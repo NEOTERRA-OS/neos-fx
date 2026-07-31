@@ -472,5 +472,12 @@ const B12: Record<string, string> = {
   "H\u00fclle & Bau selbst investieren": "Invest in shell & building ourselves",
   "Technik selbst investieren": "Invest in technology ourselves",
   "Abgew\u00e4hlt hei\u00dft: keine eigene Investition (Miete/Dienstleister). Steuerlich relevant \u2014 die Reinvestitionsbefreiung greift auf Technik, nicht auf Geb\u00e4ude.": "Unchecked means no own investment (rent/service provider). Tax-relevant \u2014 the reinvestment exemption applies to technology, not to buildings.",
+  "Wertkultur-Rotation": "Value-crop rotation",
+  "\u03a3 Wertkulturen": "\u03a3 value crops",
+  "\u00dcbrige Kulturen im Plan (nicht dargestellt)": "Other crops in the plan (not shown)",
+  "\u03a3 Betriebsfl\u00e4che gesamt": "\u03a3 total farmed area",
+  "Skalierungspfad der Wertkulturen (ha)": "Value-crop scaling path (ha)",
+  "Anbaustruktur & Produktion \u2014 Wertkulturen": "Cropping structure & production \u2014 value crops",
+  "Solanaceae (Tomate/Kartoffel) max. 1-in-3\u20134 Jahre, Doldenbl\u00fctler (Sellerie/M\u00f6hre) max. 1-in-5. Ohne Getreide-Break in der Rotation ist die Anbaupause \u00fcber die Fl\u00e4chenanteile einzuhalten \u2014 die W\u00e4chter melden sich in der Pr\u00fcfliste.": "Solanaceae (tomato/potato) max. 1-in-3\u20134 years, Apiaceae (celeriac/carrot) max. 1-in-5. Without a cereal break in the rotation the interval must be held via area shares \u2014 the guards report in the check list.",
 };
 export default B12;

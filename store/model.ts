@@ -1877,7 +1877,13 @@ export const BREAK_CROP_IDS: string[] = ["weizen", "gerste_zw", "soja_luzerne", 
  *  (keine Einlagerung); Getreide → Silo/Direktverkauf. Nur Kartoffel + Zwiebel/Möhre. */
 export const STORAGE_CROP_IDS: string[] = ["kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre", "suesskartoffel", "knoblauch", "knollensellerie"];
 
-const CATALOG: CatalogEntry[] = CROP_IDS.map((cropId) => ({
+/** ARBEITSKATALOG der App — NUR die Wertkulturen. Die Stammdaten der übrigen Kulturen
+ *  (Ackerbau, Trockenrotation, Sonnenblume) bleiben vollständig im Modell hinterlegt:
+ *  CROP_CAL, CROP_NAME, AGRO_COSTS, ARBEITSGAENGE, OVERHEAD_PER_HA und die yield./price./loss.-
+ *  Annahmen sind unverändert da und jederzeit reaktivierbar. Sie erscheinen nur nicht mehr in
+ *  Anbauplan, Maßnahmen, Kalkulation, Contribution und Produktkatalog — dort würden sie eine
+ *  Betriebsstruktur zeigen, die das Solo-Modell nicht mehr hat. */
+const CATALOG: CatalogEntry[] = CROP_IDS.filter((cropId) => VALUE_CROP_IDS.includes(cropId)).map((cropId) => ({
   cropId,
   name: CROP_NAME[cropId],
   type: "annual",
@@ -2513,7 +2519,66 @@ export function deriveRevenueSplitMY(
  *  Trockenrotation und Isolde stillschweigend wieder eingespielt und die Solo-Entscheidung
  *  rückgängig gemacht. Kein Ersatz nötig — die betroffenen Kulturen sind aus dem Modell raus. */
 export function migrateDomain(dIn: Domain): Domain {
-  return dIn && dIn.assumptions ? migrateStudio(dIn) : dIn;
+  const d = dIn && dIn.assumptions ? migrateStudio(dIn) : dIn;
+  if (!d || !Array.isArray(d.anbauplan)) return d;
+  // SOLO-MODELL: Ackerbau- und Trockenkulturen aus dem Anbauplan entfernen. Gespeicherte Stände
+  //  (Cloud-Autosave, JSON-Import) tragen sie noch — und sie WIRKEN dort: Fläche, Erlös, Kosten,
+  //  Maschinenbedarf und Personal rechnen mit. Es reicht also nicht, sie in den Ansichten
+  //  auszublenden; sie müssen aus der Domäne heraus, sonst zeigt das Modell eine Struktur, die
+  //  es nicht mehr gibt. Der Kulturkatalog behält ihre Stammdaten als Referenz.
+  const fremd = d.anbauplan.filter((a) => !VALUE_CROP_IDS.includes(a.cropId));
+  if (!fremd.length) return d;
+  const anbauplan = d.anbauplan.filter((a) => VALUE_CROP_IDS.includes(a.cropId));
+  let cropPolicy = { ...(d.cropPolicy ?? {}) };
+  for (const a of fremd) delete cropPolicy[a.cropId];
+  // Altstände tragen die ALTE Politik (ramp/fix/scale) und damit die Flächen des Kombimodells.
+  //  Trägt keine einzige Kultur einen expliziten Pfad, ist der beschlossene Skalierungspfad
+  //  (300 ha Kartoffel 2027 → 2.334 ha ab 2032) der Plan von Rekord — sonst öffnet sich die App
+  //  mit einer Flächenstruktur, die niemand mehr beschlossen hat. Sobald ein Pfad gepflegt ist,
+  //  bleibt er unangetastet.
+  const hatPfad = Object.values(cropPolicy).some((p) => (p as CropPolicy)?.haByYear?.length);
+  if (!hatPfad) {
+    cropPolicy = { ...skalierungPolicy(1) };
+    cropPolicy.zwiebel_moehre = { ...cropPolicy.zwiebel_moehre, capTonnes: 60000 };
+    cropPolicy.knollensellerie = { ...cropPolicy.knollensellerie, capTonnes: 22000 };
+    for (const a of anbauplan) {
+      const path = cropPolicy[a.cropId]?.haByYear;
+      if (path) a.areaHa = path[0] ?? 0;      // Jahr 0 = Bemessungsgrundlage, muss mitziehen
+    }
+  }
+  //  Katalog ebenfalls auf die Wertkulturen reduzieren — er speist Maßnahmen, Kalkulation,
+  //  Contribution und Produktkatalog. Die Stammdaten der übrigen Kulturen bleiben im Modell.
+  const catalog = Array.isArray(d.catalog) ? d.catalog.filter((c) => VALUE_CROP_IDS.includes(c.cropId)) : d.catalog;
+
+  // WACHSTUMSKURVE NACHZIEHEN — das ist der eigentliche Fehler in Altständen. Sie tragen die
+  //  Flächenkurve des Kombimodells (10.000 → 20.000 ha). Nach dem Entfernen des Ackerbaus
+  //  stünde einer Betriebsfläche von 2.334 ha eine Kurve von 20.000 ha gegenüber. Weil
+  //  scale[y] = Fläche des Jahres / Basisfläche in OPEX, Pacht, Personal, Transport und die
+  //  Maschinen-Vintages eingeht, rechnete das Modell diese Blöcke auf der 20.000-ha-Kurve —
+  //  Umsatz aus 2.334 ha, Kosten aus 20.000 ha. Die Kurve ist deshalb auf die Summe der
+  //  Kulturpfade zu setzen: im Solo-Modell IST die Betriebsfläche die Summe der Kulturen.
+  const years = Math.max(1, d.growth?.years ?? 1);
+  const haOfYear = (y: number): number => {
+    let sum = 0;
+    for (const a of anbauplan) {
+      const path = cropPolicy[a.cropId]?.haByYear;
+      sum += path?.length ? (path[Math.min(y, path.length - 1)] ?? 0) : a.areaHa;
+    }
+    return Math.round(sum);
+  };
+  const kurve = Array.from({ length: years }, (_, y) => haOfYear(y));
+  const growth = d.growth ? {
+    ...d.growth,
+    areaByYear: kurve.slice(),
+    totalByYear: kurve.slice(),
+    startTotalHa: kurve[0],
+    startIrrigatedHa: kurve[0],
+    stage: "s3b" as const,          // die früheren Stufen gibt es nicht mehr
+    drylandRotation: undefined,
+    acquisitions: undefined,
+  } : d.growth;
+
+  return { ...d, anbauplan, cropPolicy, catalog, growth, scope: "full", stage: 1, entityView: undefined };
 }
 
 /* --------------------------------------------------------------------------

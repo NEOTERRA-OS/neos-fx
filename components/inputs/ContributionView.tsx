@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
-import { deriveContribution, CROP_COLOR } from "../../store/model";
+import { deriveContribution, CROP_COLOR, VALUE_CROP_IDS } from "../../store/model";
 import { Segmented } from "../primitives/Segmented";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
@@ -23,7 +23,18 @@ export function ContributionView() {
   const tick = useModelStore((s) => s.recalcTick);
   const [mode, setMode] = React.useState<"db" | "be">("db");
   // Gescopte Domäne → bei STUFE 1 (Cash-only) konsistent zur GuV/KpiBand (keine Wertkulturen).
-  const res = React.useMemo(() => deriveContribution(domain, sc), [domain, sc, tick]);
+  const full = React.useMemo(() => deriveContribution(domain, sc), [domain, sc, tick]);
+  // NUR WERTKULTUREN: Rotations-/Trockenkulturen können nur noch aus gespeicherten Altständen
+  //  kommen — sie gehören nicht in den Ergebnisbeitrag des Wertkultur-Modells. Die Summen werden
+  //  auf die dargestellten Zeilen neu gebildet, damit Balken, Σ und Marge zusammenpassen.
+  const res = React.useMemo(() => {
+    const crops = full.crops.filter((c) => VALUE_CROP_IDS.includes(c.cropId));
+    const sum = (f: (c: typeof crops[number]) => number) => crops.reduce((s, c) => s + f(c), 0);
+    return { ...full, crops,
+      totals: { ...full.totals,
+        valueCent: sum((c) => c.contributionCent), breakCent: 0,
+        valueBeCent: sum((c) => c.betriebsergebnisCent), breakBeCent: 0 } };
+  }, [full]);
 
   const val = (c: any) => (mode === "be" ? c.betriebsergebnisCent : c.contributionCent);
   const perHa = (c: any) => (mode === "be" ? c.bePerHaCent : c.contribPerHaCent);
