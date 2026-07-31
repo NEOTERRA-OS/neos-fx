@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption, selectScopedDomain } from "../../store/modelStore";
-import { deriveEinsatzplan, deriveMachineTCO } from "../../store/model";
+import { deriveEinsatzplan } from "../../store/model";
 import { fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
 
@@ -61,15 +61,7 @@ export function EinsatzView() {
   const scenarioId = useModelStore((s) => s.view.scenarioId);
   const tick = useModelStore((s) => s.recalcTick);
   const plan = React.useMemo(() => deriveEinsatzplan(sdomain, scenarioId), [sdomain, scenarioId, tick]);
-  const tco = React.useMemo(() => deriveMachineTCO(sdomain, scenarioId), [sdomain, scenarioId, tick]);
-  const availH = readAssumption(domain, "en.avail_h_year", scenarioId) || 2000;
   const border = { borderColor: "var(--nx-border)" } as const;
-
-  // 1) Auslastung je Register-Maschine (nur Maschinen mit Stundenbezug)
-  const machines = tco
-    .filter((t) => t.hoursPerYear != null && t.count > 0 && (t.hoursPerYear as number) > 0)
-    .map((t) => { const cap = t.count * availH; const h = t.hoursPerYear as number; return { ...t, cap, hoursY: h, util: cap > 0 ? h / cap : 0 }; })
-    .sort((a, b) => b.util - a.util);
 
   // 2) Saison-Auslastung je Klasse — Monatspeak / Flotte
   const classMonthly = plan.classes
@@ -104,52 +96,23 @@ export function EinsatzView() {
     <div className="space-y-4">
       {/* Kontext + KPIs */}
       <div className="rounded-tile border px-4 py-3 text-[12px] text-nx-text-secondary" style={border}>
-        <b>{t("Einsatzplanung — gekoppelt ans Modell.")}</b> {t("Auslastung je Maschine aus dem")} <b>{t("Maschinen-Register")}</b> {t("(Betriebsstunden ÷ Kapazität), Saison-Nachfrage aus dem Anbauplan/Bottom-up.")} <b>{plan.kpis.shifts}{t("-Schicht")}</b> {t("(Durchsatz ×")}{fmtNumber(plan.kpis.shiftFactor, 1)}{t("), verfügbare Feldstunden")} {fmtNumber(availH, 0)} {t("h/Maschine·J (editierbar unter Leistungsparameter → Maschinen-Einsatz).")}
+        <b>{t("Einsatzplanung — gekoppelt ans Modell.")}</b> {t("Saison- und Wochendimension der Feldarbeit: wann sich Arbeitsgänge überlagern, welche Klasse in welcher Woche zum Engpass wird und wie viele Personen die Spitze verlangt. Stückzahlen, Auslastung je Maschine und Investition stehen im")} <b>{t("Maschinenpark")}</b>{t(" — dort mit der richtigen Kapazität aus Feldtagen und Schichtfaktor.")} <b>{plan.kpis.shifts}{t("-Schicht")}</b> {t("(Durchsatz ×")}{fmtNumber(plan.kpis.shiftFactor, 1)}{t(").")}
       </div>
 
-      <div className="rounded-tile border grid grid-cols-2 md:grid-cols-4" style={{ ...border, background: "var(--nx-surface)", overflow: "hidden" }}>
+      <div className="rounded-tile border grid grid-cols-3" style={{ ...border, background: "var(--nx-surface)", overflow: "hidden" }}>
         <Kpi cap={t("Engpass-Zeiträume")} val={String(plan.kpis.conflictCount)} tone={plan.kpis.conflictCount ? "err" : "ok"} />
-        <Kpi cap={t("höchste Auslastung (Maschine)")} val={machines.length ? `${Math.round(machines[0].util * 100)} %` : "–"} tone={machines.length && machines[0].util > 1 ? "err" : "ok"} />
         <Kpi cap={t("Spitzen-Klasse · KW")} val={`${plan.kpis.peakClass.split(" ")[0]} · ${t("KW")}${plan.kpis.peakWeek}`} tone={plan.kpis.peakUtilPct > 100 ? "err" : "warn"} />
         <Kpi cap={`${t("Personal-Spitze (Kap")} ${fmtNumber(plan.kpis.staff, 0)})`} val={`${plan.kpis.peakLabor} P`} tone={plan.kpis.peakLabor > plan.kpis.staff ? "err" : "ok"} />
       </div>
 
-      {/* 1) Auslastung je Maschine */}
-      <section className="rounded-tile border" style={{ ...border, background: "var(--nx-surface)" }}>
-        <div className="px-4 py-2.5 border-b text-[13px] font-semibold" style={{ ...border, color: "var(--nx-brand-lift)" }}>{t("Auslastung je Maschine (aus dem Register)")}</div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-[12.5px]">
-            <thead><tr style={{ background: "var(--nx-surface-sunken)" }}>
-              <th className={th + " text-left"} style={{ width: 34 }}>{t("Nr")}</th>
-              <th className={th + " text-left"}>{t("Maschine")}</th>
-              <th className={th + " text-right"}>{t("Anzahl")}</th>
-              <th className={th + " text-right"}>{t("Std/J (Ist)")}</th>
-              <th className={th + " text-right"}>{t("Kapazität Std/J")}</th>
-              <th className={th + " text-left"} style={{ minWidth: 170 }}>{t("Auslastung")}</th>
-              <th className={th + " text-left"}>{t("Bewertung")}</th>
-            </tr></thead>
-            <tbody>
-              {machines.map((m, i) => {
-                const rating = m.util > 1.0 ? [t("Engpass"), "var(--nx-error)"] : m.util > 0.85 ? [t("hoch"), "var(--nx-warning)"] : m.util > 0.4 ? [t("gut"), "var(--nx-success)"] : [t("frei"), "var(--nx-text-muted)"];
-                return (
-                  <tr key={m.machineId} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-                    <td className="num px-3 py-1.5 text-nx-text-muted">{i + 1}</td>
-                    <td className="px-3 py-1.5">{m.label}</td>
-                    <td className="num px-3 py-1.5 text-right">{fmtNumber(m.count, 0)}</td>
-                    <td className="num px-3 py-1.5 text-right">{fmtNumber(m.hoursY, 0)}</td>
-                    <td className="num px-3 py-1.5 text-right text-nx-text-secondary">{fmtNumber(m.cap, 0)}</td>
-                    <td className="px-3 py-1.5"><UtilBar u={m.util} /></td>
-                    <td className="px-3 py-1.5 text-[11.5px] font-semibold" style={{ color: rating[1] }}>{rating[0]}</td>
-                  </tr>
-                );
-              })}
-              {machines.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-[12px] text-nx-text-muted">{t("Keine Maschinen mit Stundenbezug — Anbauplan/Arbeitsgänge prüfen.")}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={border}>{t("Auslastung = Ist-Betriebsstunden ÷ (Anzahl × verfügbare Feldstunden). Traktoren erscheinen als eigene Positionen im Register; die Arbeitsgang-Stunden laufen über die Anbaugeräte.")}</div>
-      </section>
-
+      {/* ENTFERNT 31.07.2026: „Auslastung je Maschine (aus dem Register)". Der Abschnitt
+          rechnete die Kapazitaet mit en.avail_h_year = 2.000 Verfuegbarkeitsstunden je
+          Maschine und Jahr. Der Maschinenpark rechnet sie aus Feldstunden/Tag x Feldtage x
+          Schichtfaktor — beim ROPA-Roder also 306 statt 2.000 h. Dieselbe Maschine kam hier
+          auf 9 %, dort auf 62 % Auslastung: zwei Wahrheiten auf zwei Screens.
+          Der Maschinenpark liefert dasselbe je PLANJAHR und mit der richtigen Kapazitaet;
+          was diese Ansicht allein kann, ist die Saison- und Wochendimension. Genau die
+          bleibt hier stehen. */}
       {/* 2) Saison-Auslastung je Klasse (Monatsraster) */}
       <section className="rounded-tile border" style={{ ...border, background: "var(--nx-surface)" }}>
         <div className="px-4 py-2.5 border-b text-[13px] font-semibold" style={{ ...border, color: "var(--nx-brand-lift)" }}>{t("Saison-Auslastung je Klasse — Monatsspitze in % der Flotte")}</div>
