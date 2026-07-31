@@ -578,7 +578,7 @@ export function ScenarioStudioView() {
       <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(340px, 400px) minmax(0, 1fr)" }}>
         {/* ---- Regler ---- */}
         <section className="rounded-tile border self-start" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
-          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
             <h2 className="text-[14px] font-semibold">{t("Treiber")}</h2>
             <label className="inline-flex items-center gap-1.5 rounded-control border px-2" style={{ height: 28, borderColor: "var(--nx-border)" }}>
               <Search size={12} className="text-nx-text-muted" aria-hidden />
@@ -605,7 +605,12 @@ export function ScenarioStudioView() {
             </div>
           )}
 
-          <div className="max-h-[720px] overflow-y-auto">
+          {/* KEIN eigener Scroll-Container mehr. Ein 720-px-Kasten mit vierzig Reglern darin
+              heisst: die Seite steht still, waehrend man in einem Fenster von Briefmarkengroesse
+              sucht — und das Mausrad tut je nach Zeigerposition etwas anderes. Jetzt waechst
+              die Liste in ihrer vollen Hoehe und DIE SEITE scrollt; die Auswertung rechts bleibt
+              dabei klebend im Blick. */}
+          <div>
             {GROUPS.map((grp) => {
               const items = DRIVERS.filter((d) => d.group === grp && passt(d));
               if (!items.length) return null;
@@ -636,8 +641,9 @@ export function ScenarioStudioView() {
           </div>
         </section>
 
-        {/* ---- Wirkung + EINE Grafik ---- */}
-        <div className="space-y-4">
+        {/* ---- Wirkung + EINE Grafik: klebend, damit beim Scrollen durch die Regler immer
+             sichtbar bleibt, was die Auslenkung bewirkt. ---- */}
+        <div className="sticky top-0 space-y-4 self-start">
           <WirkungStrip res={res} base={base} currency={currency} />
           <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
@@ -856,7 +862,7 @@ function WirkungStrip({ res, base, currency }: { res: Res; base: Res; currency: 
     { cap: t("Net Debt / EBITDA"), val: fmtNumber(res.lev, 2), u: "x", d: 0, col: levCol(res.lev) },
   ];
   return (
-    <div className="sticky top-0 z-10 rounded-tile border overflow-hidden" style={{ borderColor: "var(--nx-border)" }}>
+    <div className="rounded-tile border overflow-hidden" style={{ borderColor: "var(--nx-border)" }}>
       <div className="grid grid-cols-3 gap-px xl:grid-cols-6" style={{ background: "var(--nx-border-divider)" }}>
         {items.map((it) => (
           <div key={it.cap} className="px-3 py-2" style={{ background: "var(--nx-surface)" }}>
