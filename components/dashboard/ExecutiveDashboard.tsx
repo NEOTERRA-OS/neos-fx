@@ -6,7 +6,6 @@ import { useModelStore as useStore, readAssumption } from "../../store/modelStor
 import { cropName, cropColor, cropYield, cropLoss } from "../inputs/cropCalc";
 import { NumberInput } from "../inputs/NumberInput";
 import { CheckPanel } from "../statements/CheckPanel";
-import { ContributionView } from "../inputs/ContributionView";
 import { fmtMoney, fmtNumber, fmtPct, fmtFactor } from "../../design/format";
 import type { ComputedModel } from "../../core/types";
 import { t } from "../../lib/i18n";
@@ -79,8 +78,10 @@ export function ExecutiveDashboard() {
           entscheidet, ist nicht „wie sieht die GuV aus", sondern „reicht das Geld". */}
       <Liquiditaetsverlauf monthly={monthly} annual={annual} />
 
-      {/* Ergebnisbeitrag je Kultur (DB/Vollkosten-Toggle) — direkt unter der Anbaustruktur */}
-      <ContributionView />
+      {/* ENTFERNT 31.07.2026: Ergebnisbeitrag je Kultur. Die Anbaustruktur-Tabelle oben zeigt
+          Deckungsbeitrag je Kultur bereits absolut, je Hektar und in Prozent — und das fuer
+          jedes Planjahr statt nur fuer eines. Die Vollkosten-Sicht bleibt als eigene Ansicht
+          "Contribution" erreichbar. */}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
         <FundingBox annual={annual} monthly={monthly} idx={i} />

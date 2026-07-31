@@ -527,5 +527,6 @@ const B12: Record<string, string> = {
   "\u03a3 FTE": "\u03a3 FTE",
   "AG-Kosten p.a.": "Employer cost p.a.",
   "AG-Kosten = \u03a3 FTE \u00d7 Brutto \u00d7 12 \u00d7 (1 + CAM). Saisonkr\u00e4fte sind FTE-\u00c4quivalente der Kampagne, nicht K\u00f6pfe. Erntehandarbeit und LKW-Fahrer stehen bewusst NICHT hier \u2014 sie sind als Direktkosten bzw. in der Transportkalkulation verbucht (siehe Hinweis unten).": "Employer cost = \u03a3 FTE \u00d7 gross \u00d7 12 \u00d7 (1 + CAM). Seasonal workers are campaign FTE equivalents, not heads. Harvest hand labour and truck drivers are deliberately NOT here \u2014 they are booked as direct costs or in the transport calculation (see note below).",
+  " zus\u00e4tzlich \u2212 Maschinen-AfA/Zins \u2212 Personal \u2212 Fixkosten (Pacht/Overhead/Beregnung). Der Deckungsbeitrag je Kultur und Planjahr steht im Dashboard; diese Ansicht ist f\u00fcr den Vergleich Deckungsbeitrag gegen Vollkosten gedacht \u2014 sie zeigt, welche Kultur ihre Struktur wirklich tr\u00e4gt.": " additionally \u2212 machine depreciation/interest \u2212 staff \u2212 fixed costs (rent/overhead/irrigation). Contribution per crop and plan year is in the dashboard; this view compares contribution against full cost \u2014 it shows which crop actually carries its structure.",
 };
 export default B12;

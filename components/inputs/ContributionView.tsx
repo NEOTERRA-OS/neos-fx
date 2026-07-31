@@ -55,7 +55,6 @@ export function ContributionView() {
           <div className="flex items-center gap-4">
             <Segmented ariaLabel={t("Sicht")} value={mode} onChange={(v) => setMode(v as "db" | "be")}
               options={[{ value: "db", label: t("Deckungsbeitrag") }, { value: "be", label: t("Vollkosten-BE") }]} />
-            <span className="num text-[12px]">{t("Rotation-Anteil")} <b style={{ color: breakShare < 0.05 ? "var(--nx-success)" : "var(--nx-warning)" }}>{fmtNumber(breakShare * 100, 1)} %</b></span>
           </div>
         </div>
 
@@ -71,7 +70,6 @@ export function ContributionView() {
           </div>
           <div className="mt-1 flex justify-between text-[11px]">
             <span className="num" style={{ color: "var(--nx-success)" }}>{t("Wertkulturen")} {fmtMoney(totalValue)} € · {fmtNumber(valueShare * 100, 1)} %</span>
-            <span className="num" style={{ color: "var(--nx-warning)" }}>{t("Rotation/Break")} {fmtMoney(totalBreak)} €</span>
           </div>
         </div>
 
@@ -109,7 +107,7 @@ export function ContributionView() {
           </table>
         </div>
         <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
-          <b>{t("Deckungsbeitrag")}</b>{t(" = Erlös + Förderung − Direktkosten (Agronomie + Maschinen-Betrieb). ")}<b>{t("Vollkosten-BE")}</b>{t(" zusätzlich − Maschinen-AfA/Zins − Personal − Fixkosten (Pacht/Overhead/Beregnung) — deckt sich mit §3 (Weizen ≈ −168, Tomate ≈ +5.001 €/ha). Immer über die volle Rotation gerechnet. Auf Vollkosten-Basis trägt die Rotation nur ~1 % — starkes Argument fürs Outsourcing.")}
+          <b>{t("Deckungsbeitrag")}</b>{t(" = Erlös + Förderung − Direktkosten (Agronomie + Maschinen-Betrieb). ")}<b>{t("Vollkosten-BE")}</b>{t(" zusätzlich − Maschinen-AfA/Zins − Personal − Fixkosten (Pacht/Overhead/Beregnung). Der Deckungsbeitrag je Kultur und Planjahr steht im Dashboard; diese Ansicht ist für den Vergleich Deckungsbeitrag gegen Vollkosten gedacht — sie zeigt, welche Kultur ihre Struktur wirklich trägt.")}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
             <span className="font-semibold text-nx-text-secondary">{t("Margen-Ampel:")}</span>
             <span className="inline-flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--nx-error)", display: "inline-block" }} />{t("Verlust")}</span>
