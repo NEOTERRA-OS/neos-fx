@@ -1257,10 +1257,14 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Avalprovision p. a. auf die besicherte Summe → Betriebsaufwand (EBITDA-wirksam).
   A("advance.aval_fee", "advance.aval_fee", "Avalprovision Anzahlung p. a.", "rate", 0),
   // --- Förderung ---
-  // Kappung der GAP-Flächenpauschalen je Betrieb und Jahr ab 2028 (Kommissionsvorschlag
-  //  MFR 2028–2034: max. 100.000 EUR je Betrieb). 0 = keine Kappung, dann läuft die
-  //  aktuelle Periode unverändert weiter — das ist die optimistische Annahme.
-  A("cap.per_farm_from_2028", "cap.per_farm_from_2028", "GAP-Kappung Flächenprämien je Betrieb ab 2028 (0 = keine)", "money", 10000000),
+  // Kappung der GAP-Flächenpauschalen je Betrieb und Jahr ab 2028. DEFAULT 0 = KEINE
+  //  KAPPUNG, auf Entscheidung vom 31.07.2026: die laufende Periode wird fortgeschrieben.
+  //  Der Mechanismus bleibt als Stellschraube erhalten — der Kommissionsvorschlag für den
+  //  MFR 2028–2034 sieht eine Kappung bei 100.000 € je Betrieb und Jahr vor. Wer den
+  //  Risikofall rechnen will, trägt hier 100.000 (also 10.000.000 CENT) ein; dann werden
+  //  ab dem zweiten Planjahr die Flächenpauschalen anteilig gekürzt, die gekoppelte
+  //  Stützung bleibt ausgenommen.
+  A("cap.per_farm_from_2028", "cap.per_farm_from_2028", "GAP-Kappung Flächenprämien je Betrieb ab 2028 (0 = keine)", "money", 0),
   A("subsidy.per_ha", "subsidy.per_ha", "GAP/CAP-Basisprämie €/ha (alle)", "money_per_ha", 20500),
   A("subsidy.coupled_freilandgemuese", "subsidy.coupled_freilandgemuese", "Gekoppelte Stützung Tomate + Zwiebel/Möhre €/ha", "money_per_ha", 161200),
   A("rev.gerste_zweitfrucht", "rev.gerste_zweitfrucht", "Zweitkultur-Beitrag Gerste — Doppel-Soja €/ha", "money_per_ha", 50000),
@@ -2893,19 +2897,23 @@ const SUBSIDIES: Subsidy[] = [
   // — VCP / Gekoppelte Stützung (Voluntary Coupled Payments · Sprijin Cuplat Vegetal) — KULTURSPEZIFISCH —
   { id: "vcp-tomate", name: "VCP — Industrietomate (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
     cropIds: ["tomate"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  // VCP NUR TOMATE. Die rumänische Intervention PD-17 „legume cultivate în câmp" deckt
-  //  ausschließlich TOMATE, GURKE, PAPRIKA und AUBERGINE. Zwiebel, Möhre, Knoblauch,
-  //  Sellerie und Süßkartoffel stehen NICHT auf der Liste — sie bekommen keine gekoppelte
-  //  Stützung. Die drei folgenden Zeilen buchten zusammen 1,07 Mio €/Jahr ab 2032 und rund
-  //  5,7 Mio € kumuliert 2028–2034 als Phantom-Ertrag direkt ins EBITDA.
-  //  Sie bleiben als INAKTIVE Zeilen stehen, damit die Annahme sichtbar und umkehrbar ist,
-  //  falls sich die Kulturliste der Intervention ändert.
-  { id: "vcp-zwiebel", name: "VCP — Zwiebel/Möhre (nicht in PD-17, ohne Anspruch)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
-  { id: "vcp-gemuese-neu", name: "VCP — Sellerie/Süßkartoffel (nicht in PD-17, ohne Anspruch)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
-  { id: "vcp-knoblauch", name: "VCP — Knoblauch (nicht in PD-17, ohne Anspruch)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["knoblauch"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+  // VCP FÜR ALLE GEMÜSEKULTUREN — AKTIV, auf ausdrückliche Entscheidung (Benedikt, 31.07.2026).
+  //  OFFENER PUNKT, bewusst so getroffen: eine Recherche fand für die rumänische Intervention
+  //  PD-17 „legume cultivate în câmp" eine Kulturliste mit Tomate, Gurke, Paprika und
+  //  Aubergine — Zwiebel, Möhre, Knoblauch, Sellerie und Süßkartoffel standen dort nicht
+  //  drauf. Quelle war allerdings ein Agrarnachrichtenportal (agrointel.ro), NICHT der
+  //  Rechtstext von MADR/APIA. Die Betriebsseite geht davon aus, dass die Gemüsekulturen
+  //  gefördert werden, und kennt den Markt.
+  //  RISIKO, falls die engere Lesart stimmt: 667 ha ab 2032, rund 1,07 Mio €/Jahr und
+  //  etwa 5,7 Mio € kumuliert 2028–2034 — voll im EBITDA und im Cashflow. Vor einer
+  //  Bankunterlage gehört das gegen den APIA-Rechtstext geprüft; bis dahin steht es hier
+  //  aktiv, aber dokumentiert.
+  { id: "vcp-zwiebel", name: "VCP — Zwiebel / Möhre (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
+    cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
+  { id: "vcp-gemuese-neu", name: "VCP — Sellerie / Süßkartoffel (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
+    cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
+  { id: "vcp-knoblauch", name: "VCP — Knoblauch (Sprijin cuplat usturoi)", basis: "per_ha", ratePerHaCent: 160700,
+    cropIds: ["knoblauch"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
   // Soja ist im Solo-Modell keine Kultur mehr. Die Zeile lag aktiv da und haette gezahlt,
   //  sobald jemand Soja wieder in den Anbauplan nimmt.
   { id: "vcp-soja", name: "VCP — Soja (Kultur nicht im Plan)", basis: "per_ha", ratePerHaCent: 20000,
