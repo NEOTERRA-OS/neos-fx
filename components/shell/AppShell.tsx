@@ -29,7 +29,6 @@ import { BewertungView } from "../inputs/BewertungView";
 import { ShareholderView } from "../inputs/ShareholderView";
 import { LohnarbeitView } from "../inputs/LohnarbeitView";
 import { PachtView } from "../inputs/PachtView";
-import { AnbaustrategieView } from "../inputs/AnbaustrategieView";
 import { AbnahmevertraegeView } from "../inputs/AbnahmevertraegeView";
 import { LagerKostenstelleView } from "../inputs/LagerKostenstelleView";
 import { CapexScenarienView } from "../inputs/CapexScenarienView";
@@ -164,7 +163,6 @@ export function AppShell() {
                 : view === "annahmen" ? <AnnahmenRegisterView />
                 : view === "kommentare" ? <KommentareView />
                 : view === "team" ? <TeamAdminView />
-                : view === "anbaustrategie" ? <AnbaustrategieView />
                 : view === "capexScenarien" ? <CapexScenarienView />
                 : view === "maschinen" ? <MaschinenHub />
                 : view === "investitionen" ? <InvestitionenView />

@@ -197,7 +197,7 @@ export function CapexScenarienView() {
         </div>
       </section>
 
-      {/* Fahrgassen-Ökonomie + Cash-Crop-Schlagkraft — Detailrechnung zum 48-m-Case */}
+      {/* Fahrgassen-Ökonomie — Detailrechnung zum 48-m-Case (Wertkulturen) */}
       <TramlineEconomics />
         </div>}
     </div>

@@ -59,14 +59,9 @@ export function ExecutiveDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* AUSGEBLENDET 31.07.2026 (Benedikt): das Meilenstein-Board. Die beiden Tabellen darunter
-          zeigen dieselben Groessen vollstaendig je Planjahr statt in drei Stichjahren — das Board
-          war damit redundant. Die Komponente bleibt erhalten und ist mit einer Zeile zurueck. */}
-      {/* <StufenBoard domain={sdomain} annual={annual} scenarioId={scenarioId} /> */}
 
-      {/* Skalierungspfad + Ergebnisband als Tabellen — untereinander (Wunsch 31.07.2026).
-          Beides sind die Zahlen, die im Gespräch tatsächlich gebraucht werden. */}
-      <SkalierungspfadTabelle domain={domain} />
+      {/* Der Skalierungspfad ist in die ANBAUPLANUNG gewandert und dort mit dem Anbauplan zu
+          einer Tabelle verschmolzen — eine Kultur, eine Zeile. Hier bleibt das Ergebnisband. */}
       <ErgebnisTabelle annual={annual} />
 
       {/* Financial Evolution — alle Jahre, nicht nur das Zieljahr */}
@@ -215,63 +210,10 @@ function FinancialEvolution({ annual }: { annual: ComputedModel }) {
   );
 }
 
-/** Meilenstein-Board des Skalierungspfads: Fläche, Kartoffel-/Tomatenmengen, Umsatz,
- *  EBITDA und Jahresüberschuss zu Start, Zielerreichung und letztem Planjahr. */
-function StufenBoard({ domain, annual, scenarioId }: { domain: any; annual: ComputedModel; scenarioId: string }) {
-  const my = deriveCropAreasMY(domain);
-  const gEff = effectiveGrowth(domain.growth);
-  // Meilensteine des Skalierungspfads: Start · das Jahr, in dem die Zielfläche erstmals
-  //  erreicht ist · das letzte Planjahr. Die früheren Stufen-Zweige (s1/s1a/s2/s3b) sind
-  //  entfallen — es gibt nur noch einen Pfad.
-  const last = my.years - 1;
-  const targetHa = my.irrHa[last] ?? 0;
-  const yReach = my.irrHa.findIndex((v) => v >= targetHa - 1);
-  const cand: { y: number; label: string }[] = [{ y: 0, label: t("Start") }];
-  if (yReach > 0 && yReach < last) cand.push({ y: yReach, label: t("Zielfläche erreicht") });
-  cand.push({ y: last, label: t("Letztes Planjahr") });
-  const miles = cand.filter((m, i, a) => a.findIndex((x) => x.y === m.y) === i);
-
-  const pv = (li: { values: number[] }, y: number) => li.values[Math.min(y, li.values.length - 1)] ?? 0;
-  const yieldOf = (id: string) => readAssumption(domain, `yield.${id}`, scenarioId) ?? 0;
-  const kartHa = (y: number) => (my.areas["kartoffel_pommes"]?.[y] ?? 0) + (my.areas["kartoffel_chips"]?.[y] ?? 0);
-  const kartT = (y: number) => (my.areas["kartoffel_pommes"]?.[y] ?? 0) * yieldOf("kartoffel_pommes") + (my.areas["kartoffel_chips"]?.[y] ?? 0) * yieldOf("kartoffel_chips");
-  const tomT = (y: number) => (my.areas["tomate"]?.[y] ?? 0) * yieldOf("tomate");
-  const f0 = (v: number) => fmtNumber(v, 0);
-
-  // Trockenrotation, Gesamtfläche und Beregnungsgrad sind entfallen: im Solo-Modell ist die
-  //  gesamte Betriebsfläche beregnet, die drei Zeilen zeigten nur noch 0 ha bzw. konstant 100 %.
-  const shownRows: { label: string; val: (y: number) => string | React.ReactNode }[] = [
-    { label: t("Betriebsfläche"), val: (y) => `${f0(my.irrHa[y])} ha` },
-    { label: t("Kartoffel (PRIO 1)"), val: (y) => `${f0(kartHa(y))} ha · ${f0(kartT(y))} t` },
-    { label: t("Industrietomate"), val: (y) => `${f0(my.areas["tomate"]?.[y] ?? 0)} ha · ${f0(tomT(y))} t` },
-    { label: t("Umsatz p.a."), val: (y) => fmtMoney(pv(annual.pnl.revenue, y) + pv(annual.pnl.subsidies, y)) + " €" },
-    { label: "EBITDA", val: (y) => fmtMoney(pv(annual.pnl.ebitda, y)) + " €" },
-    { label: t("Jahresüberschuss"), val: (y) => fmtMoney(pv(annual.pnl.netIncome, y)) + " €" },
-  ];
-
-  return (
-    <Tile title={t("Meilensteine des Skalierungspfads")} hint={t("Kultur-Politik: expliziter Skalierungspfad je Kultur (Kartoffel 300 → 1.000 ha bis 2031)")}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[12px]">
-          <thead><tr>
-            <th className="caption text-[9.5px] text-nx-text-muted text-left px-2 py-1">{t("Kennzahl")}</th>
-            {miles.map((m) => (
-              <th key={m.y} className="caption text-[9.5px] text-right px-2 py-1" style={{ color: "var(--nx-green-ink)" }}>{m.label} · {START_YEAR + m.y}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {shownRows.map((r) => (
-              <tr key={r.label} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-                <td className="px-2 py-1.5 text-nx-text-secondary">{r.label}</td>
-                {miles.map((m) => <td key={m.y} className="num px-2 py-1.5 text-right font-semibold">{r.val(m.y)}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Tile>
-  );
-}
+/* ENTFERNT 31.07.2026: StufenBoard (Meilensteine des Skalierungspfads). Zeigte Fläche,
+   Mengen, Umsatz, EBITDA und Jahresüberschuss in drei Stichjahren — die Tabellen
+   "Skalierungspfad der Wertkulturen" und "Ergebnis je Planjahr" zeigen dasselbe über
+   alle acht Jahre. */
 
 /** Anbaustruktur & Produktion — Fläche (ha), Anteil, Ertrag (t/ha) und Netto-Produktion (t) je Kultur
  *  für das angezeigte Jahr (beregneter Block + Trockenrotation). */
@@ -532,130 +474,11 @@ function FundingBox({ annual, monthly, idx }: { annual: ComputedModel; monthly: 
 }
 
 
-/* --------------------------------------------------------------------------
- * SKALIERUNGSPFAD (ha je Kultur und Planjahr) + ERGEBNISBAND (Mio €).
- *  Zwei schlanke Tabellen untereinander — dieselben Zahlen wie im Skalierungsplan-
- *  Dokument, aber live aus dem Modell statt abgeschrieben.
- * ------------------------------------------------------------------------ */
 const TBL_TH = "px-3 py-2 caption text-[10px] text-nx-text-muted";
 const TBL_CARD: React.CSSProperties = { borderColor: "var(--nx-border)", background: "var(--nx-surface)", boxShadow: "var(--nx-el-card)" };
 
-function SkalierungspfadTabelle({ domain }: { domain: any }) {
-  const patch = useModelStore((s) => s.patch);
-  const readOnly = useModelStore((s) => s.readOnly);
-  const my = React.useMemo(() => deriveCropAreasMY(domain), [domain]);
-  const years = my.years;
-  // Zeilen in Anbauplan-Reihenfolge, Kartoffel-Zwischensumme direkt nach den beiden Sorten.
-  // NUR WERTKULTUREN. Gespeicherte Stände (Cloud-Autosave, JSON-Import) können weiterhin
-  //  Ackerbau- und Trockenkulturen im Anbauplan tragen — die gehören nicht in den
-  //  Skalierungspfad der Wertkulturen und würden die Tabelle unlesbar machen.
-  const ids = React.useMemo(() => {
-    const seen: string[] = [];
-    for (const e of domain.anbauplan ?? []) if (!seen.includes(e.cropId)) seen.push(e.cropId);
-    return seen.filter((id) => my.areas[id] && VALUE_CROP_IDS.includes(id));
-  }, [domain, my]);
-  /** Übrige Kulturen im Plan (Ackerbau/Trockenrotation aus Altständen) — nur als Kontextzeile. */
-  const restIds = React.useMemo(() => {
-    const seen: string[] = [];
-    for (const e of domain.anbauplan ?? []) if (!seen.includes(e.cropId)) seen.push(e.cropId);
-    return seen.filter((id) => my.areas[id] && !VALUE_CROP_IDS.includes(id));
-  }, [domain, my]);
-  const kart = ids.filter((id) => id.startsWith("kartoffel"));
-  const at = (id: string, y: number) => Math.round(my.areas[id]?.[y] ?? 0);
-  const sumAt = (list: string[], y: number) => list.reduce((s, id) => s + at(id, y), 0);
-  const cell = (v: number) => (v > 0 ? fmtNumber(v, 0) : "–");
-
-  const setHa = (cropId: string, y: number, v: number) => patch((d: any) => setCropPathHa(d, cropId, y, v, years));
-  const rampRow = (cropId: string) => patch((d: any) => rampCropPath(d, cropId, years));
-
-  const Row = ({ label, get, strong }: { label: string; get: (y: number) => number; strong?: boolean }) => (
-    <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-      <td className={"px-3 py-1.5 " + (strong ? "font-semibold" : "")}
-          style={{ color: strong ? "var(--nx-brand-lift)" : "var(--nx-text)" }}>{label}</td>
-      {Array.from({ length: years }, (_, y) => (
-        <td key={y} className={"num px-3 py-1.5 text-right " + (strong ? "font-semibold" : "")}
-            style={{ color: strong ? "var(--nx-brand-lift)" : "var(--nx-text)" }}>{cell(get(y))}</td>
-      ))}
-    </tr>
-  );
-
-  return (
-    <section className="rounded-tile border" style={TBL_CARD}>
-      <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
-        <h3 className="text-[13px] font-semibold">{t("Skalierungspfad der Wertkulturen (ha)")}</h3>
-        <p className="mt-0.5 text-[11px] text-nx-text-muted">
-          {readOnly
-            ? t("Fläche je Kultur und Planjahr. Σ Betriebsfläche = bewirtschaftete Fläche des Jahres.")
-            : t("Jede Zelle ist eine Variable — Fläche je Kultur und Planjahr direkt editierbar. Das ganze Modell rechnet sofort neu: Umsatz, Maschinenbedarf, Lagerkapazität, Personal, Finanzierung. Der Pfeil rechts lässt eine Zeile linear vom Start- auf den Zielwert laufen.")}
-        </p>
-      </div>
-      <div className="overflow-x-auto px-2 py-2">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr>
-              <th className={TBL_TH + " text-left"}>{t("Kultur")}</th>
-              {Array.from({ length: years }, (_, y) => (
-                <th key={y} className={TBL_TH + " text-right"}>{START_YEAR + y}</th>
-              ))}
-              {!readOnly && <th className={TBL_TH + " text-center"} style={{ width: 34 }} />}
-            </tr>
-          </thead>
-          <tbody>
-            {ids.map((id) => (
-              <React.Fragment key={id}>
-                {readOnly ? (
-                  <Row label={cropName(id)} get={(y) => at(id, y)} />
-                ) : (
-                  <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-                    <td className="px-3 py-1">{cropName(id)}</td>
-                    {Array.from({ length: years }, (_, y) => (
-                      <td key={y} className="px-1.5 py-1 text-right">
-                        <NumberInput value={at(id, y)} width={58} onCommit={(v) => setHa(id, y, v)} />
-                      </td>
-                    ))}
-                    <td className="px-1 py-1 text-center">
-                      <button title={t("Linear vom Start- auf den Zielwert hochlaufen lassen")}
-                        onClick={() => rampRow(id)}
-                        className="rounded-control border px-1.5 text-[11px]"
-                        style={{ height: 24, borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)", background: "var(--nx-surface)" }}>↗</button>
-                    </td>
-                  </tr>
-                )}
-                {kart.length > 1 && id === kart[kart.length - 1] && (
-                  <Row label={t("Kartoffel gesamt")} get={(y) => sumAt(kart, y)} strong />
-                )}
-              </React.Fragment>
-            ))}
-            <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
-              <td className="px-3 py-2 font-semibold">{t("Σ Wertkulturen")}</td>
-              {Array.from({ length: years }, (_, y) => (
-                <td key={y} className="num px-3 py-2 text-right font-semibold">{fmtNumber(sumAt(ids, y), 0)}</td>
-              ))}
-              {!readOnly && <td />}
-            </tr>
-            {restIds.length > 0 && (
-              <>
-                <Row label={t("Übrige Kulturen im Plan (nicht dargestellt)")} get={(y) => sumAt(restIds, y)} />
-                <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-                  <td className="px-3 py-1.5 text-nx-text-muted">{t("Σ Betriebsfläche gesamt")}</td>
-                  {Array.from({ length: years }, (_, y) => (
-                    <td key={y} className="num px-3 py-1.5 text-right text-nx-text-muted">{fmtNumber(sumAt([...ids, ...restIds], y), 0)}</td>
-                  ))}
-                  {!readOnly && <td />}
-                </tr>
-              </>
-            )}
-          </tbody>
-        </table>
-      </div>
-      {!readOnly && (
-        <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
-          {t("Das Startjahr wird zusätzlich in den Anbauplan gespiegelt — er ist die Bemessungsgrundlage für Maschinenpark, Lager und Beregnung. Anbaupausen (Kartoffel ≤ 25 %, Doldenblütler ≤ 20 %) und die Markt-Obergrenzen bleiben als Wächter aktiv und melden sich in der Prüfliste.")}
-        </div>
-      )}
-    </section>
-  );
-}
+/* SkalierungspfadTabelle entfernt 31.07.2026 — der Pfad steht jetzt in der Anbauplanung,
+   verschmolzen mit dem Anbauplan (components/inputs/AnbauplanView.tsx). */
 
 function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
   const years = annual.timeline.periodCount;

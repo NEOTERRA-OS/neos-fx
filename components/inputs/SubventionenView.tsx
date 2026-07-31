@@ -13,7 +13,7 @@ import type { Subsidy } from "../../core/types";
  *  aktiv/inaktiv, editierbar & erweiterbar. Fließt strukturiert in GuV + operativen Cashflow. */
 const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 const CROP_LABEL: Record<string, string> = {
-  weizen: "Weizen", gerste_zw: "Gerste", soja_luzerne: "Soja/Luzerne", winterraps: "Raps", mais: "Mais",
+  // Ackerbau-Kulturen entfallen — der Betrieb baut nur Wertkulturen an.
   tomate: "Tomate", kartoffel_pommes: "Kart. Pommes", kartoffel_chips: "Kart. Chips", zwiebel_moehre: "Zwiebel/Möhre",
 };
 const PILLARS: { key: 1 | 2; label: string }[] = [

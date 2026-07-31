@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { DirektkostenSummary } from "./DirektkostenSummary";
 import { useModelStore } from "../../store/modelStore";
 import { deriveCropMassnahmen, deriveAgronomieWarnings, getProductCatalog, exportMassnahmenplan, MACHINE_LABELS, CROP_NAME, type CropCalc, type MassnahmeBM } from "../../store/model";
 import { findProduct, categoriesForOp, type CatalogProduct } from "../../store/productCatalog";
@@ -180,6 +181,10 @@ export function KulturKalkulationView() {
 
   return (
     <div className="space-y-4">
+      {/* Übersicht zuerst: was kostet der Hektar und was die Tonne — je Kultur, aufgeschlüsselt.
+          Darunter dann die Maßnahmenkette der ausgewählten Kultur im Detail. */}
+      <DirektkostenSummary />
+
       {/* Kultur-Auswahl */}
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>

@@ -4,10 +4,8 @@ import { useModelStore, readAssumption } from "../../store/modelStore";
 import type { Domain, CatalogEntry } from "../../store/model";
 import { fmtMoney, fmtNumber, fmtEditable, parseDe } from "../../design/format";
 import { AssumptionGroupCards } from "./AssumptionGroupCards";
-import { AnbauAnalysePanel } from "./AnbauAnalysePanel";
-import { AnbauWhatIfPanel } from "./AnbauWhatIfPanel";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
-import { deriveCropAreasMY, type CropPolicy } from "../../store/model";
+import { deriveCropAreasMY, setCropPathHa, rampCropPath, START_YEAR, type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
 import { Droplets, Sun, X } from "lucide-react";
 import { Segmented } from "../primitives/Segmented";
@@ -62,6 +60,13 @@ export function AnbauplanView() {
   const stageCashOnly = false;   // Ackerbau-Benchmark entfallen: es gibt nur den Wertkultur-Plan
   const planDomain = domain;
   const plan = planDomain.anbauplan;
+  // ZUSAMMENGEFÜHRT 31.07.2026: der Skalierungspfad steckt jetzt in DIESER Tabelle. Eine Kultur,
+  //  eine Zeile — Beregnung, Pflanz-/Erntemonat, Fläche je Planjahr, Kosten. Vorher standen die
+  //  Jahresflächen im Dashboard und die Startfläche hier; wer eine Kultur plante, musste an zwei
+  //  Stellen arbeiten und konnte beide auseinanderlaufen lassen.
+  const jahre = React.useMemo(() => Array.from({ length: Math.max(1, domain.growth?.years ?? 1) }, (_, y) => y), [domain.growth?.years]);
+  const myAreas = React.useMemo(() => deriveCropAreasMY(domain).areas, [domain]);
+  const haOf = (cropId: string, y: number) => Math.round(myAreas[cropId]?.[Math.min(y, jahre.length - 1)] ?? 0);
   // Trockenrotation läuft jetzt NATIV im Anbauplan (pool:"dryland"). Aufteilung rein über das pool-Feld.
   const agroOf = (e: { cropId: string; areaHa: number }) => {
     const entry = planDomain.catalog.find((c) => c.cropId === e.cropId);
@@ -107,11 +112,12 @@ export function AnbauplanView() {
             <tr className="caption text-[10.5px] text-nx-text-muted">
               <th className="px-2 py-2 text-left">{t("Kultur")}</th>
               <th className="px-2 py-2 text-left">{t("Beregnung")}</th>
-              <th className="px-2 py-2 text-right">{t("Fläche")}</th>
               <th className="px-2 py-2 text-right">{t("Pflanzung (M)")}</th>
               <th className="px-2 py-2 text-right">{t("Ernte (M)")}</th>
+              {jahre.map((y) => <th key={y} className="px-1.5 py-2 text-right">{START_YEAR + y}</th>)}
               <th className="px-2 py-2 text-right">{t("€/ha")}</th>
-              <th className="px-2 py-2 text-right">{t("Σ €")}</th>
+              <th className="px-2 py-2 text-right">{t("Σ € Jahr 1")}</th>
+              <th className="px-1 py-2 text-center" title={t("Linear vom Start- auf den Zielwert hochlaufen lassen")}>↗</th>
               <th className="px-2 py-2"></th>
             </tr>
           </thead>
@@ -136,17 +142,24 @@ export function AnbauplanView() {
                   <td className="px-2 py-2"><BeregBadge kind={e.pool === "dryland" ? "trocken" : "beregnet"} /></td>
                   <td className="px-2 py-2 text-right">
                     {stageCashOnly
-                      ? <span className="num">{fmtNumber(e.areaHa, 0)} ha</span>
-                      : <NumCell value={e.areaHa} suffix="ha" onCommit={(n) => patch((d) => { d.anbauplan[i].areaHa = n; })} />}
-                  </td>
-                  <td className="px-2 py-2 text-right">
-                    {stageCashOnly
                       ? <span className="num text-nx-text-secondary">{e.plantingPeriod}</span>
                       : <NumCell value={e.plantingPeriod} width={56} onCommit={(n) => patch((d) => { d.anbauplan[i].plantingPeriod = Math.round(n); })} />}
                   </td>
                   <td className="num px-2 py-2 text-right text-nx-text-secondary">{e.harvestPeriods.join(", ")}</td>
+                  {jahre.map((y) => (
+                    <td key={y} className="px-1.5 py-2 text-right">
+                      <NumCell value={haOf(e.cropId, y)} width={58}
+                        onCommit={(n) => patch((d) => setCropPathHa(d, e.cropId, y, n, jahre.length))} />
+                    </td>
+                  ))}
                   <td className="num px-2 py-2 text-right">{fmtMoney(perHa)}</td>
                   <td className="num px-2 py-2 text-right font-semibold">{fmtMoney(perHa * e.areaHa)}</td>
+                  <td className="px-1 py-2 text-center">
+                    <button title={t("Linear vom Start- auf den Zielwert hochlaufen lassen")}
+                      onClick={() => patch((d) => rampCropPath(d, e.cropId, jahre.length))}
+                      className="rounded-control border px-1.5 text-[11px]"
+                      style={{ height: 24, borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)", background: "var(--nx-surface)" }}>↗</button>
+                  </td>
                   <td className="px-2 py-2 text-right">
                     {!stageCashOnly && (
                       <button className="text-[11px] text-nx-error" title={t("Zeile entfernen")}
@@ -209,14 +222,14 @@ export function AnbauplanView() {
     {/* Anbaustruktur & Produktion */}
     <ProduktionsTabelle />
 
-    {/* Kultur-Skalierungspolitik: Wie skaliert jede Kultur über den Flächen-Ramp? */}
-    <PolicyPanel />
+    {/* ENTFERNT 31.07.2026: das Politik-Panel (scale/fix/ramp je Kultur). Die Flächen stehen
+        jetzt Jahr für Jahr in der Tabelle oben — eine explizite Kurve statt einer Regel, die
+        man erst im Kopf auflösen muss. Die Modi scale/fix/ramp werden nicht mehr verwendet. */}
 
-    {/* Agronomie-Advisor — warum diese Struktur + Bewertung von Änderungen */}
-    <AnbauAnalysePanel />
-
-    {/* Was-wäre-wenn — Planänderung gegen Baseline bewerten */}
-    <AnbauWhatIfPanel />
+    {/* AUSGEBLENDET 31.07.2026: Agronomie-Advisor und Was-wäre-wenn-Panel. Sie gehören zur
+        Sektion Anbaustrategie, die vorerst komplett aus der App genommen ist. Der Code bleibt
+        unter components/_archiv erhalten; die Anbaupausen-Wächter (Kartoffel 25 %,
+        Doldenblütler 20 %) laufen unabhängig davon in der Prüfliste weiter. */}
     </>)}
 
     {tab === "ertraege" && (
@@ -233,66 +246,7 @@ export function AnbauplanView() {
 
 /** Anbaustruktur (ha) & Produktion (t) je Kultur — Fläche × Ertrag × (1−Verlust).
  *  Basisjahr = aktueller Anbauplan (beregneter Kernblock). */
-/** Kultur-Skalierungspolitik — wie skaliert jede Kultur über den Flächen-Ramp?
- *  scale = proportional (Residual-Füller) · fix = konstant (Werkskapazität) · ramp = schnellstmöglich
- *  auf Ziel-ha unter der Anbaupause-Grenze (Kartoffel-Gruppe ≤ 25 % der beregneten Fläche). */
-function PolicyPanel() {
-  const { domain, patch } = useModelStore();
-  const my = deriveCropAreasMY(domain);
-  const last = my.years - 1;
-  const cropIds = [...new Set(domain.anbauplan.map((e) => e.cropId))];
-  const setPol = (id: string, p: Partial<CropPolicy>) => patch((d) => {
-    const cur = d.cropPolicy?.[id] ?? { mode: "scale" as const };
-    d.cropPolicy = { ...(d.cropPolicy ?? {}), [id]: { ...cur, ...p } };
-  });
-  const border = "var(--nx-border)";
-  return (
-    <section className="rounded-tile border" style={{ borderColor: border, background: "var(--nx-surface)" }}>
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b" style={{ borderColor: border }}>
-        <h3 className="text-[13px] font-semibold">{t("Kultur-Skalierungspolitik — wer wächst wie über den Ramp?")}</h3>
-        <span className="caption text-[10.5px] text-nx-text-muted">{t("ramp = PRIO-Hochskalierung unter Anbaupause · fix = Werkskapazität · scale = füllt Rotation")}</span>
-      </div>
-      <div className="overflow-x-auto px-2 py-2">
-        <table className="w-full text-[12px]" style={{ minWidth: 680 }}>
-          <thead><tr>
-            <th className="caption text-[9.5px] text-nx-text-muted text-left px-2 py-1">{t("Kultur")}</th>
-            <th className="caption text-[9.5px] text-nx-text-muted text-left px-2 py-1">{t("Politik")}</th>
-            <th className="caption text-[9.5px] text-nx-text-muted text-right px-2 py-1">{t("Ziel-ha (ramp)")}</th>
-            <th className="caption text-[9.5px] text-nx-text-muted text-right px-2 py-1">{t("Fläche heute → Endausbau")}</th>
-          </tr></thead>
-          <tbody>
-            {cropIds.map((id) => {
-              const pol = domain.cropPolicy?.[id] ?? { mode: "scale" as const };
-              const curve = my.areas[id] ?? [];
-              return (
-                <tr key={id} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-                  <td className="px-2 py-1.5">{cropName(id)}</td>
-                  <td className="px-2 py-1.5">
-                    <select className="rounded-control border text-[11.5px] px-1" style={{ background: "var(--nx-app-bg)", borderColor: border, height: 30 }}
-                      value={pol.mode} onChange={(e) => setPol(id, { mode: e.target.value as CropPolicy["mode"] })}>
-                      <option value="scale">{t("scale — proportional")}</option>
-                      <option value="fix">{t("fix — konstant")}</option>
-                      <option value="ramp">{t("ramp — auf Ziel")}</option>
-                    </select>
-                  </td>
-                  <td className="px-2 py-1.5 text-right">
-                    {pol.mode === "ramp"
-                      ? <NumCell value={pol.targetHa ?? 0} width={78} suffix="ha" onCommit={(n) => setPol(id, { targetHa: Math.max(0, Math.round(n)) })} />
-                      : <span className="text-nx-text-muted">—</span>}
-                  </td>
-                  <td className="num px-2 py-1.5 text-right">{fmtNumber(curve[0] ?? 0, 0)} → <b>{fmtNumber(curve[last] ?? 0, 0)}</b> ha</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: border }}>
-        {t("Kartoffel (Pommes + Chips) teilt sich als Wirtsgruppe die 25-%-Grenze (4-Jahres-Anbaupause) — der Ramp läuft so schnell, wie die beregnete Fläche es agronomisch erlaubt. Σ je Jahr = beregnete Fläche (Residual füllt die Rotation).")}
-      </div>
-    </section>
-  );
-}
+/* PolicyPanel entfernt 31.07.2026 — ersetzt durch die Jahresspalten im Anbauplan. */
 
 function ProduktionsTabelle() {
   const { domain, view } = useModelStore();

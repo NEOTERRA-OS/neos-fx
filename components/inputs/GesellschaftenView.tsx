@@ -172,7 +172,7 @@ export function GesellschaftenView() {
 }
 
 /** Kultur → Gesellschaft (Entity-Split) — explizite Zuordnung je Anbau-Eintrag.
- *  Ohne Zuordnung greift die Ableitung: Wertkulturen → NEOTERRA-OpCo, Cash/Trockenrotation → Isolde.
+ *  Ohne Zuordnung greift die Ableitung: alle Kulturen → NEOTERRA SRL (einzige Betriebsgesellschaft).
  *  Setzt entry.entityId; die Entity-Ansicht (Header) rechnet dann exakt diese Zuordnung durch. */
 function KulturEntitySplit() {
   const domain = useModelStore((s) => s.domain);
@@ -197,7 +197,7 @@ function KulturEntitySplit() {
         </span>
       </div>
       <div className="px-4 py-2.5 text-[12px] text-nx-text-secondary">
-        {t("Jede Kultur einer Gesellschaft zuordnen. Ohne Zuordnung gilt die Ableitung:")} <b>{t("Wertkulturen → NEOTERRA")}</b>, <b>{t("Cash-/Trockenrotation → Isolde")}</b>. {t("Die Entity-Ansicht im Header rechnet dann diese Zuordnung als Vollkosten-Standalone durch.")}
+        {t("Alle Kulturen gehören der NEOTERRA SRL — sie ist die einzige Betriebsgesellschaft. Die Holding (Deutschland) hält die Beteiligung und trägt ihre eigenen Kosten.")}
       </div>
       <div className="overflow-x-auto px-2 pb-3">
         <table className="w-full text-[12.5px]" style={{ borderCollapse: "collapse" }}>

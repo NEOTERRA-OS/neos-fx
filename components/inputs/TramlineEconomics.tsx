@@ -230,43 +230,12 @@ export function TramlineEconomics() {
         <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">{t("Spritze")} {cfg.boomAlt} m</span><NumberInput value={cfg.capPriceAltCent} moneyCent width={90} suffix="€" onCommit={(n) => setCfg({ capPriceAltCent: Math.max(0, n) })} /></label>
         <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">{t("RW")}</span><NumberInput value={Math.round(cfg.capResAltPct * 100)} width={48} suffix="%" onCommit={(n) => setCfg({ capResAltPct: Math.max(0, Math.min(1, n / 100)) })} /></label>
       </div>
-      {/* Cash-Crop-Effekt: Schlagkraft → Maschinenbedarf */}
-      <div className="px-4 pt-3 pb-1 border-t" style={{ borderColor: border }}>
-        <h4 className="text-[12.5px] font-semibold">{t("Cash Crops — Schlagkraft statt Ertragseffekt: sinkender Maschinenbedarf")}</h4>
-        <p className="text-[11.5px] text-nx-text-secondary leading-relaxed mt-1">
-          {t("Getreide/Raps/Soja/Mais werden flächig gedrillt — kein nennenswerter Fahrgassen-Ertragsverlust. Hier liegt der 48-m-Wert in der")} <b>{t("Schlagkraft")}</b>: {fmtNumber(r.cash.cEffBase, 1)} → <b>{fmtNumber(r.cash.cEffAlt, 1)} ha/h</b> {t("(+33 %) → die Peak-Spritzfläche wird mit")} <b>{t("weniger Maschinen")}</b> {t("abgedeckt.")}
-        </p>
-      </div>
-      <div className="px-4 py-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11.5px]">
-        <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">{t("Cash-Fläche")}</span><NumberInput value={cfg.cash.areaHa} width={72} suffix="ha" onCommit={(n) => setCash({ areaHa: Math.max(0, n) })} /></label>
-        <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">{t("Überfahrten/Peak")}</span><NumberInput value={cfg.cash.passes} width={44} onCommit={(n) => setCash({ passes: Math.max(0, n) })} /></label>
-        <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">ha/h @{cfg.boomBase} m</span><NumberInput value={cfg.cash.cEffBaseHaH} width={56} onCommit={(n) => setCash({ cEffBaseHaH: Math.max(0.1, n) })} /></label>
-        <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">{t("Fenster")}</span><NumberInput value={cfg.cash.windowDays} width={44} suffix={t("Tage")} onCommit={(n) => setCash({ windowDays: Math.max(1, n) })} /></label>
-        <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">{t("h/Tag")}</span><NumberInput value={cfg.cash.hoursDay} width={44} onCommit={(n) => setCash({ hoursDay: Math.max(1, n) })} /></label>
-        <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">{t("CAPEX/Spritze")}</span><NumberInput value={cfg.cash.sprayerCapexCent} moneyCent width={90} suffix="€" onCommit={(n) => setCash({ sprayerCapexCent: Math.max(0, n) })} /></label>
-        <label className="flex items-center gap-1.5"><span className="text-nx-text-secondary">{t("Fahrer/Jahr")}</span><NumberInput value={cfg.cash.operatorYearCent} moneyCent width={80} suffix="€" onCommit={(n) => setCash({ operatorYearCent: Math.max(0, n) })} /></label>
-      </div>
-      <div className="px-4 py-3 grid gap-4 sm:grid-cols-4" style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-        <div>
-          <div className="caption text-[10px] text-nx-text-muted uppercase tracking-wide">{t("Leistung/Tag")} {cfg.boomBase}→{cfg.boomAlt} m</div>
-          <div className="text-[15px] font-semibold num">{fmtNumber(r.cash.haDayBase, 0)} → {fmtNumber(r.cash.haDayAlt, 0)} ha</div>
-        </div>
-        <div>
-          <div className="caption text-[10px] text-nx-text-muted uppercase tracking-wide">{t("Spritzen am Peak")} {cfg.boomBase}→{cfg.boomAlt} m</div>
-          <div className="text-[15px] font-semibold num">{r.cash.machBase} → <b style={{ color: r.cash.dMach > 0 ? pos : "inherit" }}>{r.cash.machAlt}</b>{r.cash.dMach > 0 ? ` (−${r.cash.dMach})` : ""}</div>
-        </div>
-        <div>
-          <div className="caption text-[10px] text-nx-text-muted uppercase tracking-wide">{t("CAPEX-Einsparung (einmalig)")}</div>
-          <div className="text-[15px] font-semibold num" style={{ color: r.cash.capexSaved > 0 ? pos : "inherit" }}>{r.cash.capexSaved > 0 ? "+" : ""}{fmtMoney(r.cash.capexSaved)} €</div>
-        </div>
-        <div>
-          <div className="caption text-[10px] text-nx-text-muted uppercase tracking-wide">{t("Fahrer-Einsparung p.a.")}</div>
-          <div className="text-[15px] font-semibold num" style={{ color: r.cash.operatorSaved > 0 ? pos : "inherit" }}>{r.cash.operatorSaved > 0 ? "+" : ""}{fmtMoney(r.cash.operatorSaved)} €</div>
-        </div>
-      </div>
+      {/* ENTFERNT 31.07.2026: der Cash-Crop-Block (Schlagkraft Getreide/Raps/Soja/Mais).
+          Der Betrieb baut diese Kulturen nicht mehr an; die Fläche stand ohnehin auf 0,
+          alle Eingabefelder und Kennzahlen zeigten nur Nullen. */}
 
       <div className="px-4 py-2 border-t text-[11px] text-nx-text-muted" style={{ borderColor: border }}>
-        {t("Leitkultur-Ranking auf Kartoffel; Tomate/weitere fließen über ihre Zeile in den Σ-Vorteil. Randverlust ist ein kalibrierbarer Näherungsterm (Kreis-Fit/Vorgewende) —")} <code>randFactor</code> {t("an eure Pivot-Fit-Analyse anpassen. Betriebskosten (−25 % Spritz-€/ha) stehen oben im 36/48-Vergleich. Die Cash-Crop-Maschineneinsparung ist")} <b>{t("nicht")}</b> {t("in die Fahrgassen-Amortisation eingerechnet (im Bestand bereits vorhanden; reale Neubeschaffungs-Einsparung erst bei Skalierung Stufe 2/3b — sonst Doppelzählung mit der Modell-Flotte). Der Streuer (36 m → Leeb Xeric 48 m) folgt derselben Logik.")}
+        {t("Leitkultur-Ranking auf Kartoffel; Tomate und die übrigen Wertkulturen fließen über ihre Zeile in den Σ-Vorteil. Randverlust ist ein kalibrierbarer Näherungsterm (Kreis-Fit/Vorgewende) —")} <code>randFactor</code> {t("an eure Pivot-Fit-Analyse anpassen. Betriebskosten (−25 % Spritz-€/ha) stehen oben im 36/48-Vergleich. Der Streuer (36 m → Leeb Xeric 48 m) folgt derselben Logik.")}
       </div>
     </section>
   );

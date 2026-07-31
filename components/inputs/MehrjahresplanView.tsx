@@ -105,7 +105,7 @@ export function MehrjahresplanView() {
 
 /** Anbaustruktur (ha) & Produktion (t) je Kultur über die Wachstumsjahre.
  *  Beregneter Block skaliert mit der Beregnungsfläche (Anbauplan-Anteile),
- *  unberegneter Block mit der Trockenfläche (Trockenrotation). */
+ *  (nur Wertkulturen — eine unberegnete Rotation gibt es nicht mehr). */
 function AnbauMatrix({ Y, irrByYear, dryByYear, domain, sc }: { Y: number[]; irrByYear: number[]; dryByYear: number[]; domain: any; sc: string }) {
   const [mode, setMode] = React.useState<"ha" | "t">("ha");
   // Flächen je Jahr aus der KULTUR-SKALIERUNGSPOLITIK (Skalierungspfad/ramp/fix/Markt-Caps),
@@ -170,8 +170,7 @@ function AnbauMatrix({ Y, irrByYear, dryByYear, domain, sc }: { Y: number[]; irr
         <table className="w-full text-[12px]">
           <thead><tr><th className={th + " text-left"}>{t("Kultur")}</th>{Y.map((y) => <th key={y} className={th + " text-right"}>{START_YEAR + y}</th>)}<th className={th + " text-right"}>{t("Ziel")}</th></tr></thead>
           <tbody>
-            <Block dry={false} label={t("Beregnet — Wertrotation (Anbauplan-Anteile)")} />
-            <Block dry={true} label={t("Unberegnet — Trockenrotation")} />
+            <Block dry={false} label={t("Wertkulturen")} />
             <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
               <td className="px-2 py-2 font-semibold">{t("Gesamt")} ({mode === "ha" ? "ha" : "t"})</td>
               {Y.map((y) => <td key={y} className="num px-2 py-2 text-right font-semibold">{fmt(grand(y))}</td>)}
@@ -181,7 +180,7 @@ function AnbauMatrix({ Y, irrByYear, dryByYear, domain, sc }: { Y: number[]; irr
         </table>
       </div>
       <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
-        {t("Beregneter Block = aktuelle Anbauplan-Anteile, skaliert auf die Beregnungsfläche des Jahres (Wertkulturen nur hier). Unberegneter Block = Trockenrotation auf der Restfläche, Ertragsabschlag ~40 %. Produktion (t) = Fläche × Ertrag × (1 − Verlust).")}
+        {t("Fläche je Kultur und Jahr aus der Kultur-Skalierungspolitik. Produktion (t) = Fläche × Ertrag × (1 − Verlust).")}
       </div>
     </section>
   );

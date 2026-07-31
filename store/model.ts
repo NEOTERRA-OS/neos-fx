@@ -3600,7 +3600,17 @@ const constValueOf = (prof: { kind: string; value?: number } | undefined): numbe
 
 export function deriveAssumptionRegister(domain: Domain, scenarioId: string): AssumptionRow[] {
   const rows: AssumptionRow[] = [];
+  // Kulturbezogene Annahmen (yield./price./loss./qual./seed.<cropId>) nur für die Wertkulturen.
+  //  Die Werte der übrigen Kulturen bleiben in domain.assumptions hinterlegt — sie erscheinen
+  //  nur nicht mehr im Register, weil der Betrieb sie nicht anbaut.
+  const fremdeKultur = (key: string) => {
+    const cid = key.split(".").slice(1).join(".");
+    return !!cid && !VALUE_CROP_IDS.includes(cid)
+      && ["yield", "price", "loss", "qual", "seed"].includes(key.split(".")[0])
+      && CROP_IDS.includes(cid as CropId);
+  };
   for (const key of Object.keys(domain.assumptions)) {
+    if (fremdeKultur(key)) continue;
     const a = domain.assumptions[key];
     const activeProf = a.scenarioProfiles[scenarioId] ?? a.scenarioProfiles[domain.baseScenarioId];
     rows.push({
@@ -5765,17 +5775,14 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
   { group: "Steuer-Optimierung & Finanzierung", keys: ["tax.reinvest_on", "tax.reinvest_share", "finance.capex_selffund"] },
   { group: "Inflation (real ↔ nominal)", keys: ["infl.output", "infl.input", "infl.wage", "infl.capex"] },
   { group: "Stücksätze (Inputs)", keys: ["price.per_euro", "psm.per_euro", "price.diesel_l", "rate.labor_h"] },
+  // Ertrag, Preis/Verlust und Kontrakt-Qualität führen NUR die Wertkulturen. Die Annahmen der
+  //  übrigen Kulturen bleiben im Modell hinterlegt (yield./price./loss./qual.<id> existieren
+  //  unverändert) — sie stehen nur nicht mehr im Treiber-Screen, weil der Betrieb sie nicht anbaut.
   { group: "Ertrag (t/ha)", keys: [
-    "yield.weizen", "yield.gerste_zw", "yield.soja_luzerne", "yield.winterraps", "yield.mais",
     "yield.tomate", "yield.kartoffel_pommes", "yield.kartoffel_chips", "yield.zwiebel_moehre",
     "yield.suesskartoffel", "yield.knollensellerie", "yield.knoblauch",
   ]},
   { group: "Preis & Verlust (€/t · %)", keys: [
-    "price.weizen", "loss.weizen",
-    "price.gerste_zw", "loss.gerste_zw",
-    "price.soja_luzerne", "loss.soja_luzerne",
-    "price.winterraps", "loss.winterraps",
-    "price.mais", "loss.mais",
     "price.tomate", "loss.tomate",
     "price.kartoffel_pommes", "loss.kartoffel_pommes",
     "price.kartoffel_chips", "loss.kartoffel_chips",
@@ -5785,7 +5792,6 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "price.knoblauch", "loss.knoblauch",
   ]},
   { group: "Kontrakt-Qualität (Erfüllung 0..1)", keys: [
-    "qual.weizen", "qual.gerste_zw", "qual.soja_luzerne", "qual.winterraps", "qual.mais",
     "qual.tomate", "qual.kartoffel_pommes", "qual.kartoffel_chips", "qual.zwiebel_moehre",
     "qual.suesskartoffel", "qual.knollensellerie", "qual.knoblauch",
   ]},
