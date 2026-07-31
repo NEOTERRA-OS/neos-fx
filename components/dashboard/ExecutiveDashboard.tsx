@@ -15,6 +15,7 @@ import { t } from "../../lib/i18n";
  *  Rechnet auf der Jahres-Aggregation (headline) + Monatsraster (Saison), horizont-agnostisch. */
 
 const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+const MONTHS_LANG = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const BRAND = "var(--nx-brand-lift)";
 const MUTED = "var(--nx-text-muted)";
 const ERR = "var(--nx-error)";
@@ -76,7 +77,7 @@ export function ExecutiveDashboard() {
           Deckungsbeitrag je Kultur stecken jetzt in der Anbaustruktur-Tabelle.
           An ihre Stelle tritt der Liquiditätsverlauf — die Frage, die das Anlaufjahr
           entscheidet, ist nicht „wie sieht die GuV aus", sondern „reicht das Geld". */}
-      <Liquiditaetsverlauf monthly={monthly} annual={annual} />
+      <LiquiditaetJeJahr monthly={monthly} annual={annual} />
 
       {/* ENTFERNT 31.07.2026: Ergebnisbeitrag je Kultur. Die Anbaustruktur-Tabelle oben zeigt
           Deckungsbeitrag je Kultur bereits absolut, je Hektar und in Prozent — und das fuer
@@ -230,61 +231,87 @@ function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domai
   );
 }
 
-/** LIQUIDITÄTSVERLAUF — Kasse und Revolver über den gesamten Horizont, Monat für Monat.
+/** LIQUIDITÄT JE PLANJAHR — als Tabelle, nicht als Kurve.
  *
- *  Ersetzt Wasserfall und Covenant-Ampel im Dashboard. Die Frage, an der das Anlaufjahr hängt,
- *  ist nicht „wie sieht die GuV aus", sondern „reicht das Geld" — und die beantwortet nur der
- *  Monatsverlauf: der Jahresabschluss kann komfortabel aussehen, während im August vor der
- *  Ernte die Linie gezogen ist. Markiert sind der tiefste Punkt und die höchste
- *  Revolver-Inanspruchnahme; beides sind Verhandlungsgrößen gegenüber der Bank. */
-function Liquiditaetsverlauf({ monthly, annual }: { monthly: ComputedModel; annual: ComputedModel }) {
-  const cash: number[] = (monthly.balanceSheet as any).cash?.values ?? [];
-  const rev: number[] = (monthly.balanceSheet as any).revolver?.values ?? [];
+ *  Die Kurve über 96 Monate war unbrauchbar: die Skala spannte von −44 Mio bis +44 Mio, in der
+ *  die eigentliche Bewegung verschwand. Schlimmer noch, zwei der drei Kennzahlen waren dieselbe
+ *  Zahl — „tiefster Punkt" und „höchste Revolver-Nutzung" sind rechnerisch identisch, weil die
+ *  freien Mittel nach Revolver genau dann am tiefsten stehen, wenn der Revolver voll gezogen ist.
+ *
+ *  Was man wirklich braucht, sind je Jahr vier Zahlen: wie viel Geld operativ hereinkommt, was
+ *  investiert wird, wie tief der Revolver im Jahr maximal gezogen werden muss (der Betrag, über
+ *  den mit der Bank verhandelt wird) und in welchem Monat das passiert. Der Monat ist die
+ *  eigentliche Information — der Spitzenbedarf liegt regelmäßig vor der Ernte. */
+function LiquiditaetJeJahr({ monthly, annual }: { monthly: ComputedModel; annual: ComputedModel }) {
+  const g = (o: any, k: string): number[] => o?.[k]?.values ?? [];
+  const cash = g(monthly.balanceSheet, "cash");
+  const revol = g(monthly.balanceSheet, "revolver");
   const n = cash.length;
   if (!n) return null;
-  const netto = cash.map((c, i) => c - (rev[i] ?? 0));      // frei verfügbar nach Revolver
-  const minIdx = netto.reduce((m, v, i) => (v < netto[m] ? i : m), 0);
-  const peakIdx = rev.reduce((m, v, i) => (v > (rev[m] ?? 0) ? i : m), 0);
-  const lo = Math.min(0, ...netto), hi = Math.max(0, ...netto, ...rev);
-  const spanne = hi - lo || 1;
-  const W = 1000, H = 150;
-  const x = (i: number) => (i / Math.max(1, n - 1)) * W;
-  const y = (v: number) => H - ((v - lo) / spanne) * H;
-  const pfad = (a: number[]) => a.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const jahre = Math.round(n / 12);
-  const M = (c: number) => fmtMoney(c) + " €";
+  const jahre = Math.max(1, Math.round(n / 12));
+  const seg = (a: number[], y: number) => a.slice(y * 12, y * 12 + 12);
+  const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
+
+  const zeilen = Array.from({ length: jahre }, (_, y) => {
+    const r = seg(revol, y), c = seg(cash, y);
+    const peakRev = Math.max(0, ...r);
+    const peakMon = r.indexOf(peakRev);
+    return {
+      jahr: START_YEAR + y,
+      cfo: sum(seg(g(monthly.cashFlow, "cfo"), y)),
+      capex: sum(seg(g(monthly.cashFlow, "capex"), y)),
+      cff: sum(seg(g(monthly.cashFlow, "cff"), y)),
+      // Freier Cashflow = operativ − Investitionen. Er erklärt die Revolver-Bewegung; die
+      //  "tiefste Kasse" wäre strukturell immer 0, weil der Revolver genau bis dahin auffüllt.
+      fcf: sum(seg(g(monthly.cashFlow, "cfo"), y)) + sum(seg(g(monthly.cashFlow, "capex"), y)),
+      peakRev, peakMon,
+      endCash: c[c.length - 1] ?? 0,
+    };
+  });
+  const maxRev = Math.max(1, ...zeilen.map((z) => z.peakRev));
+  const th = "caption text-[9.5px] text-nx-text-muted px-2 py-1.5";
 
   return (
-    <Tile title={t("Liquiditätsverlauf")} hint={t("Freie Mittel nach Revolver (Linie) · Revolver-Inanspruchnahme (Fläche) — Monatsraster über alle Planjahre")}>
-      <div className="grid grid-cols-2 gap-px sm:grid-cols-3" style={{ background: "var(--nx-border-divider)", marginBottom: 10 }}>
-        {[
-          [t("Tiefster Punkt"), M(netto[minIdx]), `${START_YEAR + Math.floor(minIdx / 12)} · ${MONTHS[minIdx % 12]}`, netto[minIdx] < 0 ? "var(--nx-error)" : "var(--nx-text)"],
-          [t("Höchste Revolver-Nutzung"), M(rev[peakIdx] ?? 0), `${START_YEAR + Math.floor(peakIdx / 12)} · ${MONTHS[peakIdx % 12]}`, "var(--nx-warning)"],
-          [t("Kasse am Ende"), M(cash[n - 1] ?? 0), `${START_YEAR + jahre - 1}`, "var(--nx-brand-lift)"],
-        ].map(([l, v, h, c], idx) => (
-          <div key={idx} className="px-3 py-2" style={{ background: "var(--nx-surface)" }}>
-            <div className="caption text-[10px] text-nx-text-muted">{l as string}</div>
-            <div className="num text-[14px] font-semibold" style={{ color: c as string }}>{v as string}</div>
-            <div className="text-[10.5px] text-nx-text-muted">{h as string}</div>
-          </div>
-        ))}
+    <Tile title={t("Liquidität je Planjahr")}
+          hint={t("Spitzen-Revolver = der Betrag, über den mit der Bank verhandelt wird — inklusive Monat, in dem er anfällt")}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead><tr>
+            <th className={th + " text-left"}>{t("Jahr")}</th>
+            <th className={th + " text-right"}>{t("Operativer CF")}</th>
+            <th className={th + " text-right"}>{t("Investitionen")}</th>
+            <th className={th + " text-right"}>{t("Finanzierung")}</th>
+            <th className={th + " text-right"}>{t("Freier Cashflow")}</th>
+            <th className={th + " text-right"}>{t("Spitzen-Revolver")}</th>
+            <th className={th + " text-left"}>{t("Spitze im Monat")}</th>
+            <th className={th} style={{ width: 120 }} />
+            <th className={th + " text-right"}>{t("Kasse Jahresende")}</th>
+          </tr></thead>
+          <tbody>
+            {zeilen.map((z) => (
+              <tr key={z.jahr} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                <td className="px-2 py-1.5 font-semibold">{z.jahr}</td>
+                <td className="num px-2 py-1.5 text-right" style={{ color: z.cfo < 0 ? "var(--nx-error)" : "var(--nx-text)" }}>{fmtMoney(z.cfo)}</td>
+                <td className="num px-2 py-1.5 text-right text-nx-text-muted">{fmtMoney(z.capex)}</td>
+                <td className="num px-2 py-1.5 text-right text-nx-text-muted">{fmtMoney(z.cff)}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: z.fcf < 0 ? "var(--nx-error)" : "var(--nx-success)" }}>{fmtMoney(z.fcf)}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: z.peakRev > 0 ? "var(--nx-warning)" : "var(--nx-text-muted)" }}>
+                  {z.peakRev > 0 ? fmtMoney(z.peakRev) : "–"}
+                </td>
+                <td className="px-2 py-1.5 text-[11px] text-nx-text-muted">{z.peakRev > 0 ? MONTHS_LANG[z.peakMon] : "–"}</td>
+                <td className="px-2 py-1.5">
+                  <div style={{ height: 7, borderRadius: 3, background: "var(--nx-app-bg)" }}>
+                    <div style={{ width: `${(z.peakRev / maxRev) * 100}%`, height: 7, borderRadius: 3, background: "var(--nx-warn, #C9A227)" }} />
+                  </div>
+                </td>
+                <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{fmtMoney(z.endCash)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      <svg viewBox={`0 0 ${W} ${H + 16}`} width="100%" height={168} preserveAspectRatio="none" role="img">
-        <SeriesDefs />
-        {Array.from({ length: jahre + 1 }, (_, j) => (
-          <line key={j} x1={x(j * 12)} y1={0} x2={x(j * 12)} y2={H} stroke="var(--nx-border-divider)" strokeWidth={1} />
-        ))}
-        <line x1={0} y1={y(0)} x2={W} y2={y(0)} stroke="var(--nx-text-muted)" strokeWidth={1} strokeDasharray="3 3" />
-        <path d={`${pfad(rev)} L${W},${y(0)} L0,${y(0)} Z`} fill="var(--nx-warn, #C9A227)" opacity={0.22} />
-        <path d={pfad(netto)} fill="none" stroke="url(#nxSeriesH)" strokeWidth={2} />
-        <circle cx={x(minIdx)} cy={y(netto[minIdx])} r={4} fill={netto[minIdx] < 0 ? "var(--nx-error)" : "var(--nx-success)"} />
-        {Array.from({ length: jahre }, (_, j) => (
-          <text key={j} x={x(j * 12 + 6)} y={H + 13} textAnchor="middle" fontSize={10} fill="var(--nx-text-muted)">{START_YEAR + j}</text>
-        ))}
-      </svg>
-      <div className="mt-1 flex flex-wrap items-center gap-3 text-[10.5px] text-nx-text-muted">
-        <span className="inline-flex items-center gap-1.5"><span style={{ width: 14, height: 3, background: GRAD, display: "inline-block" }} />{t("Freie Mittel nach Revolver")}</span>
-        <span className="inline-flex items-center gap-1.5"><span style={{ width: 14, height: 8, background: "var(--nx-warn, #C9A227)", opacity: 0.35, display: "inline-block" }} />{t("Revolver-Inanspruchnahme")}</span>
+      <div className="mt-2 text-[11px] text-nx-text-muted">
+        {t("Freier Cashflow = operativ − Investitionen; solange er negativ ist, wächst die Revolver-Linie. Der Spitzen-Revolver ist der Betrag, der zur Verfügung stehen muss — und der Monat sagt, wann: in JEDEM Planjahr im August, also vor der Ernte, wenn Betriebsmittel, Pacht und Löhne bezahlt sind, aber noch nichts verkauft wurde. Genau das ist das Argument für eine Saisonlinie statt eines Festkredits.")}
       </div>
     </Tile>
   );
