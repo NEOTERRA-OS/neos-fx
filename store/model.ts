@@ -683,8 +683,16 @@ export type CapexPlanItem = {
   notiz?: string;
 };
 
-/** Pacht-Simulator: OpCo pachtet Eigentumsflächen von der Besitzgesellschaft; Index-Stufen alle N Jahre. */
+/** PACHT — einfache Jahrestabelle. Der frühere Simulator modellierte eine
+ *  Besitzgesellschaft (Eigentumsflächen, Index-Stufen, IFRS-16-Kapitalisierung, Annuitäten-
+ *  Barwerte). Die gibt es im Solo-Modell nicht: NEOTERRA besitzt keine Fläche, jeder Hektar
+ *  ist Dritt-Pacht. Übrig bleibt genau eine Stellschraube — der Satz je Hektar und Planjahr.
+ *  Der Rest der Felder bleibt im Typ, damit gespeicherte Stände nicht brechen; gerechnet
+ *  wird nur noch mit ratePerHaByYear (Fallback: der Süd-Dolj-Satz von 750 €/ha). */
 export type PachtConfig = {
+  /** Pachtsatz €/ha je Planjahr (Index 0 = START_YEAR). Kürzere Reihen laufen mit dem
+   *  letzten Wert weiter — das ist die einzige Eingabe, die die Pacht steuert. */
+  ratePerHaByYear?: number[];
   ownedHa: number;              // Eigentumsfläche der Besitzgesellschaft (verpachtet an OpCo)
   baseRentPerHaCent: number;    // Basis-Pacht €/ha (CENT)
   indexPct: number;             // Default-Stufe für den „Stufen erzeugen"-Helper (Dezimalbruch)
@@ -2616,7 +2624,28 @@ export function migrateDomain(dIn: Domain): Domain {
     ? SEED.timeline
     : d.timeline;
 
-  return { ...d, anbauplan, cropPolicy, catalog, growth, timeline, scope: "full", stage: 1, entityView: undefined };
+  // HOLDING: Altstände tragen den ZYPERN-Kostenblock (Company Secretary, Statutory Audit
+  //  „CY-Pflicht", Annual Levy/HE32, lokale CY-Directors, Substanz/Board-Meetings CY). Die
+  //  Holding ist seit dem 30.07.2026 eine deutsche GmbH — diese Posten gibt es hier nicht,
+  //  andere (Offenlegung im Bundesanzeiger, IHK-Beitrag, Notar/Handelsregister) fehlten.
+  //  Ein CY-Marker in irgendeinem Label heißt: der ganze Block stammt aus der alten Struktur
+  //  und wird durch den GmbH-Block ersetzt. Editierte GmbH-Blöcke bleiben unangetastet.
+  const CY = /\bCY\b|Cyprus|Zypern|HE32|Company Secretary|Annual Levy|Registered Office|Statutory Audit|Verwaltungsrat/i;
+  const holding = d.holding && (d.holding.costItems ?? []).some((c) => CY.test(String(c.label ?? "")))
+    ? { ...d.holding, name: /ltd/i.test(String(d.holding.name ?? "")) ? HOLDING.name : d.holding.name,
+        costItems: HOLDING.costItems.map((c) => ({ ...c })) }
+    : d.holding;
+
+  //  Dieselbe Umstellung im Gesellschafts-Register: eine Holding mit Sitz CY ist die alte
+  //  Struktur — Land, Name und Notiz kommen auf den GmbH-Stand.
+  const entities = Array.isArray(d.entities)
+    ? d.entities.map((e): Entity => (e.role === "holding" && e.country !== "DE"
+        ? { ...e, country: "DE" as const, name: /ltd/i.test(String(e.name ?? "")) ? "NEOS Holding GmbH" : (e.name ?? "NEOS Holding GmbH"),
+            note: "Konzernmutter (Deutschland) · Beteiligung an der NEOTERRA SRL, § 8b KStG" }
+        : e))
+    : d.entities;
+
+  return { ...d, anbauplan, cropPolicy, catalog, growth, timeline, holding, entities, scope: "full", stage: 1, entityView: undefined };
 }
 
 /* --------------------------------------------------------------------------
@@ -2877,7 +2906,7 @@ const HOLDING: HoldingPlan = {
 };
 
 // Multi-Entity-Register (Startbestand) — CUI per ANAF-Lookup befüllbar/prüfbar.
-//  Struktur: CY-Holding hält 100 % der RO-OpCo; PropCo (Eigentumsflächen) für Pacht-Modell.
+//  Struktur: deutsche Holding-GmbH hält 100 % der RO-OpCo.
 /** NEOTERRA-SOLO (Entscheidung 30.07.2026): eine operative Gesellschaft plus die Holding.
  *  Besitzgesellschaft (NEOTERRA Land SRL) und Isolde Farms sind aus dem Modell entfernt —
  *  keine Intercompany-Miete, kein Kultur-Split über mehrere OpCos.
@@ -3169,9 +3198,9 @@ export const SEED: Domain = {
   //  ~300 €/ha, Index-Stufe +8 % alle 5 Jahre (≈ 1,5 %/Jahr CPI-nah). Editierbar im Simulator.
   // Solo-Modell: NEOTERRA besitzt keine Fläche (die Besitzgesellschaft ist nicht Teil des Modells) —
   //  die gesamte bewirtschaftete Fläche ist Dritt-Pacht zum Süd-Dolj-Satz.
-  pacht: { ownedHa: 0, baseRentPerHaCent: 30000, indexPct: 0.08, intervalYears: 5, indexBasis: "cpi",
-    indexSteps: [{ atYear: 5, pct: 0.08 }, { atYear: 10, pct: 0.08 }, { atYear: 15, pct: 0.08 }],
-    ifrs16: true, leaseTermYears: 15, discountRate: 0.05,
+  pacht: { ratePerHaByYear: Array.from({ length: N_YEARS }, () => PACHT_PER_HA),
+    ownedHa: 0, baseRentPerHaCent: 0, indexPct: 0, intervalYears: 5, indexBasis: "fixed",
+    ifrs16: false, leaseTermYears: 15, discountRate: 0.05,
     payMonths: [{ month: 8, share: 0.6 }, { month: 10, share: 0.4 }] },
   // Tornado-Zeilen referenzieren die Treiber-Bibliothek des Szenario-Studios.
   // Trockenjahr / Preisverfall Kartoffel / Zins- & Kostenschock sind dort als
@@ -5343,9 +5372,17 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     const pc = domain.pacht;
     const ownHa = pc?.ownedHa ?? 0, besitzRate = pc?.baseRentPerHaCent ?? 0;
     // Jahres-Pacht (CENT): Dritt-Pacht (skaliert) + Besitz-Pacht (nur wenn NICHT IFRS 16 kapitalisiert).
+    //  Satz je Planjahr aus der Pacht-Tabelle. KEINE zusätzliche Input-Inflation mehr: der
+    //  Satz IST die Eingabe, eine Steigerung gehört in die Tabelle und nicht in einen
+    //  unsichtbaren Faktor — sonst zahlt man 2034 mehr, als in der Zeile steht.
+    const rateOf = (y: number) => {
+      const tbl = pc?.ratePerHaByYear;
+      if (!tbl?.length) return PACHT_PER_HA;
+      return tbl[Math.min(y, tbl.length - 1)] ?? PACHT_PER_HA;
+    };
     const pachtAnnual = (y: number) => {
       const areaY = baseArea * scale[y];
-      const thirdCent = Math.max(0, areaY - ownHa) * PACHT_PER_HA * 100 * iIn(y);
+      const thirdCent = Math.max(0, areaY - ownHa) * rateOf(y) * 100;
       const besitzCent = (pc && !pc.ifrs16) ? ownHa * besitzRate * pachtIndexFactor(pc, y) : 0;
       return thirdCent + besitzCent;
     };

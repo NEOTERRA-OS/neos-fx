@@ -24,12 +24,17 @@ export function AssumptionField({ akey, compact }: { akey: string; compact?: boo
   const unit = (a?.unit ?? "count") as Unit;
   const override = !!a?.scenarioProfiles[scenarioId] && scenarioId !== domain.baseScenarioId;
 
-  const [text, setText] = React.useState(raw === null ? "" : fmtEditable(toDisplay(unit, raw)));
-  React.useEffect(() => { setText(raw === null ? "" : fmtEditable(toDisplay(unit, raw))); }, [raw, scenarioId, unit]);
+  const anzeige = raw === null ? "" : fmtEditable(toDisplay(unit, raw));
+  const [text, setText] = React.useState(anzeige);
+  React.useEffect(() => { setText(anzeige); }, [raw, scenarioId, unit]);
 
   if (!a) return <span className="num text-[11px] text-nx-error">?{akey}</span>;
 
+  // Kappen wir die Anzeige auf zwei Nachkommastellen, darf ein blosses Verlassen des
+  // Feldes den Wert NICHT auf die gerundete Zahl festschreiben. Deshalb: nur committen,
+  // wenn der Text sich gegenueber der gerenderten Darstellung tatsaechlich geaendert hat.
   const commit = (v: string) => {
+    if (v === anzeige) return;
     const num = parseDe(v);
     if (num === null) return;
     const stored = fromDisplay(unit, num);

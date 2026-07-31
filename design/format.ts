@@ -42,9 +42,13 @@ export function fmtPct(rate: number): string {
 
 /* --- Editier-Format für Eingabefelder (Locale-abhängig: Tausender/Dezimaltrenner) --- */
 /** Zahl → String im aktiven Locale-Format (für Eingabefelder). */
-export function fmtEditable(v: number, maxFrac = 6): string {
+/** Eingabe-Anzeige: HÖCHSTENS zwei Nachkommastellen. Abgeleitete Werte (etwa km/h aus
+ *  ha/h ÷ Breite) tragen sonst sechs Stellen ins Feld — „7,997312 km/h" ist keine Angabe,
+ *  sondern ein Rundungsartefakt und macht die Spalte unlesbar. Gerechnet wird weiter mit
+ *  dem vollen Wert; nur die Darstellung ist gekappt. */
+export function fmtEditable(v: number, maxFrac = 2, minFrac = 0): string {
   if (!isFinite(v)) return "";
-  return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: maxFrac, useGrouping: true }).format(v);
+  return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: maxFrac, minimumFractionDigits: minFrac, useGrouping: true }).format(v);
 }
 /** Locale-Eingabe → Zahl. EN: „,"=Tausender (entfernt), „."=Dezimale.
  *  DE: „."=Tausender (entfernt), „,"=Dezimale. Gibt null bei leerer/ungültiger Eingabe. */

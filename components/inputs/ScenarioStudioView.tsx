@@ -2,7 +2,7 @@
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import {
-  buildModelState, deriveRevenueSplitMY, VALUE_CROP_IDS, BREAK_CROP_IDS,
+  buildModelState, deriveRevenueSplitMY, VALUE_CROP_IDS,
   type Domain, type SensScenario,
 } from "../../store/model";
 import { computeModel } from "../../core/engine";
@@ -11,7 +11,7 @@ import { fmtMoney, fmtNumber, fmtPct } from "../../design/format";
 import { Segmented } from "../primitives/Segmented";
 import { StatusPill } from "../primitives/StatusPill";
 import { t, getLang } from "../../lib/i18n";
-import { ChevronDown, ChevronRight, RotateCcw, Download, Droplets, TrendingUp, Factory, Save, Trash2, Plus, X, Tornado, GitCompare, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronRight, RotateCcw, Download, Droplets, TrendingUp, Factory, Save, Trash2, Plus, X, Tornado, GitCompare, SlidersHorizontal, Search } from "lucide-react";
 
 /* ============================================================================
  * SZENARIO-STUDIO — interaktive Simulation auf DEM Modell (nicht daneben).
@@ -21,7 +21,11 @@ import { ChevronDown, ChevronRight, RotateCcw, Download, Droplets, TrendingUp, F
  *  Zins/Steuer, AfA, Covenants. Es gibt keinen zweiten Rechenweg.
  * ========================================================================== */
 
-const ROT_CROPS = BREAK_CROP_IDS;
+// SOLO-MODELL: Rotations-/Break Crops sind aus dem Anbauplan raus. Ihre Regler wären
+// wirkungslos (0 ha) und ihre Sammeltreiber würden Keys auslenken, die nichts mehr tragen —
+// ein Regler, der sichtbar nichts bewegt, ist schlimmer als keiner. Entfernt: Ertrag/Preis
+// Rotation, Ausfall-Wirkung auf Break Crops; die Sammeltreiber laufen nur noch über die
+// Wertkulturen.
 const VAL_CROPS = VALUE_CROP_IDS;
 
 type DrvMode = "abs" | "mult" | "toggle";
@@ -48,12 +52,11 @@ const DRIVERS: Drv[] = [
   { id: "yield.kartoffel_pommes", label: "Ertrag Kartoffel (Pommes/Markies)", group: G_YLD, keys: ["yield.kartoffel_pommes"], mode: "abs", unit: "t/ha", min: 25, max: 70, step: 1, dec: 0, hint: "Basisbereich 45–50 t/ha" },
   { id: "yield.kartoffel_chips", label: "Ertrag Kartoffel (Chips)", group: G_YLD, keys: ["yield.kartoffel_chips"], mode: "abs", unit: "t/ha", min: 25, max: 70, step: 1, dec: 0 },
   { id: "yield.zwiebel_moehre", label: "Ertrag Zwiebel/Möhre", group: G_YLD, keys: ["yield.zwiebel_moehre"], mode: "abs", unit: "t/ha", lo: 0.55, hi: 1.45, step: 1, dec: 0 },
-  { id: "yieldRot", label: "Ertrag Rotations-/Break Crops (alle)", group: G_YLD, keys: ROT_CROPS.map((c) => `yield.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.45, step: 0.01, dec: 2, hint: "Getreide, Raps, Soja, Mais, Trockenanbau" },
-  { id: "lossAll", label: "Verlust / Schwund (alle Kulturen)", group: G_YLD, keys: [...VAL_CROPS, ...ROT_CROPS].map((c) => `loss.${c}`), mode: "mult", unit: "×", min: 0, max: 3, step: 0.05, dec: 2 },
+  { id: "lossAll", label: "Verlust / Schwund (alle Kulturen)", group: G_YLD, keys: VAL_CROPS.map((c) => `loss.${c}`), mode: "mult", unit: "×", min: 0, max: 3, step: 0.05, dec: 2 },
 
   /* -- Preis / Kontrakt / Qualität ---------------------------------------- */
   { id: "market.contract_share", label: "Kontraktanteil Wertkulturen", group: G_PRC, keys: ["market.contract_share"], mode: "abs", pct: true, unit: "%", min: 0, max: 100, step: 5, dec: 0, hint: "Rest wird zum Spotpreis vermarktet" },
-  { id: "market.spot_delta", label: "Spotpreis-Delta", group: G_PRC, keys: ["market.spot_delta"], mode: "abs", pct: true, unit: "%", min: -45, max: 45, step: 1, dec: 0, hint: "wirkt voll auf Break Crops, anteilig (1 − Kontraktanteil) auf Wertkulturen" },
+  { id: "market.spot_delta", label: "Spotpreis-Delta", group: G_PRC, keys: ["market.spot_delta"], mode: "abs", pct: true, unit: "%", min: -45, max: 45, step: 1, dec: 0, hint: "wirkt anteilig (1 − Kontraktanteil) auf die frei vermarktete Menge" },
   { id: "market.brix_premium", label: "Brix-Prämie / -Abzug Tomate", group: G_PRC, keys: ["market.brix_premium"], mode: "abs", pct: true, unit: "%", min: -25, max: 30, step: 1, dec: 0, hint: "Qualitätsstaffel des Verarbeiters (°Brix)" },
   { id: "store.share", label: "Einlagerungsquote (alle Lagerkulturen)", hint: "Anteil der Ernte, der eingelagert statt frisch ab Feld geliefert wird", group: G_PRC, keys: ["store.share.kartoffel_pommes", "store.share.kartoffel_chips", "store.share.zwiebel_moehre", "store.share.suesskartoffel", "store.share.knoblauch", "store.share.knollensellerie"], mode: "abs", unit: "%", min: 0, max: 100, step: 5, dec: 0 },
   { id: "store.fee_per_t_month", label: "Lagergebühr (€/t·Monat)", hint: "Break-even des eigenen Lagers liegt bei rund 6 €/t·Monat", group: G_PRC, keys: ["store.fee_per_t_month"], mode: "abs", unit: "€/t", min: 0, max: 40, step: 1, dec: 0 },
@@ -63,7 +66,6 @@ const DRIVERS: Drv[] = [
   { id: "market.potato_grade", label: "Sortier-/Qualitätsprämie Kartoffel", group: G_PRC, keys: ["market.potato_grade"], mode: "abs", pct: true, unit: "%", min: -25, max: 30, step: 1, dec: 0, hint: "Stärke, Untergrößen, Zuckergehalt (Chips)" },
   { id: "price.tomate", label: "Kontraktpreis Industrietomate", group: G_PRC, keys: ["price.tomate"], mode: "abs", money: true, unit: "€/t", lo: 0.6, hi: 1.5, step: 1, dec: 0 },
   { id: "priceKart", label: "Kontraktpreis Kartoffel (P + C)", group: G_PRC, keys: ["price.kartoffel_pommes", "price.kartoffel_chips"], mode: "mult", unit: "×", min: 0.55, max: 1.5, step: 0.01, dec: 2 },
-  { id: "priceRot", label: "Preis Rotations-/Break Crops (alle)", group: G_PRC, keys: ROT_CROPS.map((c) => `price.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.5, step: 0.01, dec: 2 },
 
   /* -- Subventionen -------------------------------------------------------- */
   { id: "subsidy.per_ha", label: "GAP-Basisprämie", group: G_SUB, keys: ["subsidy.per_ha"], mode: "abs", money: true, unit: "€/ha", min: 0, max: 600, step: 5, dec: 0 },
@@ -74,13 +76,12 @@ const DRIVERS: Drv[] = [
   { id: "farm.intake_direct", label: "Direktentnahme Donau aktiv", group: G_RISK, keys: ["farm.intake_direct"], mode: "toggle", hint: "eigene Entnahme + Pumpstation als Redundanz zum ANIF-Netz" },
   { id: "risk.intake_mitigation", label: "Redundanz-Wirkung der Direktentnahme", group: G_RISK, keys: ["risk.intake_mitigation"], mode: "abs", pct: true, unit: "%", min: 0, max: 100, step: 5, dec: 0 },
   { id: "risk.yield_per_outage_d", label: "Ertragsverlust je Ausfalltag (Wertkultur)", group: G_RISK, keys: ["risk.yield_per_outage_d"], mode: "abs", pct: true, unit: "%/d", min: 0, max: 8, step: 0.1, dec: 1 },
-  { id: "risk.outage_break_share", label: "Ausfall-Wirkung auf Break Crops", group: G_RISK, keys: ["risk.outage_break_share"], mode: "abs", pct: true, unit: "%", min: 0, max: 100, step: 5, dec: 0 },
   { id: "irrig.norm_scale", label: "Wassernorm (Skalierung der Plan-mm)", group: G_RISK, keys: ["irrig.norm_scale"], mode: "abs", unit: "×", min: 0.6, max: 1.6, step: 0.01, dec: 2, hint: "Trockenjahr = höhere Norm → mehr m³/ha und Energie" },
   { id: "irrig.eur_mm", label: "Bewässerung Energie + Wasser", group: G_RISK, keys: ["irrig.eur_mm"], mode: "abs", money: true, unit: "€/mm·ha", min: 0.4, max: 5, step: 0.05, dec: 2 },
 
   /* -- OPEX-Inputs --------------------------------------------------------- */
   { id: "fertAll", label: "Düngerpreise N / P / K / S", group: G_OPX, keys: ["fert.n", "fert.p", "fert.k", "fert.s", "fert.n_fert", "fert.p_fert", "fert.k_fert"], mode: "mult", unit: "×", min: 0.5, max: 2.2, step: 0.01, dec: 2 },
-  { id: "seedAll", label: "Saat-/Pflanzgut (inkl. Jungpflanzen)", group: G_OPX, keys: [...VAL_CROPS, ...ROT_CROPS].map((c) => `seed.${c}`), mode: "mult", unit: "×", min: 0.5, max: 2.2, step: 0.01, dec: 2 },
+  { id: "seedAll", label: "Saat-/Pflanzgut (inkl. Jungpflanzen)", group: G_OPX, keys: VAL_CROPS.map((c) => `seed.${c}`), mode: "mult", unit: "×", min: 0.5, max: 2.2, step: 0.01, dec: 2 },
   { id: "psmAll", label: "Pflanzenschutz (Mittelkosten)", group: G_OPX, keys: ["psm.per_euro"], mode: "mult", unit: "×", min: 0.5, max: 2.2, step: 0.01, dec: 2, hint: "eigener Stücksatz — unabhängig von Material/Handarbeit" },
   { id: "price.diesel_l", label: "Dieselpreis", group: G_OPX, keys: ["price.diesel_l"], mode: "abs", money: true, unit: "€/l", min: 0.4, max: 3, step: 0.02, dec: 2 },
   { id: "rate.labor_h", label: "Lohnsatz (Saison)", group: G_OPX, keys: ["rate.labor_h"], mode: "abs", money: true, unit: "€/h", lo: 0.5, hi: 2.2, step: 0.1, dec: 2 },
@@ -104,7 +105,7 @@ const DRIVERS: Drv[] = [
 
   /* -- aus der früheren Sensitivitäts-Faktorbibliothek übernommen ---------- */
   { id: "yieldValue", label: "Ertrag Wertkulturen (alle)", group: G_YLD, keys: VAL_CROPS.map((c) => `yield.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.45, step: 0.01, dec: 2, hint: "Sammeltreiber über alle Wertkulturen" },
-  { id: "yieldAll", label: "Ertrag alle Kulturen", group: G_YLD, keys: [...VAL_CROPS, ...ROT_CROPS].map((c) => `yield.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.45, step: 0.01, dec: 2, hint: "Trockenjahr-Sammeltreiber" },
+  { id: "yieldAll", label: "Ertrag alle Kulturen", group: G_YLD, keys: VAL_CROPS.map((c) => `yield.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.45, step: 0.01, dec: 2, hint: "Sammeltreiber über alle Kulturen — Trockenjahr" },
   { id: "priceValue", label: "Preis Wertkulturen (alle)", group: G_PRC, keys: VAL_CROPS.map((c) => `price.${c}`), mode: "mult", unit: "×", min: 0.55, max: 1.5, step: 0.01, dec: 2 },
   { id: "price.zwiebel_moehre", label: "Preis Zwiebel/Möhre", group: G_PRC, keys: ["price.zwiebel_moehre"], mode: "abs", money: true, unit: "€/t", lo: 0.6, hi: 1.5, step: 1, dec: 0 },
   { id: "qualValue", label: "Kontrakt-Qualität Wertkulturen", group: G_PRC, keys: VAL_CROPS.map((c) => `qual.${c}`), mode: "mult", unit: "×", min: 0.6, max: 1.1, step: 0.01, dec: 2, hint: "realisierter Preis nach Bonus/Malus × akzeptierte Menge" },
@@ -119,7 +120,7 @@ const DBY = new Map(DRIVERS.map((d) => [d.id, d]));
  *  Nur für die Migration persistierter Konfigurationen (domain.sensitivity). */
 const LEGACY_FACTOR: Record<string, string> = {
   price_value: "priceValue", price_tomate: "price.tomate", price_kartoffel: "priceKart",
-  price_zwiebel: "price.zwiebel_moehre", price_cereal: "priceRot",
+  price_zwiebel: "price.zwiebel_moehre",
   yield_value: "yieldValue", yield_all: "yieldAll",
   qual_value: "qualValue", qual_kartoffel: "qualKart", qual_tomate: "qualTomate",
   loss_all: "lossAll", diesel: "price.diesel_l", fert: "fertAll", seed: "seedAll",
@@ -147,7 +148,7 @@ const PRESETS: Preset[] = [
     id: "bull", name: "Bull / Max. Vertikalisierung",
     desc: "Hohe Erträge, volle lokale Verarbeitung (25 km), maximale Brix-/Sortierprämien, Donau-Direktentnahme als Redundanz.",
     set: {
-      "yield.tomate": 95, "yield.kartoffel_pommes": 52, "yield.kartoffel_chips": 52, yieldRot: 1.10,
+      "yield.tomate": 95, "yield.kartoffel_pommes": 52, "yield.kartoffel_chips": 52,
       "market.brix_premium": 0.12, "market.potato_grade": 0.10, "market.contract_share": 0.90, "market.spot_delta": 0.05,
       "transport.distance_km": 25, "farm.intake_direct": 1, "market.tomate_cap_t": 300000,
     },
@@ -268,6 +269,10 @@ const rawOf = (d: Drv, x: number) => (d.money ? x * 100 : d.pct ? x / 100 : x);
 
 /* ---- Szenario-Register (eingebaut + eigene) ------------------------------ */
 type TabId = "sim" | "tornado" | "vergleich";
+/** Die drei Auswertungen liegen nicht mehr untereinander, sondern hinter einem
+ *  Umschalter: gestapelt war die Seite drei Bildschirme lang, und die Heatmap
+ *  kostet 25 Engine-Läufe, die man beim Blick auf die Saisonkurve nicht braucht. */
+type ChartId = "saison" | "matrix" | "capex";
 type ScenEntry = { id: string; name: string; desc: string; set: Record<string, PVal>; builtin: boolean };
 
 /** Persistierte Szenarien lesen und das Legacy-Format (relative %-Shifts auf alte
@@ -292,7 +297,6 @@ function migrateScenarios(list: SensScenario[] | undefined, baseOfId: (id: strin
 }
 const DEFAULT_TORNADO: { id: string; delta: number }[] = [
   { id: "priceValue", delta: 0.15 }, { id: "yieldValue", delta: 0.10 }, { id: "qualValue", delta: 0.08 },
-  { id: "priceRot", delta: 0.15 }, { id: "price.diesel_l", delta: 0.20 }, { id: "fertAll", delta: 0.20 },
   { id: "wageAll", delta: 0.15 }, { id: "macro.euribor", delta: 0.30 }, { id: "subsidy.coupled_freilandgemuese", delta: 0.20 },
 ];
 /** Zielgrößen des Tornados. */
@@ -329,7 +333,19 @@ export function ScenarioStudioView() {
   const [vals, setVals] = React.useState<Record<string, number>>({});
   const [preset, setPreset] = React.useState<string>("base");
   const [tab, setTab] = React.useState<TabId>("sim");
+  const [chart, setChart] = React.useState<ChartId>("saison");
+  const [drvSuche, setDrvSuche] = React.useState("");
   const [open, setOpen] = React.useState<Record<string, boolean>>({ [G_YLD]: true, [G_PRC]: true, [G_RISK]: true });
+
+  const dq = drvSuche.trim().toLowerCase();
+  const passt = React.useCallback(
+    (d: Drv) => !dq || d.label.toLowerCase().includes(dq) || d.id.toLowerCase().includes(dq),
+    [dq],
+  );
+  const aktiveDrv = React.useMemo(
+    () => DRIVERS.filter((d) => vals[d.id] != null),
+    [vals],
+  );
 
   const baseOf = React.useCallback((drv: Drv): number => {
     if (drv.mode === "mult") return 1;
@@ -421,11 +437,11 @@ export function ScenarioStudioView() {
   /* Heatmap (25 Läufe) — nachgelagert, damit das Ziehen der Regler flüssig bleibt */
   const heatVals = React.useDeferredValue(vals);
   const heat = React.useMemo(() => {
-    if (tab !== "sim") return { steps: [-0.2, -0.1, 0, 0.1, 0.2], grid: [], lo: 0, hi: 1 };
+    if (tab !== "sim" || chart !== "matrix") return { steps: [-0.2, -0.1, 0, 0.1, 0.2], grid: [], lo: 0, hi: 1 };
     const d0 = applyStudio(domain, heatVals, sc);
     const steps = [-0.2, -0.1, 0, 0.1, 0.2];
-    const allY = [...VAL_CROPS, ...ROT_CROPS].map((c) => `yield.${c}`);
-    const allP = [...VAL_CROPS, ...ROT_CROPS].map((c) => `price.${c}`);
+    const allY = VAL_CROPS.map((c) => `yield.${c}`);
+    const allP = VAL_CROPS.map((c) => `price.${c}`);
     const grid: number[][] = [];
     for (const dy of steps) {
       const row: number[] = [];
@@ -439,10 +455,8 @@ export function ScenarioStudioView() {
     }
     const flat = grid.flat();
     return { steps, grid, lo: Math.min(...flat), hi: Math.max(...flat) };
-  }, [tab, domain, heatVals, sc, tick]);
+  }, [tab, chart, domain, heatVals, sc, tick]);
 
-  const cur = currency === "EUR" ? "€" : "RON";
-  const D = (now: number, was: number) => now - was;
 
   return (
     <div className="space-y-4">
@@ -499,12 +513,20 @@ export function ScenarioStudioView() {
             </button>
           </div>
         </div>
-        {/* Szenario-Register: eingebaute Szenarien + eigene, gespeicherte */}
+        {/* Szenario-Register: eingebaute Szenarien LINKS, eigene RECHTS, getrennt
+         *  beschriftet. Vorher lagen beide in einer Reihe — man sah einer Kachel
+         *  nicht an, ob sie mitgeliefert oder selbst gespeichert ist. */}
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b" style={{ borderColor: "var(--nx-border-divider)" }}>
-          <span className="caption mr-1 text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted">{t("Szenarien")}</span>
-          {allScen.map((s) => {
+          <span className="caption mr-1 text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted">{t("Voreinstellungen")}</span>
+          {allScen.map((s, idx) => {
             const on = preset === s.id;
+            const ersteEigene = !s.builtin && (idx === 0 || allScen[idx - 1].builtin);
             return (
+              <React.Fragment key={"w-" + s.id}>
+              {ersteEigene && (
+                <span className="caption ml-2 mr-1 text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted"
+                  style={{ borderLeft: "1px solid var(--nx-border)", paddingLeft: 10 }}>{t("Eigene")}</span>
+              )}
               <span key={s.id} className="inline-flex items-center rounded-pill border" title={t(s.desc)}
                 style={{ height: 24, borderColor: on ? "var(--nx-brand-lift)" : "var(--nx-border)", background: on ? "var(--nx-success-bg)" : "var(--nx-surface-sunken)" }}>
                 <button className="px-2.5 text-[11.5px] font-semibold" style={{ color: on ? "var(--nx-green-ink)" : "var(--nx-text-secondary)" }} onClick={() => applyPreset(s.id)}>
@@ -516,8 +538,14 @@ export function ScenarioStudioView() {
                   </button>
                 )}
               </span>
+              </React.Fragment>
             );
           })}
+          {!userScen.length && (
+            <span className="ml-2 text-[10.5px] text-nx-text-muted" style={{ borderLeft: "1px solid var(--nx-border)", paddingLeft: 10 }}>
+              {t("Noch kein eigenes Szenario — Regler stellen und „Als Szenario speichern\"")}
+            </span>
+          )}
         </div>
         {saveOpen && (
           <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b" style={{ borderColor: "var(--nx-border-divider)", background: "var(--nx-surface-sunken)" }}>
@@ -540,44 +568,50 @@ export function ScenarioStudioView() {
         </div>
       </section>
 
-      {/* ------------------------------------------------------- KPI-Kacheln */}
-      <div className="rounded-tile border overflow-hidden" style={{ borderColor: "var(--nx-border)" }}>
-        <div className="flex items-center justify-between px-4 py-1.5 border-b" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
-          <span className="caption text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted">{t("Szenario-Kennzahlen")}</span>
-          <span className="caption text-[9.5px] text-nx-text-muted">{t("Headline-Jahr · Δ gegen Base Case")}</span>
-        </div>
-        <div className="grid grid-cols-2 gap-px sm:grid-cols-3 xl:grid-cols-6" style={{ background: "var(--nx-border-divider)" }}>
-          <Card cap={t("Umsatz Wertkulturen")} val={fmtMoney(res.valueRev, currency)} u={cur} d={D(res.valueRev, base.valueRev)} sub={`${fmtPct(res.valueShare)} ${t("vom Erlös")}`} />
-          <Card cap={t("Umsatz Rotation/Break")} val={fmtMoney(res.breakRev, currency)} u={cur} d={D(res.breakRev, base.breakRev)} sub={`${fmtPct(1 - res.valueShare)} ${t("vom Erlös")}`} />
-          <Card cap={t("EBITDA")} val={fmtMoney(res.ebitda, currency)} u={cur} d={D(res.ebitda, base.ebitda)} sub={`${t("Marge")} ${fmtPct(res.margin)}`} />
-          <Card cap={t("Jahresüberschuss")} val={fmtMoney(res.ni, currency)} u={cur} d={D(res.ni, base.ni)} sub={t("nach Zins & Steuer")} />
-          <Card cap={t("Free Cash Flow")} val={fmtMoney(res.fcf, currency)} u={cur} d={D(res.fcf, base.fcf)} sub="NI + AfA − CapEx" />
-          <Card cap={t("ROIC")} val={fmtPct(res.roic)} u="" d={0} sub={`${t("Basis")} ${fmtPct(base.roic)}`} />
-        </div>
-        <div className="grid grid-cols-2 gap-px sm:grid-cols-3 xl:grid-cols-6" style={{ background: "var(--nx-border-divider)", borderTop: "1px solid var(--nx-border)" }}>
-          <Tile cap={t("Working-Capital-Peak")} val={fmtMoney(res.wcPeak, currency)} u={cur} sub={`${t("Basis")} ${fmtMoney(base.wcPeak, currency)}`} />
-          <Tile cap={t("min. Liquidität")} val={fmtMoney(res.minCash, currency)} u={cur} col={res.minCash < 0 ? "var(--nx-error)" : undefined} sub={`${t("Basis")} ${fmtMoney(base.minCash, currency)}`} />
-          <Tile cap={t("Cash-Runway")} val={isFinite(res.runwayM) ? fmtNumber(res.runwayM, 1) : "∞"} u={t("Mon.")} col={isFinite(res.runwayM) && res.runwayM < 3 ? "var(--nx-error)" : undefined} sub={t("min. Liquidität / Ø Monatsburn")} />
-          <Tile cap={t("DSCR")} val={fmtNumber(res.dscr, 2)} u="x" col={dscrCol(res.dscr)} sub={`${t("Covenant")} ≥ 1,10`} />
-          <Tile cap={t("Net Debt / EBITDA")} val={fmtNumber(res.lev, 2)} u="x" col={levCol(res.lev)} sub={`${t("Covenant")} ≤ 3,50`} />
-          <Tile cap={t("ICR")} val={fmtNumber(res.icr, 2)} u="x" sub={`${t("Basis")} ${fmtNumber(base.icr, 2)}`} />
-        </div>
-      </div>
+      {/* Der frühere 12-Kachel-Block über der ganzen Seite ist weg: er stand vor den
+       *  Reglern, nicht neben ihnen, und zeigte zwölf Zahlen, wo beim Schieben drei
+       *  zählen. Die Wirkung steht jetzt als schmale Zeile OBEN IM RECHTEN BLOCK,
+       *  klebend — man sieht sie, während man am Regler zieht. */}
 
       {/* ------------------------------------- Regler links · Grafiken rechts */}
       {tab === "sim" && (
       <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(340px, 400px) minmax(0, 1fr)" }}>
         {/* ---- Regler ---- */}
         <section className="rounded-tile border self-start" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
-          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
             <h2 className="text-[14px] font-semibold">{t("Treiber")}</h2>
-            <span className="num text-[11px] text-nx-text-muted">{Object.keys(vals).length} {t("aktiv")}</span>
+            <label className="inline-flex items-center gap-1.5 rounded-control border px-2" style={{ height: 28, borderColor: "var(--nx-border)" }}>
+              <Search size={12} className="text-nx-text-muted" aria-hidden />
+              <input value={drvSuche} onChange={(e) => setDrvSuche(e.target.value)} placeholder={t("Treiber suchen …")}
+                className="border-0 bg-transparent text-[12px] outline-none" style={{ width: 130, color: "var(--nx-text)" }} />
+            </label>
           </div>
+
+          {/* Ausgelenkte Treiber angeheftet: bei 40 Reglern in sieben Gruppen ist sonst
+           *  nicht sichtbar, was das Szenario überhaupt von der Basis unterscheidet. */}
+          {aktiveDrv.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2" style={{ borderColor: "var(--nx-border-divider)", background: "var(--nx-surface-sunken)" }}>
+              <span className="caption text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted">{t("Ausgelenkt")}</span>
+              {aktiveDrv.map((d) => (
+                <button key={d.id} className="inline-flex items-center gap-1 rounded-pill border px-2 text-[11px] font-semibold"
+                  title={t("Diesen Treiber zurücksetzen")}
+                  style={{ height: 22, borderColor: "var(--nx-brand-lift)", color: "var(--nx-brand-lift)", background: "var(--nx-surface)" }}
+                  onClick={() => clearDrv(d.id)}>
+                  {t(d.label)}
+                  <span className="num">{fmtNumber(dispOf(d, vals[d.id]), d.dec ?? 2)}{d.unit ? ` ${d.unit}` : ""}</span>
+                  <X size={10} strokeWidth={3} aria-hidden />
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="max-h-[720px] overflow-y-auto">
             {GROUPS.map((grp) => {
-              const items = DRIVERS.filter((d) => d.group === grp);
+              const items = DRIVERS.filter((d) => d.group === grp && passt(d));
+              if (!items.length) return null;
               const nAct = items.filter((d) => vals[d.id] != null).length;
-              const isOpen = open[grp] ?? false;
+              // Bei aktiver Suche zwingend offen — sonst sucht man und sieht nichts.
+              const isOpen = dq ? true : (open[grp] ?? false);
               return (
                 <div key={grp} className="border-b" style={{ borderColor: "var(--nx-border-divider)" }}>
                   <button
@@ -602,11 +636,29 @@ export function ScenarioStudioView() {
           </div>
         </section>
 
-        {/* ---- Grafiken ---- */}
+        {/* ---- Wirkung + EINE Grafik ---- */}
         <div className="space-y-4">
-          <SeasonalChart res={res} base={base} currency={currency} />
-          <Heatmap heat={heat} currency={currency} baseEbitda={res.ebitda} />
-          <CapexRoi domain={domain} sc={sc} currency={currency} />
+          <WirkungStrip res={res} base={base} currency={currency} />
+          <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
+              <h3 className="text-[13px] font-semibold">{t("Auswertung")}</h3>
+              <Segmented
+                ariaLabel={t("Auswertung")}
+                value={chart}
+                onChange={(v) => setChart(v as ChartId)}
+                options={[
+                  { value: "saison", label: t("Saison & Liquidität") },
+                  { value: "matrix", label: t("Ertrag × Preis") },
+                  { value: "capex", label: t("CapEx-ROI") },
+                ]}
+              />
+            </div>
+            <div className="px-1 py-1">
+              {chart === "saison" ? <SeasonalChart res={res} base={base} currency={currency} />
+                : chart === "matrix" ? <Heatmap heat={heat} currency={currency} baseEbitda={res.ebitda} />
+                : <CapexRoi domain={domain} sc={sc} currency={currency} />}
+            </div>
+          </section>
         </div>
       </div>
       )}
@@ -789,26 +841,40 @@ function ComparePanel({ rows, base, currency, onLoad, active }: {
 }
 
 /* ============================== KPI-Kacheln ============================== */
-function Card({ cap, val, u, d, sub }: { cap: string; val: string; u: string; d: number; sub: string }) {
-  const ERR = "var(--nx-error)";
-  const neg = val.startsWith("(");
+/** WIRKUNGSZEILE — was das Szenario mit dem Modell macht, in einer Zeile.
+ *  Sechs Größen, keine zwölf: die drei Geldgrößen, an denen die Wirkung sichtbar wird,
+ *  und die drei Grenzen, an denen ein Szenario scheitert (Liquidität + zwei Covenants).
+ *  Klebend am oberen Rand, damit die Zahlen beim Ziehen der Regler im Blick bleiben. */
+function WirkungStrip({ res, base, currency }: { res: Res; base: Res; currency: "EUR" | "RON" }) {
+  const cur = currency === "EUR" ? "€" : "RON";
+  const items = [
+    { cap: t("EBITDA"), val: fmtMoney(res.ebitda, currency), u: cur, d: res.ebitda - base.ebitda, col: undefined as string | undefined },
+    { cap: t("Jahresüberschuss"), val: fmtMoney(res.ni, currency), u: cur, d: res.ni - base.ni, col: undefined },
+    { cap: t("Free Cash Flow"), val: fmtMoney(res.fcf, currency), u: cur, d: res.fcf - base.fcf, col: undefined },
+    { cap: t("min. Liquidität"), val: fmtMoney(res.minCash, currency), u: cur, d: res.minCash - base.minCash, col: res.minCash < 0 ? "var(--nx-error)" : undefined },
+    { cap: t("DSCR"), val: fmtNumber(res.dscr, 2), u: "x", d: 0, col: dscrCol(res.dscr) },
+    { cap: t("Net Debt / EBITDA"), val: fmtNumber(res.lev, 2), u: "x", d: 0, col: levCol(res.lev) },
+  ];
   return (
-    <div className="px-4 py-3" style={{ background: "var(--nx-surface)" }}>
-      <div className="caption text-[10px] font-bold text-nx-text-muted">{cap}</div>
-      <div className="num text-[19px] font-bold leading-tight" style={{ color: neg ? ERR : "var(--nx-text)" }}>
-        {val}{u && <span className="ml-0.5 text-[11px] font-normal text-nx-text-muted">{u}</span>}
+    <div className="sticky top-0 z-10 rounded-tile border overflow-hidden" style={{ borderColor: "var(--nx-border)" }}>
+      <div className="grid grid-cols-3 gap-px xl:grid-cols-6" style={{ background: "var(--nx-border-divider)" }}>
+        {items.map((it) => (
+          <div key={it.cap} className="px-3 py-2" style={{ background: "var(--nx-surface)" }}>
+            <div className="caption text-[9.5px] font-bold text-nx-text-muted">{it.cap}</div>
+            <div className="num text-[15px] font-bold leading-tight" style={{ color: it.col ?? (it.val.startsWith("(") ? "var(--nx-error)" : "var(--nx-text)") }}>
+              {it.val}<span className="ml-0.5 text-[10px] font-normal text-nx-text-muted">{it.u}</span>
+            </div>
+            {it.d !== 0 && <Swing v={it.d} currency={currency} />}
+          </div>
+        ))}
       </div>
-      <div className="caption text-[9.5px] flex items-center gap-1.5">
-        <span className="text-nx-text-muted">{sub}</span>
-        {Math.abs(d) > 0.5 && (
-          <span className="num font-bold" style={{ color: d < 0 ? ERR : "var(--nx-success)" }}>
-            {d < 0 ? "−" : "+"}{fmtMoney(Math.abs(d))}
-          </span>
-        )}
+      <div className="px-3 py-1 text-[10px] text-nx-text-muted" style={{ background: "var(--nx-surface-sunken)", borderTop: "1px solid var(--nx-border)" }}>
+        {t("Headline-Jahr · Δ gegen Base Case · Covenants DSCR ≥ 1,10 und Net Debt/EBITDA ≤ 3,50")}
       </div>
     </div>
   );
 }
+
 function Tile({ cap, val, u, col, sub }: { cap: string; val: string; u?: string; col?: string; sub?: string }) {
   return (
     <div className="px-4 py-2" style={{ background: "var(--nx-surface-sunken)" }}>

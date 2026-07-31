@@ -5,9 +5,14 @@ import { fmtMoney, fmtPct, fmtFactor } from "../../design/format";
 import { t } from "../../lib/i18n";
 
 /** Einheitliches Kennzahlen-Band (auf ALLEN Screens): Ergebnis-Geldgrößen oben,
- *  Rendite- & Covenant-Ratios unten — EIN Band, headline = jüngstes Jahr. */
+ *  Rendite- & Covenant-Ratios unten. Das Jahr ist wählbar und steht per Default auf dem
+ *  ERSTEN Planjahr: dort entscheidet sich die Finanzierbarkeit (Anlauf, Covenants),
+ *  während der Endzustand nur den eingeschwungenen Betrieb zeigt. */
 export function KpiBand({ annual, currency, periodLabel }: { annual: ComputedModel; currency: "EUR" | "RON"; periodLabel?: string }) {
-  const i = annual.timeline.periodCount - 1;
+  const n = annual.timeline.periodCount;
+  const [jahr, setJahr] = React.useState(0);
+  const i = Math.min(Math.max(jahr, 0), n - 1);
+  const labelOf = (idx: number) => annual.timeline.periods[idx]?.label ?? String(idx + 1);
   const p = annual.pnl, k = annual.kpis;
   const V = (li: { values: number[] }) => li.values[i] ?? 0;
   const cur = currency === "EUR" ? "€" : "RON";
@@ -32,7 +37,22 @@ export function KpiBand({ annual, currency, periodLabel }: { annual: ComputedMod
     <div className="rounded-tile border overflow-hidden" style={{ borderColor: "var(--nx-border)" }}>
       <div className="flex items-center justify-between px-4 py-1.5 border-b" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <span className="caption text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted">{t("Kennzahlen")}</span>
-        <span className="caption text-[9.5px] text-nx-text-muted">p.a.{periodLabel ? ` · ${periodLabel}` : ""}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="caption text-[9.5px] text-nx-text-muted">p.a.</span>
+          <div className="inline-flex overflow-hidden rounded-control border" style={{ borderColor: "var(--nx-border)" }}>
+            {Array.from({ length: n }, (_, idx) => (
+              <button key={idx} onClick={() => setJahr(idx)}
+                className="num px-2 text-[10.5px] font-bold"
+                style={{
+                  height: 20,
+                  background: idx === i ? "var(--nx-green)" : "var(--nx-surface)",
+                  color: idx === i ? "#fff" : "var(--nx-text-secondary)",
+                }}>
+                {labelOf(idx)}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       {/* Ergebnis — Geldgrößen */}
       <div className="grid grid-cols-2 gap-px sm:grid-cols-3 xl:grid-cols-6" style={{ background: "var(--nx-border-divider)" }}>

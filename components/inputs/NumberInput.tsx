@@ -7,11 +7,19 @@ import { fmtEditable, parseDe } from "../../design/format";
  *  Anzeige de-DE (Tausenderpunkt, Dezimalkomma); Eingabe wird de-DE geparst. */
 export function NumberInput({
   value, onCommit, moneyCent, width = 110, suffix,
+  decimals,
 }: { value: number; onCommit: (n: number) => void; moneyCent?: boolean; width?: number; suffix?: string; decimals?: number }) {
   const toDisp = (v: number) => (moneyCent ? v / 100 : v);
   const fromDisp = (v: number) => (moneyCent ? Math.round(v * 100) : v);
-  const [t, setT] = React.useState(fmtEditable(toDisp(value)));
-  React.useEffect(() => setT(fmtEditable(toDisp(value))), [value]); // eslint-disable-line
+  // decimals erzwingt FESTE Nachkommastellen (Annahmen-Register: durchgehend zwei, damit die
+  // Spalte eine gemeinsame Kommaachse hat). Ohne die Angabe bleibt es bei „höchstens zwei".
+  const anzeige = fmtEditable(toDisp(value), decimals ?? 2, decimals ?? 0);
+  const [t, setT] = React.useState(anzeige);
+  React.useEffect(() => setT(anzeige), [value]); // eslint-disable-line
+  // Kappen wir die Anzeige auf zwei Nachkommastellen, darf ein blosses Verlassen des
+  // Feldes den Wert NICHT auf die gerundete Zahl festschreiben. Deshalb: nur committen,
+  // wenn der Text sich gegenueber der gerenderten Darstellung tatsaechlich geaendert hat.
+  const commit = (s: string) => { if (s === anzeige) return; const n = parseDe(s); if (n !== null) onCommit(fromDisp(n)); };
   // Nie abschneiden: Mindestbreite folgt dem Inhalt (Mono ~7,5 px/Zeichen + Padding/Border).
   const fitWidth = Math.max(width, t.length * 8 + 26);
   return (
@@ -22,7 +30,7 @@ export function NumberInput({
         value={t}
         inputMode="decimal"
         onChange={(e) => setT(e.target.value)}
-        onBlur={(e) => { const n = parseDe(e.target.value); if (n !== null) onCommit(fromDisp(n)); }}
+        onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
       />
       {suffix && <span className="text-[11px] text-nx-text-muted">{suffix}</span>}

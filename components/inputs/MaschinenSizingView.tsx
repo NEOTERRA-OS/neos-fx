@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption, selectDerivedCapex, selectScopedDomain } from "../../store/modelStore";
-import { deriveFleetSizing, machineFleetCount, machineUnitPriceCent, CROP_NAME, MACHINE_LABELS, type FleetSize, type MachineType } from "../../store/model";
+import { deriveFleetSizing, machineFleetCount, machineUnitPriceCent, CROP_NAME, MACHINE_LABELS, SKALIERUNG_TOTAL_HA, START_YEAR, type FleetSize, type MachineType } from "../../store/model";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { NumberInput } from "./NumberInput";
 import { AssumptionField } from "./AssumptionField";
@@ -65,13 +65,19 @@ export function MaschinenSizingView() {
 
   const overrideOf = (id: string) => mById(id)?.fleetOverride;
 
-  // Reserve-Report: Park-Bedarf über die Skalierungsstufen (Bedarfsstunden skalieren mit Fläche).
+  // AUFBAUPFAD der Flotte über die PLANJAHRE. Vorher standen hier fixe Marken von
+  // 4.000 / 10.000 / 20.000 ha — Flächen aus dem alten Gruppenmodell, die NEOTERRA solo
+  // nie erreicht (Zielzustand 2.334 ha). Der Report rechnete damit einen Park, den es im
+  // Plan nicht gibt. Jetzt: der Bedarf je Planjahr auf der Skalierungskurve, und die
+  // Differenz zum Vorjahr — das ist der Moment, in dem tatsächlich gekauft wird.
   const baseHa = sdomain.anbauplan.reduce((s, a) => s + a.areaHa, 0) || 1;
-  const MILES = [4000, 10000, 20000];
+  const JAHRE = SKALIERUNG_TOTAL_HA.map((ha, i) => ({ jahr: START_YEAR + i, ha }));
   const reqAt = (r: FleetSize, ha: number) => r.capPerUnitHours > 0 ? Math.ceil((r.demandHours * (ha / baseHa)) / r.capPerUnitHours) : 0;
-  // Fläche, bis zu der der Bestand trägt (stetig): owned × Kap × baseHa ÷ Bedarf.
-  const coversHa = (r: FleetSize) => r.demandHours > 0 ? (r.owned * r.capPerUnitHours * baseHa) / r.demandHours : Infinity;
-  const engpass = (r: FleetSize) => { const c = coversHa(r); return c >= 20000 ? { t: t("> 20.000 ha"), c: STATUS.reserve.color } : c >= 10000 ? { t: t("ab 20.000 ha"), c: STATUS.min.color } : c >= 4000 ? { t: t("ab 10.000 ha"), c: STATUS.min.color } : { t: c > 0 ? `${t("ab")} ${fmtNumber(c, 0)} ha` : t("sofort"), c: STATUS.under.color }; };
+  /** Erstes Planjahr, in dem die Klasse überhaupt gebraucht wird. */
+  const abJahr = (r: FleetSize) => {
+    const i = JAHRE.findIndex((j) => reqAt(r, j.ha) > 0);
+    return i < 0 ? null : JAHRE[i].jahr;
+  };
 
   const ops: { crop: string; mId: string; passes: number; area: number; cEff: number; hours: number }[] = [];
   for (const a of sdomain.anbauplan) for (const g of sdomain.arbeitsgaenge[a.cropId] ?? []) {
@@ -230,35 +236,55 @@ export function MaschinenSizingView() {
         <br />⁑ <b>{t("Fix")}</b> {t("= Hybrid-Override (manuelle Stückzahl, „×\" löst ihn). Zugklassen sind gepoolt (C_eff aus den Anbaugeräten), daher ohne Breite/Speed.")} <b>{t("Σ Neu-CAPEX (netto)")}</b> {t("deckt sich exakt mit den Maschinen-Investitionen (netto, gleiche Maschinen-Menge inkl. Logistik/Sonstige unten). Nicht hier: Bewässerung/Pivot, Lager, IoT — das sind keine Maschinen, sondern eigene CAPEX-Blöcke (Investitionen · weitere Reiter).")}
       </div>
 
-      {/* Reserve-Report — Park-Bedarf & Engpässe über die Skalierungsstufen */}
+      {/* Aufbaupfad — Flottenbedarf je Planjahr */}
       <div className="border-t px-4 py-3" style={{ borderColor: "var(--nx-border)" }}>
-        <h4 className="text-[12.5px] font-semibold mb-1.5">{t("Reserve-Report · wann wird welche Klasse zum Engpass?")}</h4>
+        <h4 className="text-[12.5px] font-semibold mb-1.5">{t("Aufbaupfad der Flotte · welche Klasse kommt in welchem Planjahr dazu?")}</h4>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
-            <thead><tr>
-              <th className={th + " text-left"}>{t("Maschine")}</th>
-              <th className={th + " text-right"}>{t("Bestand")}</th>
-              {MILES.map((h) => <th key={h} className={th + " text-right"}>@ {fmtNumber(h, 0)} ha</th>)}
-              <th className={th + " text-left"}>{t("Bestand trägt bis")}</th>
-            </tr></thead>
+            <thead>
+              <tr>
+                <th className={th + " text-left"}>{t("Maschine")}</th>
+                <th className={th + " text-left"}>{t("ab")}</th>
+                {JAHRE.map((j) => <th key={j.jahr} className={th + " text-right"}>{j.jahr}</th>)}
+              </tr>
+              <tr>
+                <th className={th + " text-left"} />
+                <th className={th + " text-left"} />
+                {JAHRE.map((j) => <th key={j.jahr} className={th + " num text-right font-normal"}>{fmtNumber(j.ha, 0)} ha</th>)}
+              </tr>
+            </thead>
             <tbody>
               {all.map((r) => {
-                const ep = engpass(r);
+                const ab = abJahr(r);
+                let vor = 0;
                 return (
-                  <tr key={r.machineId} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                  <tr key={r.machineId} style={{ borderTop: "1px solid var(--nx-border-divider)", opacity: ab === null ? 0.5 : 1 }}>
                     <td className="px-2 py-1.5 text-[12px]">{r.label}</td>
-                    <td className="num px-2 py-1.5 text-right" style={{ color: "var(--nx-brand-lift)" }}>{r.owned}</td>
-                    {MILES.map((h) => { const need = reqAt(r, h); const def = need > r.owned; return (
-                      <td key={h} className="num px-2 py-1.5 text-right font-semibold" style={{ color: def ? STATUS.under.color : STATUS.reserve.color }}>{need}{def ? ` (+${need - r.owned})` : ""}</td>
-                    ); })}
-                    <td className="px-2 py-1.5"><span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: ep.c, background: "var(--nx-app-bg)" }}>{ep.t}</span></td>
+                    <td className="px-2 py-1.5">
+                      <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                        style={{ color: ab === null ? "var(--nx-text-muted)" : ab === START_YEAR ? STATUS.under.color : STATUS.min.color, background: "var(--nx-app-bg)" }}>
+                        {ab === null ? t("nicht im Plan") : ab}
+                      </span>
+                    </td>
+                    {JAHRE.map((j) => {
+                      const need = reqAt(r, j.ha);
+                      const zu = need - vor; vor = need;
+                      return (
+                        <td key={j.jahr} className="num px-2 py-1.5 text-right font-semibold"
+                            style={{ color: need === 0 ? "var(--nx-text-muted)" : "var(--nx-text)" }}>
+                          {need || "–"}{zu > 0 && need > 0 ? <span style={{ color: STATUS.under.color }}> (+{zu})</span> : null}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-        <div className="text-[11px] text-nx-text-muted mt-1.5">{t("Zahl = benötigtes Minimum bei der jeweiligen Fläche (Bedarfsstunden skalieren linear mit ha);")} <span style={{ color: STATUS.under.color }}>{t("rot (+n)")}</span> {t("= Bestand reicht nicht (Zukauf n). „Bestand trägt bis\" = Fläche, bis zu der der heutige Bestand ohne Zukauf ausreicht — die kleinste Zahl ist dein erster Engpass.")}</div>
+        <div className="text-[11px] text-nx-text-muted mt-1.5">
+          {t("Zahl = benötigte Stückzahl bei der Fläche des Planjahres (Bedarfsstunden skalieren linear mit ha).")} <span style={{ color: STATUS.under.color }}>{t("(+n)")}</span> {t("= Zugang gegenüber dem Vorjahr, also das Jahr, in dem die Investition anfällt. ‚ab‘ = erstes Planjahr, in dem die Klasse überhaupt gebraucht wird — genau ab da kapitalisiert das Modell sie. Kulturen, die im Plan nicht vorkommen, bleiben grau.")}
+        </div>
       </div>
 
       <div className="border-t px-4 py-2" style={{ borderColor: "var(--nx-border)" }}>

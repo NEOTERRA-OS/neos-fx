@@ -2,7 +2,6 @@
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import { PRICE_GROUPS, readScenarioConst, setScenarioConst } from "../../store/model";
-import { ScenarioStudioView } from "./ScenarioStudioView";
 import { NumberInput } from "./NumberInput";
 import { fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
@@ -20,8 +19,8 @@ import { ChevronDown, ChevronRight, Search, RotateCcw } from "lucide-react";
  *  wichtig: nur so ist erkennbar, welche Treiber überhaupt ein Szenario-Band tragen — und
  *  welche stillschweigend in allen drei Fällen gleich sind.
  *
- *  Aufbau: Cockpit (die tatsächlich gesteuerten Treiber) → vollständiges Sheet nach Gruppen →
- *  Szenario-Studio mit Reglern, Sensitivität und gespeicherten Szenarien, einklappbar.
+ *  Aufbau: Cockpit (die tatsächlich gesteuerten Treiber) → vollständiges Sheet nach Gruppen.
+ *  Simuliert wird nicht hier, sondern im Szenario-Studio (eigener Tab unter Analyse).
  */
 
 /** Die Treiber, an denen im Gespräch wirklich gedreht wird — angeheftet über dem Sheet. */
@@ -52,6 +51,20 @@ function scale(unit: string): { f: number; suffix: string; dec: number } {
   if (unit === "money" || unit === "money_per_ha" || unit === "money_per_tonne") return { f: 0.01, suffix: "€", dec: 2 };
   return { f: 1, suffix: "", dec: 2 };
 }
+
+/** Sprechende Einheit je Zeile. Ohne sie steht bei „Ertrag Kartoffel 45" nirgends, ob das
+ *  t/ha, dt/ha oder kg sind — die Zahl allein ist nicht prüfbar. Die Einheit gilt für alle
+ *  drei Szenario-Spalten, deshalb steht sie einmal in einer eigenen Spalte statt dreimal
+ *  im Eingabefeld. */
+const EINHEIT: Record<string, string> = {
+  rate: "%",
+  money: "€",
+  money_per_ha: "€/ha",
+  money_per_tonne: "€/t",
+  tonne_per_ha: "t/ha",
+  days: "Tage",
+  months: "Monate",
+};
 
 function BandZelle({ keyName, scenarioId, unit }: { keyName: string; scenarioId: string; unit: string }) {
   const { domain, patch } = useModelStore();
@@ -103,6 +116,9 @@ function Zeile({ keyName }: { keyName: string }) {
         <span>{t(a.label)}</span>
         <span className="ml-2 text-[10px] text-nx-text-muted">{keyName}</span>
       </td>
+      <td className="num px-2 py-1.5 text-left text-[11px] text-nx-text-muted whitespace-nowrap">
+        {EINHEIT[unit] ?? "–"}
+      </td>
       {SC.map((s) => (
         <td key={s.id} className="px-2 py-1.5 text-right">
           <BandZelle keyName={keyName} scenarioId={s.id} unit={unit} />
@@ -121,7 +137,6 @@ export function AnnahmenSheetView() {
   const domain = useModelStore((s) => s.domain);
   const [suche, setSuche] = React.useState("");
   const [offen, setOffen] = React.useState<Record<string, boolean>>({});
-  const [studioAuf, setStudioAuf] = React.useState(false);
 
   const q = suche.trim().toLowerCase();
   const gruppen = React.useMemo(() => PRICE_GROUPS.map((g) => ({
@@ -137,6 +152,9 @@ export function AnnahmenSheetView() {
   const th = "px-3 py-2 caption text-[10px] text-nx-text-muted";
   const card: React.CSSProperties = { borderColor: "var(--nx-border)", background: "var(--nx-surface)" };
   const treffer = gruppen.reduce((s, g) => s + g.keys.length, 0);
+  // "alle ausklappen" ist erst dann erledigt, wenn JEDE sichtbare Gruppe offen ist —
+  // sonst würde ein Klick bei teilweise geöffneten Gruppen fälschlich einklappen.
+  const alleAuf = gruppen.length > 0 && gruppen.every((g) => offen[g.group]);
 
   return (
     <div className="space-y-4">
@@ -163,6 +181,7 @@ export function AnnahmenSheetView() {
               <thead>
                 <tr>
                   <th className={th + " text-left"}>{t("Treiber")}</th>
+                  <th className={th + " text-left"}>{t("Einheit")}</th>
                   {SC.map((s) => <th key={s.id} className={th + " text-right"} style={{ color: s.color }}>{s.label}</th>)}
                   <th className={th + " text-right"}>{t("Spannweite")}</th>
                 </tr>
@@ -179,7 +198,20 @@ export function AnnahmenSheetView() {
       <section className="rounded-tile border" style={card}>
         <div className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
           <h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Alle Treiber nach Gruppen")}</h3>
-          <span className="caption text-[10px] text-nx-text-muted">{treffer} {t("Treiber")}</span>
+          <div className="flex items-center gap-2">
+            <span className="caption text-[10px] text-nx-text-muted">{treffer} {t("Treiber")}</span>
+            <button
+              className="inline-flex items-center gap-1 rounded-control border px-2 py-1 text-[11px] font-semibold"
+              style={{ borderColor: "var(--nx-border)", color: "var(--nx-text-secondary)" }}
+              disabled={!!q}
+              title={q ? t("Bei aktiver Suche sind alle Gruppen offen.") : undefined}
+              onClick={() => setOffen(alleAuf
+                ? {}
+                : Object.fromEntries(PRICE_GROUPS.map((g) => [g.group, true])))}>
+              {alleAuf ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {alleAuf ? t("Alle einklappen") : t("Alle ausklappen")}
+            </button>
+          </div>
         </div>
         {gruppen.map((g) => {
           const auf = q ? true : (offen[g.group] ?? false);
@@ -198,6 +230,7 @@ export function AnnahmenSheetView() {
                     <thead>
                       <tr>
                         <th className={th + " text-left"}>{t("Treiber")}</th>
+                  <th className={th + " text-left"}>{t("Einheit")}</th>
                         {SC.map((s) => <th key={s.id} className={th + " text-right"} style={{ color: s.color }}>{s.label}</th>)}
                         <th className={th + " text-right"}>{t("Spannweite")}</th>
                       </tr>
@@ -214,22 +247,12 @@ export function AnnahmenSheetView() {
         )}
       </section>
 
-      {/* ---- Szenario-Studio: Regler, Sensitivität, gespeicherte Szenarien --- */}
-      <section className="rounded-tile border" style={card}>
-        <button className="flex w-full items-center gap-2 px-4 py-3 text-left"
-          onClick={() => setStudioAuf((v) => !v)}>
-          {studioAuf ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <span className="text-[13px] font-semibold">{t("Szenario-Studio — Regler, Sensitivität, gespeicherte Szenarien")}</span>
-          <span className="ml-auto text-[11px] text-nx-text-muted">
-            {t("Risiko- und Marktregler, Tornado-Analyse und benannte Varianten des ganzen Annahmensatzes")}
-          </span>
-        </button>
-        {studioAuf && (
-          <div className="border-t px-1 py-2" style={{ borderColor: "var(--nx-border)" }}>
-            <ScenarioStudioView />
-          </div>
-        )}
-      </section>
+      {/* Das Szenario-Studio hat einen eigenen Tab (Analyse → Szenario-Studio).
+       *  Eingebettet war es zu viel auf einer Seite: hier werden Annahmen GESETZT,
+       *  dort werden sie SIMULIERT — zwei Arbeitsschritte, zwei Ansichten. */}
+      <div className="text-[11px] text-nx-text-muted">
+        {t("Simulieren, Sensitivität und gespeicherte Varianten: Analyse → Szenario-Studio.")}
+      </div>
     </div>
   );
 }

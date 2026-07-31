@@ -21,15 +21,20 @@ function fieldCostPerHaCent(domain: Domain, entry: CatalogEntry, scenarioId: str
 }
 
 function NumCell({ value, onCommit, width = 90, suffix }: { value: number; onCommit: (n: number) => void; width?: number; suffix?: string }) {
-  const [t, setT] = React.useState(fmtEditable(value));
-  React.useEffect(() => setT(fmtEditable(value)), [value]);
+  const anzeige = fmtEditable(value);
+  const [t, setT] = React.useState(anzeige);
+  React.useEffect(() => setT(anzeige), [value]);
+  // Kappen wir die Anzeige auf zwei Nachkommastellen, darf ein blosses Verlassen des
+  // Feldes den Wert NICHT auf die gerundete Zahl festschreiben. Deshalb: nur committen,
+  // wenn der Text sich gegenueber der gerenderten Darstellung tatsaechlich geaendert hat.
+
   return (
     <span className="inline-flex items-center gap-1">
       <input className="num rounded-control border px-2 text-right text-[12.5px]"
         style={{ background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)", fontWeight: 600, height: 34, width }}
         value={t} inputMode="decimal"
         onChange={(e) => setT(e.target.value)}
-        onBlur={(e) => { const n = parseDe(e.target.value); if (n !== null) onCommit(n); }}
+        onBlur={(e) => { if (e.target.value === anzeige) return; const n = parseDe(e.target.value); if (n !== null) onCommit(n); }}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
       {suffix && <span className="text-[11px] text-nx-text-muted">{suffix}</span>}
     </span>

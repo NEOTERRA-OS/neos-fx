@@ -3,11 +3,9 @@ import React from "react";
 import { Sidebar, ViewId } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { StatementView } from "../statements/Statements";
-import { PreiseView } from "../inputs/PreiseView";
 import { AnbauplanView } from "../inputs/AnbauplanView";
 import { KulturKalkulationView } from "../inputs/KulturKalkulationView";
 import { ProduktkatalogView } from "../inputs/ProduktkatalogView";
-import { AnnahmenRegisterView } from "../inputs/AnnahmenRegisterView";
 import { KommentareView } from "../inputs/KommentareView";
 import { TeamAdminView } from "../inputs/TeamAdminView";
 import { getSupabase } from "../../lib/supabaseClient";
@@ -22,18 +20,15 @@ import { FinanzierungView } from "../inputs/FinanzierungView";
 import { SubventionenView } from "../inputs/SubventionenView";
 import { EroeffnungsbilanzView } from "../inputs/EroeffnungsbilanzView";
 import { ArbeitszeitkontoView } from "../inputs/ArbeitszeitkontoView";
-import { AnnahmenSheetView } from "../inputs/AnnahmenSheetView";
+import { AnnahmenView } from "../inputs/AnnahmenView";
 import { ScenarioStudioView } from "../inputs/ScenarioStudioView";
 import { HoldingView } from "../inputs/HoldingView";
-import { GesellschaftenView } from "../inputs/GesellschaftenView";
 import { BewertungView } from "../inputs/BewertungView";
 import { ShareholderView } from "../inputs/ShareholderView";
 import { LohnarbeitView } from "../inputs/LohnarbeitView";
 import { PachtView } from "../inputs/PachtView";
-import { AbnahmevertraegeView } from "../inputs/AbnahmevertraegeView";
 import { LagerKostenstelleView } from "../inputs/LagerKostenstelleView";
 import { CapexScenarienView } from "../inputs/CapexScenarienView";
-import { ContributionView } from "../inputs/ContributionView";
 import { OverheadView } from "../inputs/OverheadView";
 import { EinsatzView } from "../inputs/EinsatzView";
 import { VerwaltungView } from "../inputs/VerwaltungView";
@@ -125,10 +120,28 @@ export function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recalcTick]);
   const annualLabel = annual.timeline.periods[annual.timeline.periods.length - 1]?.label;
-  // Verwaltungs-/Governance-Module: keine Kennzahlen-KPIs (kein Finanz-Kontext nötig).
-  // Szenario-Studio: eigenes KPI-Band mit Δ gegen die Basis → globales Band würde doppeln.
-  const ADMIN_VIEWS: ViewId[] = ["annahmen", "kommentare", "gesellschaften", "team", "verwaltung", "studio"];
-  const showKpi = !ADMIN_VIEWS.includes(view);
+  // KPI-BAND nur dort, wo die Konzern-Kennzahlen der Bezugsrahmen SIND — also auf den
+  // Ergebnis- und Kapitalansichten. Auf Eingabe- und Stammdatenschirmen (Personal, Overhead,
+  // Maschinen, Kulturkalkulation, Annahmen …) beantwortet das Band keine Frage, die man dort
+  // stellt: man pflegt Mengen und Sätze, nicht den Jahresüberschuss. Es kostete dort nur die
+  // oberen 120 px und drängte die eigentliche Tabelle unter die Falz. Deshalb Positivliste
+  // statt Ausnahmeliste — neue Ansichten sind erst einmal ohne Band, und das ist der
+  // richtige Default.
+  //
+  // Bewusst NICHT dabei: Szenario-Studio (eigene Wirkungszeile mit Δ gegen die Basis, das
+  // globale Band würde doppeln) und Pacht-Simulator (rechnet seine eigene Vergleichsgröße).
+  const KPI_VIEWS: ViewId[] = [
+    "dashboard",                                        // Übersicht
+    "pnl", "balance", "cashflow", "liquiditaet",        // Abschlüsse
+    "finanzierung", "eroeffnung", "holding",            // Kapital & Struktur
+    "bewertung", "shareholder",                         // Bewertung & Ausschüttung
+    "mehrjahr",                                         // Ergebnisrechnung über die Jahre
+  ];
+  const showKpi = KPI_VIEWS.includes(view);
+  // Ansichten mit EIGENEM Mehrspalten-Layout (Navigator/Tabelle/Detail bzw. Regler/Grafik)
+  // laufen über die volle Breite — die 320px-Seitenspalte würde ihre Tabellen abschneiden.
+  const BREITE_VIEWS: ViewId[] = ["annahmen", "annahmenSheet", "studio"];
+  const breit = BREITE_VIEWS.includes(view);
 
   React.useEffect(() => {
     document.documentElement.setAttribute("data-neos-theme", theme);
@@ -156,12 +169,14 @@ export function AppShell() {
           {view === "dashboard" ? (
             <ExecutiveDashboard />
           ) : (
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]">
-              {view === "preise" ? <PreiseView />
+            <div className={breit ? "" : "grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]"}>
+              {view === "preise" || view === "gesellschaften" ? <AnnahmenView />
+                : view === "abnahme" ? <AnbauplanView />
+                : view === "contribution" ? <ExecutiveDashboard />
                 : view === "anbauplan" ? <AnbauplanView />
                 : view === "kulturkalk" ? <KulturKalkulationView />
                 : view === "produktkatalog" ? <ProduktkatalogView />
-                : view === "annahmen" ? <AnnahmenRegisterView />
+                : view === "annahmen" ? <AnnahmenView />
                 : view === "kommentare" ? <KommentareView />
                 : view === "team" ? <TeamAdminView />
                 : view === "capexScenarien" ? <CapexScenarienView />
@@ -175,23 +190,20 @@ export function AppShell() {
                 : view === "mehrjahr" ? <MehrjahresplanView />
                 : view === "ersatz" ? <ErsatzView />
                 : view === "liquiditaet" ? <LiquiditaetView />
-                : view === "annahmenSheet" ? <AnnahmenSheetView />
+                : view === "annahmenSheet" ? <AnnahmenView />
                 : view === "lohnarbeit" ? <LohnarbeitView />
                 : view === "holding" ? <HoldingView />
-                : view === "gesellschaften" ? <GesellschaftenView />
                 : view === "eroeffnung" ? <EroeffnungsbilanzView />
                 : view === "arbeitszeit" ? <ArbeitszeitkontoView />
                 : view === "einsatz" ? <EinsatzView />
                 : view === "studio" ? <ScenarioStudioView />
-                : view === "abnahme" ? <AbnahmevertraegeView />
                 : view === "lagerkst" ? <LagerKostenstelleView />
                 : view === "bewertung" ? <BewertungView />
                 : view === "shareholder" ? <ShareholderView />
                 : view === "pacht" ? <PachtView />
-                : view === "contribution" ? <ContributionView />
                 : view === "verwaltung" ? <VerwaltungView />
                 : <StatementView view={view} computed={computed} currency={currency} />}
-              <CheckPanel checks={allChecks} />
+              {!breit && <CheckPanel checks={allChecks} />}
             </div>
           )}
         </main>
