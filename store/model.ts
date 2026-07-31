@@ -1440,12 +1440,18 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("mprice.gem_moehre", "mprice.gem_moehre", "Möhren-Klemmbandroder ASA-LIFT T-300 DF (2-reihig)", "money", 34000000),
   A("mprice.maehdr", "mprice.maehdr", "Mähdrescher JD S7 900 + Bandschneidwerk HD40X 12,19 m (Liste; JD-Angebot)", "money", 85877800),
   A("mprice.transport", "mprice.transport", "Kipper/Anhänger (Transport)", "money", 4000000),
-  A("mprice.irrig_perha", "mprice.irrig_perha", "Bewässerung/Pivot €/ha", "money_per_ha", 200000),
-  // Ab welchem Planjahr investiert NEOTERRA SELBST in Beregnung (0 = ab 2027, 3 = ab 2030)?
-  //  Die gepachteten Flächen sind bereits beregnet — bis dahin fällt KEIN Beregnungs-CAPEX an,
-  //  weder für den Bestand noch für den Flächenzuwachs. Die Investitionshöhe bleibt über
-  //  mprice.irrig_perha bzw. growth.irrigEurPerHaCent voll variabel; nur der Start verschiebt sich.
-  A("irrig.capex_from_year", "irrig.capex_from_year", "Beregnungs-CAPEX ab Planjahr (0 = sofort)", "count", 3),
+  // 3.000 €/ha statt 2.000: derselbe Ausbau (Pivot + Verrohrung + Pumpe) stand hier und in
+  //  growth.irrigEurPerHaCent mit zwei verschiedenen Preisen. Je nachdem, welcher Block rechnete,
+  //  kostete dieselbe Beregnung 2,42 oder 3,63 Mio €. Angeglichen auf den belegten Wert.
+  A("mprice.irrig_perha", "mprice.irrig_perha", "Bewässerung/Pivot €/ha", "money_per_ha", 300000),
+  // Ab welchem Planjahr investiert NEOTERRA SELBST in Beregnung?
+  //  DEFAULT „nie" (Wert ≥ Planhorizont): Die Pachtentscheidung vom 30.07.2026 setzt den
+  //  Pachtzins mit 750 €/ha an STATT 250 €/ha, ausdrücklich weil bereits beregnete Flächen
+  //  gepachtet werden — die Pivots stecken im Pachtzins. Wer zusätzlich 3.000 €/ha eigene
+  //  Beregnung investiert, zahlt die Pivots zweimal: 3,63 Mio € CAPEX neben 500 €/ha
+  //  Pachtaufschlag, der bis 2034 auf rund 1,17 Mio € im Jahr läuft. Der Regler bleibt: wer
+  //  unberegnete Fläche pachtet und selbst erschließt, setzt hier das Startjahr.
+  A("irrig.capex_from_year", "irrig.capex_from_year", "Beregnungs-CAPEX ab Planjahr (≥ Horizont = nie, Pivots sind in der Pacht)", "count", 99),
   // Globaler Regler auf ALLE Lohnarbeits-Sätze. Basis 1,0 = deutsche Erfahrungssätze (LWK NRW).
   //  Süd-Dolj liegt beim Lohnanteil darunter — hier kalibrieren, sobald Angebote vorliegen.
   A("lohn.factor", "lohn.factor", "Lohnarbeit — Satz-Faktor (1,0 = LWK-Erfahrungssätze)", "rate", 1.0, 0.85, 1.15),
@@ -2784,7 +2790,10 @@ const FINANCING_CONTRACTS: LeasingContract[] = [
     id: "fc-zug-ernte", name: "Maschinen-Leasing · Zug- & Erntetechnik (Paket)",
     lessor: "Leasinggeber (offen)", contractNo: "", supplier: "John Deere / Händler",
     kind: "lease_fin",
-    objectIds: ["zug_8rx", "ops_6r", "maehdr"],
+    // maehdr existiert im Solo-Modell nicht mehr und wurde stillschweigend uebersprungen;
+    //  zug_9r (JD 8R 410, 2,99 Mio CAPEX) stand in KEINEM Vertrag und lief als Barkauf
+    //  direkt gegen den Revolver.
+    objectIds: ["zug_8rx", "ops_6r", "zug_9r"],
     drawPeriod: 0, avansRate: 0.25, residualRate: 0.01, termMonths: 84,
     rateBasis: "floating", referenceRateKey: "macro.euribor", floatingSpread: 0.0355,
     frequency: "seasonal", seasonMonths: [7, 10], repayment: "annuity",
@@ -3083,7 +3092,11 @@ const SEED_OVERHEAD: OverheadItem[] = [
   OV(WH, "CA-Gase / Kühlmittel", 500),
   OV(WH, "Lagerschwund / Qualitätsverlust", 1500),
   // — Logistik & Distribution —
-  OV(LOG, "Auslieferung / Fracht zum Handel (OpEx)", 4000),
+  // ENTFERNT 31.07.2026: „Auslieferung / Fracht zum Handel (OpEx)", 4.000 €/Monat.
+  //  Der Abtransport zum Abnehmer wird vollständig in `opex.transport` gerechnet — aus der
+  //  Make-or-Buy-Entscheidung (Eigenflotte gegen Spedition, ~70 km, Tonnage der Wertkulturen).
+  //  Die SG&A-Zeile war eine zweite, pauschale Erfassung derselben Fracht: 48 T€/Jahr doppelt.
+  //  Der Kühltransport-Zuschlag bleibt — er ist ein Aufschlag AUF die Fracht, keine zweite Fracht.
   OV(LOG, "Kühltransport-Zuschlag", 800),
   OV(LOG, "Verladung & Ladungssicherung", 700),
   OV(LOG, "Export / Zoll / Dokumentation", 600),
@@ -3110,6 +3123,11 @@ export const OVERHEAD_GROUPS: string[] = [GA, FIN, IT, HR, PH, WH, LOG, MKT, SM,
  *  vom Startjahr hochmultipliziert. Ohne diese Trennung trüge 2027 mit 300 ha den vollen
  *  Gemeinkostenblock eines 2.334-ha-Programms. */
 export const OVERHEAD_VOLUME_GROUPS: ReadonlySet<string> = new Set([PH, WH, LOG, MKT]);
+/** Gemeinkosten-Gruppen, die es NUR mit eigenem Lager/Packhaus gibt (Schalter `store.active`).
+ *  Steht der Schalter auf 0 — dem heutigen Plan: die Ware geht Feld → Verarbeiter —, dann gibt
+ *  es weder Kühlenergie noch Sortierlinie noch Packmaterial, und die beiden Blöcke müssen aus
+ *  den SG&A verschwinden. Sie liefen bisher unabhängig davon voll mit. */
+export const OVERHEAD_STORE_GROUPS: ReadonlySet<string> = new Set([PH, WH]);
 
 /* --------------------------------------------------------------------------
  * ABNAHMEVERTRÄGE (Off-take) — aus den drei geprüften Kartoffelkontrakten.
@@ -3191,6 +3209,14 @@ function valueCropMachineCatalog(catalog: MachineType[]): MachineType[] {
   for (const cid of Object.keys(SKALIERUNG_HA)) for (const g of ARBEITSGAENGE[cid as CropId] ?? []) used.add(g.m);
   return catalog.filter((m) => {
     if (m.mode !== "fixedFleet") return true;
+    // SPRITZEN bleiben IMMER. Ihre Stückzahl kommt aus deriveSprayFleet (Fenster-/Peak-Rechnung
+    //  über alle Kulturen), nicht aus einem Arbeitsgang — die Arbeitsgänge nennen das
+    //  Kostenprofil `spritze14`, das bewusst mit fleet 0 läuft, damit spray_gz/spray_sf den
+    //  CAPEX allein tragen. Diese Filterzeile hat genau die beiden aber herausgeworfen, weil
+    //  sie ein cEff haben und in keinem Arbeitsgang stehen: der gesamte Pflanzenschutz-
+    //  Maschinenpark (5 gezogene + 2 Selbstfahrer) stand mit null Euro CAPEX im Plan,
+    //  während der Betrieb ihre Diesel-, Reparatur- und Fahrerkosten voll verbuchte.
+    if (m.sprayPart) return true;
     if (m.cEff) return used.has(m.id);
     if (m.serviceHoursLike) return used.has(m.serviceHoursLike);
     return true;
@@ -3896,7 +3922,7 @@ export function sprayBoomFactor(domain: Domain, scenarioId: string): number {
   return boom / 36;
 }
 
-export function deriveSprayFleet(domain: Domain, scenarioId: string): SprayFleet {
+export function deriveSprayFleet(domain: Domain, scenarioId: string, jahrIdx?: number): SprayFleet {
   const tf = shiftFactorOf(domain, scenarioId);
   const bf = sprayBoomFactor(domain, scenarioId); // 48-m-Paket: breiteres Gestänge → weniger Spritzen
   const weekly: number[] = new Array(53).fill(0);
@@ -3908,11 +3934,18 @@ export function deriveSprayFleet(domain: Domain, scenarioId: string): SprayFleet
   //  gebraucht wird, muss vorhanden sein — sie schrumpft nicht wieder).
   const areasMY = cropAreasMemo(domain).areas;
   const jahre = Math.max(1, domain.growth?.years ?? 1);
+  //  `jahrIdx` gesetzt → Bedarf GENAU DIESES Planjahres. Ohne Angabe: Maximum über den
+  //  Horizont (Endausbau — das ist die Zahl, die der Spritzen-Screen zeigt).
+  //  Die Unterscheidung ist für den CAPEX entscheidend: die Bemessungsbasis der
+  //  Vintage-Mechanik ist das ERSTE Jahr, und sie multipliziert diese Basis anschließend mit
+  //  der Wachstumskurve. Wer dort die Endausbau-Flotte einsetzt, kauft sie achtmal.
   const areaByCrop = new Map<string, number>();
   for (const a of domain.anbauplan) {
     const c = areasMY[a.cropId];
-    const maxHa = c ? Math.max(...c.slice(0, jahre)) : a.areaHa;
-    areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + maxHa);
+    const ha = !c ? a.areaHa
+      : jahrIdx != null ? (c[Math.min(Math.max(0, jahrIdx), c.length - 1)] ?? 0)
+      : Math.max(...c.slice(0, jahre));
+    areaByCrop.set(a.cropId, (areaByCrop.get(a.cropId) ?? 0) + ha);
   }
   for (const [cropId, w] of Object.entries(SPRAY_WINDOWS)) {
     const area = areaByCrop.get(cropId) ?? 0;
@@ -4010,6 +4043,14 @@ export function machineFleetCount(domain: Domain, m: MachineType, scenarioId: st
   // Hybrid-Override: manuell fixierte Stückzahl schlägt alles.
   if (m.fleetOverride != null) return Math.max(0, Math.round(m.fleetOverride));
   // FRONTANBAU 1:1 zum Roder: Frontkrautschläger sitzt vorn am Roder (einphasige Ernte).
+  // FRONTFRAESE sc360 folgt 1:1 dem One-Pass-Leger: sie faehrt im selben Gespann. Vorher
+  //  stand sie mit fleetStage1 = 3 im Katalog-Fallback und skalierte mangels Arbeitsgang
+  //  ueber die GESAMTflaeche (x7,8) statt ueber die Kartoffelflaeche (x3,3) — 1,26 Mio EUR
+  //  CAPEX gegen 0,50 Mio fuer die Maschine, der sie folgt.
+  if (m.id === "sc360") {
+    const op = domain.machineCatalog.find((x) => x.id === "onepass");
+    return op ? machineFleetCount(domain, op, scenarioId) : 0;
+  }
   if (m.id === "krautschl") {
     const rod = domain.machineCatalog.find((x) => x.id === "roder_ropa");
     return rod ? machineFleetCount(domain, rod, scenarioId) : Math.ceil((m.fleetStage1 ?? 0) * stageFactorOf(domain.stage));
@@ -4020,7 +4061,17 @@ export function machineFleetCount(domain: Domain, m: MachineType, scenarioId: st
   //  acht Sattelzuege und neun Shuttles, und die Vintage-Mechanik skalierte diese Basis
   //  anschliessend mit der Flaechenkurve hoch: 7,30 Mio EUR LKW und 3,16 Mio Shuttles ueber
   //  den Horizont. Als einzige Klassen durchliefen sie nie eine Bedarfspruefung.
-  if (m.id === "lkw_sattel" || m.id === "shuttle") {
+  // SATTELZUEGE: EINE Quelle — die Make-or-Buy-Entscheidung. Sie bemisst die Flotte aus
+  //  Tonnage, Entfernung und Zyklus und ist der Ort, an dem "Eigenflotte oder Spedition"
+  //  entschieden wird. Faellt die Entscheidung auf Spedition, gibt es keine eigenen LKW und
+  //  damit auch keinen LKW-CAPEX. Bis 31.07.2026 rechneten hier ZWEI Stellen unabhaengig
+  //  voneinander eine LKW-Zahl, und beide kauften: der Katalog ueber die Vintage-Mechanik,
+  //  die Make-or-Buy-Entscheidung ueber einen eigenen CAPEX-Posten cx-transport-fleet.
+  if (m.id === "lkw_sattel") {
+    const td = deriveTransportDecision(domain, scenarioId);
+    return td.chosen === "own" ? td.own.lkw : 0;
+  }
+  if (m.id === "shuttle") {
     const hpd = resolveScalar(domain, "en.hours_day", scenarioId) || 10;
     const tf = shiftFactorOf(domain, scenarioId);
     // Vermarktete Nettotonnage der Wertkulturen im Bemessungsjahr.
@@ -4030,16 +4081,6 @@ export function machineFleetCount(domain: Domain, m: MachineType, scenarioId: st
       return sum + a.areaHa * y * (1 - l);
     }, 0);
     if (nettoT <= 0) return 0;
-    if (m.id === "lkw_sattel") {
-      // Zyklus je Fahrt = 2 x Distanz / Geschwindigkeit + Lade-/Entladezeit.
-      const t = domain.transport;
-      const dist = t?.distanceKm ?? 70, sp = t?.speedKmh ?? 60;
-      const payload = t?.payloadT ?? 27, lu = t?.loadUnloadH ?? 0.75;
-      const zyklusH = (2 * dist) / Math.max(1, sp) + lu;
-      const tageErnte = 90;                                   // Abtransportfenster der Kampagne
-      const fahrtenJeLkw = (hpd * tf * tageErnte) / Math.max(0.1, zyklusH);
-      return Math.max(1, Math.ceil(nettoT / Math.max(1, fahrtenJeLkw * payload)));
-    }
     // SHUTTLE: Feld -> Feldrand/Ueberladestation. Kurzer Zyklus, folgt der Rodeleistung.
     const shuttleTpH = 40;                                    // t/h je Shuttle im Pendelverkehr
     const tageRodung = 60;
@@ -4070,7 +4111,10 @@ export function machineFleetCount(domain: Domain, m: MachineType, scenarioId: st
     return capPerLoader > 0 ? Math.max(1, Math.ceil(grossT / capPerLoader)) : 1;
   }
   if (m.sprayPart) {
-    const f = deriveSprayFleet(domain, scenarioId);
+    // Bemessungsjahr = Planjahr 0. Den Ausbau bis zum Endausbau liefert die Vintage-Kurve
+    //  (dMachOf), nicht diese Zahl — sonst steht die Flotte des Endausbaus schon 2027 im Hof
+    //  und wird danach noch einmal mit der Fläche hochskaliert.
+    const f = deriveSprayFleet(domain, scenarioId, 0);
     return m.sprayPart === "gz" ? f.gz : f.sf;
   }
   // Fenstergetriebenes Bottom-up (Schlagkraft, kalibriert): treibt Anbaugeräte, Ernte- &
@@ -4721,6 +4765,21 @@ export type FleetSize = {
 
 /** Maschinen-ids, deren Flotte fenstergetrieben (bottom-up) gesizt wird. */
 // krautschl NICHT mehr fenstergesizt: als Frontanbau am Roder folgt die Stückzahl 1:1 dem Roder (s. machineFleetCount).
+/** Maschinenklassen OHNE eigenen Arbeitsgang, deren Zugang der TONNAGE folgt, nicht der Fläche.
+ *  Sie liefen bisher über die Gesamtflächen-Skalierung — der einzige Treiber, der übrig bleibt,
+ *  wenn eine Maschine in keinem Arbeitsgang steht. Für Verlade- und Transporttechnik ist das
+ *  der falsche: sie bewegt Tonnen, nicht Hektar. */
+export const LOGISTIK_TONNAGE_TREIBER: Record<string, string[]> = {
+  // Sattelzug ab Hof/Feld zum Abnehmer → gesamte vermarktete Wertkultur-Tonnage.
+  lkw_sattel: VALUE_CROP_IDS,
+  // Field-Shuttle Feld → Überladestation: nur die Hackfrüchte, die im Bunker anfallen.
+  shuttle: ["kartoffel_pommes", "kartoffel_chips", "suesskartoffel", "zwiebel_moehre", "knollensellerie"],
+  // Überladetrichter am Feldrand — dieselbe Kette wie das Shuttle, Kartoffelseite.
+  fieldloader: ["kartoffel_pommes", "kartoffel_chips", "suesskartoffel"],
+  // Radlader auf dem Hof: Verladung ein-/ausgehender Ware.
+  radlader: VALUE_CROP_IDS,
+};
+
 export const SIZED_MACHINE_IDS = new Set(["pflug", "saatbett", "drille", "einzelkorn", "streuer", "maehdr", "roder_ropa", "gem_schwad", "gem_lader", "gem_moehre", "gem_saat", "knobl_lege", "tomernte", "tompflanz", "onepass", "transport"]);
 export const SIZED_TRACTOR_IDS = new Set(["zug_9r", "zug_8rx", "ops_6r"]);
 export const isSizedId = (id: string) => SIZED_MACHINE_IDS.has(id) || SIZED_TRACTOR_IDS.has(id);
@@ -5009,6 +5068,9 @@ export type PersonalPosition = {
   key: string; label: string; grossKey: string;
   art: PersonalTreiberArt; treiberLabel: string; einheit: string;
   standard: number;
+  /** Position existiert nur mit eigenem Lager/Packhaus (`store.active` = 1). Ohne Anlage
+   *  gibt es niemanden ein- und auszulagern — die Ware geht ab Feld an den Verarbeiter. */
+  nurMitLager?: boolean;
 };
 export const PERSONAL_POSITIONEN: PersonalPosition[] = [
   { key: "pers.leitung.n", label: "Betriebsleitung & Agronomie", grossKey: "pers.leitung.gross",
@@ -5018,7 +5080,7 @@ export const PERSONAL_POSITIONEN: PersonalPosition[] = [
   { key: "pers.bewaesserung.n", label: "Bewässerung / Pivot-Steuerung", grossKey: "pers.bewaesserung.gross",
     art: "flaeche", treiberLabel: "betreute Fläche je Kraft", einheit: "ha/FTE", standard: 584 },
   { key: "pers.lager.n", label: "Lager & Aufbereitung", grossKey: "pers.lager.gross",
-    art: "flaeche", treiberLabel: "Fläche je Kraft", einheit: "ha/FTE", standard: 584 },
+    art: "flaeche", treiberLabel: "Fläche je Kraft (nur mit eigenem Lager)", einheit: "ha/FTE", standard: 584, nurMitLager: true },
   { key: "pers.service.n", label: "Werkstatt & Service/Technik", grossKey: "pers.service.gross",
     art: "maschinen", treiberLabel: "betreute Maschinen je Techniker", einheit: "Stk/FTE", standard: 14 },
   { key: "pers.saison.n", label: "Saisonkräfte (Kampagne)", grossKey: "pers.saison.gross",
@@ -5054,6 +5116,13 @@ export function personalFteOfYear(domain: Domain, key: string, y: number, scenar
   if (!pos) return 0;
   const manuell = domain.personalOverride?.[key]?.[y];
   if (manuell != null && isFinite(manuell)) return manuell;   // Hand schlaegt Treiber
+  // Lagerpersonal ohne Lager: der Master-Schalter store.active steht auf 0, das Modell trug
+  //  aber vier Kraefte "Lager & Aufbereitung" — ein drittes Mal dieselben Leute neben den
+  //  SG&A-Zeilen "Lagerpersonal" und "Packhaus-Personal".
+  if (pos.nurMitLager) {
+    const aktiv = !domain.assumptions["store.active"] || resolveScalar(domain, "store.active", scenarioId) >= 0.5;
+    if (!aktiv) return 0;
+  }
   const r = personalRatioOf(domain, key);
   const areas = cropAreasMemo(domain).areas;
   const haOf = (yy: number) => domain.anbauplan.reduce((sum, a) => {
@@ -5158,7 +5227,9 @@ export function setMachineOutsourced(d: Domain, machineId: string, aktiv: boolea
  *  Vermarktete Tonnage = Σ WERTKULTUREN (Tomate, Kartoffel Pommes+Chips, Zwiebel/Möhre)
  *    areaHa × Ertrag — BRUTTO (Fläche×Ertrag, vor Verlust). Alle Geldwerte in CENT.
  * ------------------------------------------------------------------------ */
-const TRANSPORT_VALUE_CROPS = ["tomate", "kartoffel_pommes", "kartoffel_chips", "zwiebel_moehre"];
+// Alle sieben Wertkulturen — Suesskartoffel, Knoblauch und Sellerie fehlten und damit rd.
+//  5.500 t Jahresmenge in der LKW-Zahl und in opex.transport.
+const TRANSPORT_VALUE_CROPS = VALUE_CROP_IDS;
 // Eigenflotte-Parameter (inline-Konstanten, Referenz F).
 const LKW: TransportConfig = TRANSPORT_DEFAULT;
 
@@ -5179,7 +5250,7 @@ export function deriveTransportDecision(
   scenarioId: string,
 ): {
   tonnage: number;
-  own: { perTCent: number; capexCent: number; totalCent: number; lkw: number };
+  own: { perTCent: number; capexCent: number; totalCent: number; opexCent: number; lkw: number };
   spedition: { perTCent: number; totalCent: number };
   chosen: "own" | "spedition";
 } {
@@ -5213,6 +5284,14 @@ export function deriveTransportDecision(
   const ownTotalCent = Math.round(lkw * fixPerTruck + repAnnual + dieselAnnual + driverAnnual);
   const ownCapexCent = Math.round(lkw * L.priceCent);
   const ownPerTCent = tonnage > 0 ? ownTotalCent / tonnage : 0;
+  // ZWEI verschiedene Zahlen, bewusst getrennt:
+  //  · totalCent  = VOLLKOSTEN inkl. AfA und kalkulatorischem Zins. Nur so ist der Vergleich
+  //    gegen die Spedition fair — die Spedition trägt ihre Abschreibung im Satz.
+  //  · opexCent   = was in die GuV-Zeile opex.transport gehört: AfA und Zins entstehen dort
+  //    NICHT noch einmal, sie kommen über die aktivierten LKW (PPE) und die Finanzierung.
+  //    Vorher stand der Vollkostenbetrag in der OpEx UND der LKW im Anlagevermögen UND ein
+  //    zweiter LKW-Posten aus dem Maschinenkatalog: dieselbe Flotte dreimal.
+  const ownOpexCent = Math.round(lkw * vers + repAnnual + dieselAnnual + driverAnnual);
 
   // Spedition.
   const rateCent = speditionRateCent(domain, scenarioId);
@@ -5220,7 +5299,7 @@ export function deriveTransportDecision(
 
   return {
     tonnage,
-    own: { perTCent: ownPerTCent, capexCent: ownCapexCent, totalCent: ownTotalCent, lkw },
+    own: { perTCent: ownPerTCent, capexCent: ownCapexCent, totalCent: ownTotalCent, opexCent: ownOpexCent, lkw },
     spedition: { perTCent: rateCent, totalCent: spedTotalCent },
     chosen: domain.decisions.transportToBuyer,
   };
@@ -5651,19 +5730,12 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
 
   // --- Transport zum Abnehmer (Make-or-Buy): opex.transport + ggf. LKW-CAPEX ----
   const transport = deriveTransportDecision(domain, scenarioId);
-  const transportTotalCent = transport.chosen === "own" ? transport.own.totalCent : transport.spedition.totalCent;
-  if (transport.chosen === "own" && transport.own.capexCent > 0) {
-    capex.push({
-      id: "cx-transport-fleet",
-      name: "Transport-LKW-Flotte",
-      assetClass: "machinery",
-      amount: transport.own.capexCent,
-      purchasePeriod: 0,
-      usefulLifeMonths: 96,
-      usefulLifeFiscalMonths: 84,
-      financingMode: "loan",
-    });
-  }
+  //  In die GuV geht der OPEX-Anteil (Versicherung, Reparatur, Diesel, Fahrer). AfA und Zins
+  //  der Eigenflotte entstehen NICHT hier, sondern über den aktivierten Sattelzug im
+  //  Maschinenkatalog (`cx-lkw_sattel`, Stückzahl = deriveTransportDecision.own.lkw) und die
+  //  zugehörige Finanzierung. Der frühere Zusatzposten `cx-transport-fleet` ist damit
+  //  entfallen: er kaufte dieselben LKW ein zweites Mal.
+  const transportTotalCent = transport.chosen === "own" ? transport.own.opexCent : transport.spedition.totalCent;
 
   // --- Assumptions-Overrides (composer-seitig, deterministisch) --------------
   const assumptions: Record<string, Assumption> = { ...domain.assumptions };
@@ -5687,7 +5759,16 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     const overhead = OVERHEAD_PER_HA[a.cropId as CropId] ?? 0;
     annualFixEur += overhead * a.areaHa;
   }
-  const overheadMonthly = (domain.overhead ?? []).reduce((s, o) => s + (o.monthlyCent || 0), 0);
+  // LAGER- UND PACKHAUS-GEMEINKOSTEN folgen dem Master-Schalter `store.active`.
+  //  Er steht auf 0 (kein Lager, kein Packhaus — die Ware geht Feld → Verarbeiter), die
+  //  beiden Blöcke liefen aber trotzdem voll mit: Kühllager 8.900 €/Monat und Packhaus
+  //  17.200 €/Monat, zusammen rund 313 T€ im Jahr für Anlagen, die im Plan nicht existieren.
+  //  Darin standen obendrein „Packhaus-Personal" und „Lagerpersonal" ein zweites Mal neben
+  //  `pers.lager.n` aus dem FTE-Modell. Wird das Lager aktiviert, kommen beide Blöcke
+  //  vollständig zurück.
+  const storeAktivSga = !domain.assumptions["store.active"] || resolveScalar(domain, "store.active", scenarioId) >= 0.5;
+  const overheadItems = (domain.overhead ?? []).filter((o) => storeAktivSga || !OVERHEAD_STORE_GROUPS.has(o.group));
+  const overheadMonthly = overheadItems.reduce((s, o) => s + (o.monthlyCent || 0), 0);
   const personnelScale = sf * scopeFactor;
 
   // --- Subventionen ---------------------------------------------------------
@@ -5772,9 +5853,30 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   const dStoreScale = storeScaleMY.map((s, y) => s - (y > 0 ? storeScaleMY[y - 1] : 0));
   const adjAsset = scale.map((s, y) => (s > 0 ? machScale[y] / s : 1));
   const dMachOf = (machineId: string): number[] => {
-    const users = (Object.keys(ARBEITSGAENGE) as CropId[]).filter((cid) => (ARBEITSGAENGE[cid] ?? []).some((st) => st.m === machineId));
+    // LOGISTIK-KLASSEN haben keinen Arbeitsgang und fielen deshalb auf dMachScale zurück —
+    //  die GESAMTE Betriebsfläche. Ein Sattelzug wächst aber nicht mit der Fläche, sondern
+    //  mit der TONNAGE, die er fährt: Weizen auf 100 ha erzeugt einen Bruchteil der Fuhren
+    //  einer Kartoffelfläche gleicher Größe. Über den Horizont (×7,8 Fläche gegen ×5,1
+    //  Tonnage der Wertkulturen) lag der Unterschied bei rund einem Drittel des Zugangs.
+    // SPRITZEN wachsen NICHT mit der Fläche. Ihr Bedarf kommt aus dem Fenster-Peak über alle
+    //  Kulturen — 2 Stück bei 300 ha, 7 bei 2.334 ha, also ×3,5 gegen ×7,8 Fläche. Und der
+    //  Mix verschiebt sich: bei kleiner Basis rundet der Selbstfahrer-Anteil auf 1 von 2 auf,
+    //  im Endausbau sind es 2 von 7. Über die Flächenkurve gerechnet stünden am Ende rund
+    //  16 Spritzen im Hof statt 7. Deshalb ist die Bezugsgröße hier die eigene Bedarfskurve.
+    if (machineId === "spray_gz" || machineId === "spray_sf") {
+      const teil: "gz" | "sf" = machineId === "spray_gz" ? "gz" : "sf";
+      const need = Array.from({ length: years }, (_, y) => deriveSprayFleet(domain, scenarioId, y)[teil]);
+      const b0 = need[0];
+      if (b0 <= 0) return Array.from({ length: years }, () => 0);
+      const kurve = need.map((n, y) => (n / b0) * adjAsset[y]);
+      return kurve.map((s, y) => s - (y > 0 ? kurve[y - 1] : 0));
+    }
+    const tonCrops = LOGISTIK_TONNAGE_TREIBER[machineId];
+    const users = tonCrops ?? (Object.keys(ARBEITSGAENGE) as CropId[]).filter((cid) => (ARBEITSGAENGE[cid] ?? []).some((st) => st.m === machineId));
     if (!users.length) return dMachScale; // geteilte/unspezifische Technik → Gesamtfläche (asset-korrigiert)
-    const at = (y: number) => users.reduce((s, cid) => s + (cropAreasMY.areas[cid]?.[y] ?? 0), 0);
+    const at = tonCrops
+      ? (y: number) => tonCrops.reduce((s, cid) => s + (cropAreasMY.areas[cid]?.[y] ?? 0) * yieldOfCropMY(cid), 0)
+      : (y: number) => users.reduce((s, cid) => s + (cropAreasMY.areas[cid]?.[y] ?? 0), 0);
     const b = at(0);
     if (b <= 0) return dMachScale;
     const curve = Array.from({ length: years }, (_, y) => (at(y) / b) * adjAsset[y]);
@@ -5818,7 +5920,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   //  · Corporate-Block (fix): 55 % Sockel + 45 % mit der Fläche — ein 300-ha-Start braucht
   //    Geschäftsführung, Buchhaltung und IT, aber nicht die Struktur des Endausbaus.
   //  · Volumen-Block (Packhaus/Lager/Logistik/Handel): linear mit der Erntemenge des Jahres.
-  const ovVolumeMonthly = (domain.overhead ?? []).filter((o) => OVERHEAD_VOLUME_GROUPS.has(o.group))
+  const ovVolumeMonthly = overheadItems.filter((o) => OVERHEAD_VOLUME_GROUPS.has(o.group))
     .reduce((sum, o) => sum + (o.monthlyCent || 0), 0);
   const ovFixedMonthly = Math.max(0, overheadMonthly - ovVolumeMonthly);
   const tonnesOfYear = (y: number) => Object.entries(cropAreasMY.areas)
@@ -6104,24 +6206,36 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   //  Zugängen des Jahres (Lager → dStoreScale, Maschinen → dMachOf, Beregnung → 0, denn der Ausbau
   //  hat seinen eigenen Beregnungs-Investitionskredit). Sonst entsteht Phantom-Fremdkapital
   //  (Kredit-Ziehungen ohne zugehörige Assets — vorher ~30 M€ Doppel-Finanzierung Beregnung).
-  const capexBaseAmt = new Map(capex.map((ci) => [ci.id, ci.amount] as [string, number]));
+  // Die Verträge werden auf dem CAPEX bemessen, der TATSÄCHLICH IM PLAN STEHT — nicht auf den
+  //  Rohbeträgen aus deriveCapex. Beregnung ist der Fall, an dem der Unterschied auffiel: der
+  //  Investitionskredit „Bewässerung & Lager" zog 900 T€ im ersten Jahr, obwohl der Plan seit
+  //  der Pachtentscheidung (Pivots im Pachtzins) keinen Beregnungs-CAPEX mehr enthält —
+  //  Fremdkapital ohne Gegenstand.
+  const capexBaseAmt = new Map(capex.map((ci) =>
+    [ci.id, ci.assetClass === "irrigation" && irrigFromYear > 0 ? 0 : ci.amount] as [string, number]));
   const contractDVec = (t: DebtTranche): number[] => {
     const f = financing.find((x) => x.tranche.id === t.id);
     if (!f) return dScale; // manuelle Tranchen (domain.debt): bisheriges Verhalten
     const objs = f.objects.map((o) => o.id);
     const baseSum = objs.reduce((s, id) => s + (capexBaseAmt.get(`cx-${id}`) ?? 0), 0);
-    if (baseSum <= 0) return dScale;
+    // Vertrag ohne planwirksamen Gegenstand → keine Ziehung. Vorher fiel er auf die
+    //  Flächen-Skalierung zurück und zog den vollen Nominalbetrag.
+    if (baseSum <= 0) return Array.from({ length: years }, () => 0);
     const addAt = (y: number): number => {
       if (y === 0) return baseSum;
       let s = 0;
       for (const id of objs) {
         const base = capexBaseAmt.get(`cx-${id}`) ?? 0;
-        if (base <= 0 || id === "irrig") continue;
+        if (base <= 0) continue;
         s += base * ((id === "store" || id === "store_tech") ? dStoreScale[y] : dMachOf(id)[y]);
       }
       return s;
     };
-    return Array.from({ length: years }, (_, y) => addAt(y) / baseSum);
+    // Bezugsgröße ist der VERTRAGSWERT (Σ Objektwerte laut deriveCapex), nicht der planwirksame
+    //  Anteil. Nur so schrumpft die Ziehung mit, wenn ein Objekt des Vertrags gar nicht gekauft
+    //  wird: dVec[0] = planwirksam / vertraglich ≤ 1 statt konstant 1.
+    const ref = f.entryValueCent > 0 ? f.entryValueCent : baseSum;
+    return Array.from({ length: years }, (_, y) => addAt(y) / ref);
   };
   const debtMY: DebtTranche[] = years <= 1 ? debtBase : debtBase.flatMap((t) => {
     const dVec = contractDVec(t);
