@@ -21,7 +21,8 @@ function Num({ label, value, onChange, step = 1, suffix }: { label: string; valu
 }
 
 /** Equity & Ausschüttung — Holding-Layer als FCFE: OpCo-Cash → Kapitaldienst → €-Mindestliquidität →
- *  Sweep als Dividende + Shareholder-Loan-Zins/Tilgung → Zypern-Non-Dom-Steuer → Netto an Shareholder.
+ *  Sweep als Dividende + Shareholder-Loan-Zins/Tilgung → Besteuerung in der deutschen Holding-GmbH
+ *  (§ 8b KStG auf die Dividende, voller Satz auf den Zinsertrag) → Netto an Shareholder.
  *  Equity-IRR (levered, nach Schuldendienst) vs. Projekt-IRR (unlevered). */
 export function ShareholderView() {
   const domain = useModelStore((s) => s.domain);
@@ -34,7 +35,12 @@ export function ShareholderView() {
   const [shRate, setShRate] = React.useState(6);     // SH-Loan-Zins %
   const [exitMult, setExitMult] = React.useState(7); // Exit-Multiple × EBITDA
   const [roWht, setRoWht] = React.useState(0);       // RO Quellensteuer Dividende % (0 via EU-Richtlinie)
-  const [cyIntTax, setCyIntTax] = React.useState(12.5); // Zypern KSt auf Zinsertrag %
+  // DEUTSCHE HOLDING-GMBH statt Zypern (Entscheidung 30.07.2026). Der Zinsertrag aus dem
+  // Gesellschafterdarlehen ist in der GmbH VOLL steuerpflichtig — rd. 29,8 % aus
+  // Körperschaftsteuer, Solidaritätszuschlag und Gewerbesteuer. Vorher standen hier 12,5 %
+  // zyprische KSt; das ist seit der Strukturentscheidung schlicht der falsche Satz und
+  // schönte den Netto-Zufluss an die Gesellschafter um 17,3 Prozentpunkte.
+  const [holdTax, setHoldTax] = React.useState(29.8);
 
   // Cap-Table — Finanzierungsrunden (Pre-/Post-Money, Verwässerung). Beträge Mio €.
   const [rounds, setRounds] = React.useState<{ id: string; name: string; pre: number; inv: number }[]>([
@@ -83,8 +89,14 @@ export function ShareholderView() {
         if (i === exitY) { shRepay = Math.min(shBal, net); shBal -= shRepay; net -= shRepay; }
         dividend = net;                                                        // Rest = Dividende
       }
-      const divNet = dividend * (1 - roWht / 100);                             // Zypern: 0 % (Part.Exemption/Non-Dom)
-      const intNet = shInt * (1 - roWht / 100) * (1 - cyIntTax / 100);         // Zinsertrag CyCo-KSt
+      // § 8b KStG: Beteiligungserträge zu 95 % steuerfrei, die restlichen 5 % gelten als
+      // nicht abziehbare Betriebsausgabe → effektive Belastung 5 % × Holding-Satz ≈ 1,5 %.
+      // Das ist NICHT null, wie es die Zypern-Fassung unterstellte.
+      const divNet = dividend * (1 - roWht / 100) * (1 - 0.05 * holdTax / 100);
+      // Zinsen fallen NICHT unter die Mutter-Tochter-Richtlinie (die gilt für Dividenden),
+      // sondern unter die Zins-/Lizenzrichtlinie — die RO-Dividenden-Quellensteuer gehört
+      // hier nicht angewandt. Voll steuerpflichtig in der Holding.
+      const intNet = shInt * (1 - holdTax / 100);
       const netToSh = divNet + intNet + shRepay;
       distCum += shInt + shRepay + dividend; divCum += dividend;
       return { ...r, shInt, shRepay, dividend, draw, revolverBal, netToSh };
@@ -101,7 +113,7 @@ export function ShareholderView() {
     const projCf = A.rows.map((r, i) => r.fcff + (i === exitY ? exitMult * exitEbitda : 0));
     const projectIrr = irr(projCf);
     return { rows, exitEquity, equityIrr, projectIrr, moic, dpi, divCum, distCum, e0C, exitEbitda, exitNetDebt };
-  }, [A, floor, e0, shPct, shRate, exitMult, roWht, cyIntTax]);
+  }, [A, floor, e0, shPct, shRate, exitMult, roWht, holdTax]);
 
   // Cap-Table: Ownership-Waterfall über die Runden
   const cap = React.useMemo(() => {
@@ -143,7 +155,7 @@ export function ShareholderView() {
           <Num label={t("SH-Loan-Zins")} value={shRate} onChange={setShRate} step={0.5} suffix="%" />
           <Num label={t("Exit-Multiple")} value={exitMult} onChange={setExitMult} suffix="× EBITDA" />
           <Num label={t("RO-Quellensteuer Div.")} value={roWht} onChange={setRoWht} step={1} suffix="%" />
-          <Num label={t("Zypern KSt Zins")} value={cyIntTax} onChange={setCyIntTax} step={0.5} suffix="%" />
+          <Num label={t("DE-Holding KSt+GewSt")} value={holdTax} onChange={setHoldTax} step={0.5} suffix="%" />
         </div>
         <div className="grid grid-cols-2 gap-px sm:grid-cols-3 lg:grid-cols-6" style={{ background: "var(--nx-border-divider)" }}>
           {kpi("Equity-IRR (levered)", isFinite(proj.equityIrr) ? fmtPct(proj.equityIrr) : "n/a", proj.equityIrr >= 0.15 ? "var(--nx-success)" : "var(--nx-text)", t("nach Schuldendienst"))}
@@ -154,7 +166,7 @@ export function ShareholderView() {
           {kpi("Σ Upstream Holding", fmtMoney(proj.distCum) + " €", "var(--nx-brand-lift)", t("Div.+Zins+Tilgung"))}
         </div>
         <div className="px-4 py-2 text-[11px] text-nx-text-muted">
-          <b>{t("Struktur:")}</b>{t(" OpCo (RO) erwirtschaftet FCFE → Mindestliquidität ")}{floor}{t(" Mio € bleibt, Überschuss wird hochgeschleust: zuerst Shareholder-Loan-Zins (bei OpCo abzugsfähig), dann SH-Tilgung (Exit), dann Dividende. RO-Quellensteuer ")}{roWht}{t(" % (EU-Mutter-Tochter-Richtlinie → i.d.R. 0 %). Zypern: Dividende via ")}<b>{t("Participation Exemption + Non-Dom (kein SDC)")}</b>{t(" → 0 %; Zinsertrag ")}{cyIntTax}{t(" % KSt. Equity-IRR = Rendite auf das eingesetzte EK inkl. Zeichnung (t0), laufender Ausschüttung und Exit-Erlös.")}
+          <b>{t("Struktur:")}</b>{t(" OpCo (RO) erwirtschaftet FCFE → Mindestliquidität ")}{floor}{t(" Mio € bleibt, Überschuss wird hochgeschleust: zuerst Shareholder-Loan-Zins (bei OpCo abzugsfähig), dann SH-Tilgung (Exit), dann Dividende. RO-Quellensteuer ")}{roWht}{t(" % (EU-Mutter-Tochter-Richtlinie → i.d.R. 0 %). Deutsche Holding-GmbH: Dividende nach ")}<b>{t("§ 8b KStG")}</b>{t(" zu 95 % steuerfrei → effektiv 5 % × ")}{holdTax}{t(" %; Zinsertrag voll steuerpflichtig mit ")}{holdTax}{t(" %. Equity-IRR = Rendite auf das eingesetzte EK inkl. Zeichnung (t0), laufender Ausschüttung und Exit-Erlös.")}
         </div>
       </section>
 

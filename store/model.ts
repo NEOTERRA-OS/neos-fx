@@ -1097,7 +1097,15 @@ const ARBEITSGAENGE: Record<CropId, Arbeitsgang[]> = {
     { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "gem_saat", passes: 1 },
     // Ernte gesplittet: Zwiebel-Hälfte 2-stufig (Schwadleger + Ladeeroder), Möhren-Hälfte Klemmband → je 0,5 Passes.
     { m: "streuer", passes: 1 }, { m: "spritze14", passes: 8 },
-    { m: "gem_schwad", passes: 0.5 }, { m: "gem_lader", passes: 0.5 }, { m: "gem_moehre", passes: 0.5 },
+    // ZWIEBEL zweiphasig: Schwadleger (Phase 1) + Aufnahme (Phase 2). Phase 2 faehrt der
+    //  ROPA Keiler 2 mit der Schwadaufnahme — ROPA vermarktet genau diesen Einsatz und
+    //  ruestet dafuer in Minuten um. Der separate Zwiebel-Ladeeroder (gem_lader, 265.000 EUR)
+    //  ist damit doppelte Technik fuer dieselbe Arbeit und entfaellt.
+    //  NICHT ersetzbar bleiben: der Schwadleger (der Keiler nimmt Schwad auf, legt aber
+    //  keinen) und der Moehren-/Sellerie-Klemmbandroder (er zieht am Laub — ein Siebketten-
+    //  roder haeckselt das Kraut und rodet mit Erde, das ist das Verfahren fuer Industrie-
+    //  und Lagerware, nicht fuer Waschmoehre mit Schalenanspruch).
+    { m: "gem_schwad", passes: 0.5 }, { m: "roder_ropa", passes: 0.5 }, { m: "gem_moehre", passes: 0.5 },
     { m: "transport", passes: 1 },
   ],
   // NEU: Süßkartoffel — Slips-Pflanzung (Gemüse-Pflanzmaschine), Rodung Siebkette (ROPA).
