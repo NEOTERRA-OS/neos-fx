@@ -1088,7 +1088,7 @@ const ARBEITSGAENGE: Record<CropId, Arbeitsgang[]> = {
   // ROPA Keiler 2 RK22 = geteilter Wurzelernter (Kartoffel + Möhre + Zwiebel + Sellerie) →
   // Ernte über roder_ropa (statt separater gemernte-Kette). Optional 2-phasig: Schwadleger vorab.
   zwiebel_moehre: [
-    { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "einzelkorn", passes: 1 },
+    { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "gem_saat", passes: 1 },
     // Ernte gesplittet: Zwiebel-Hälfte 2-stufig (Schwadleger + Ladeeroder), Möhren-Hälfte Klemmband → je 0,5 Passes.
     { m: "streuer", passes: 1 }, { m: "spritze14", passes: 8 },
     { m: "gem_schwad", passes: 0.5 }, { m: "gem_lader", passes: 0.5 }, { m: "gem_moehre", passes: 0.5 },
@@ -1100,9 +1100,9 @@ const ARBEITSGAENGE: Record<CropId, Arbeitsgang[]> = {
     { m: "streuer", passes: 1 }, { m: "spritze14", passes: 3 },
     { m: "roder_ropa", passes: 1 }, { m: "transport", passes: 1 },
   ],
-  // NEU: Winterknoblauch — Stecken via Einzelkorn-/Legetechnik, Rodung Siebkette.
+  // NEU: Winterknoblauch — Stecken via Legemaschine (Zehenausrichtung), Rodung Siebkette.
   knoblauch: [
-    { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "einzelkorn", passes: 1 },
+    { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "knobl_lege", passes: 1 },
     { m: "streuer", passes: 1 }, { m: "spritze14", passes: 4 },
     { m: "roder_ropa", passes: 1 }, { m: "transport", passes: 1 },
   ],
@@ -1138,6 +1138,8 @@ export const MACHINE_LABELS: Record<string, string> = {
   saatbett: "Saatbettkombi",
   drille: "Getreidedrille",
   einzelkorn: "Einzelkornsägerät",
+  gem_saat: "Beetsämaschine Feingemüse",
+  knobl_lege: "Knoblauch-Legemaschine",
   streuer: "Düngerstreuer",
   spritze14: "Spritzen-Kostenprofil 36 m (Mischpark TD 12 / PT)",
   krautschl: "Frontkrautschläger ROPA KS 475 (am Roder)",
@@ -1369,6 +1371,13 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("mprice.saatbett", "mprice.saatbett", "Saatbettkombi 12 m", "money", 7000000),
   A("mprice.drille", "mprice.drille", "Getreidedrille 9–12 m (HORSCH Pronto)", "money", 13000000),
   A("mprice.einzelkorn", "mprice.einzelkorn", "Einzelkornsämaschine HORSCH Maestro 12 TX", "money", 24000000),
+  // Feingemüse-Sätechnik: Zwiebel und Möhre werden auf BEETEN gesät (Reihenabstand 5–7 cm,
+  //  Beetbreite 1,50–1,80 m), nicht mit 50-cm-Einzelkorntechnik. Klasse Agricola Italiana
+  //  SNT/SN2D, 3 Beete → rd. 5,4 m Arbeitsbreite. Preis als Klassenanker, zu bestätigen.
+  A("mprice.gem_saat", "mprice.gem_saat", "Beetsämaschine Feingemüse (3 Beete, Agricola-Klasse)", "money", 5500000),
+  // Knoblauch wird gesteckt, nicht gesät: Legemaschine mit Zehenausrichtung, Beetbauweise.
+  //  Klasse Garmach/Checchi & Magli, professionelle 2-Beet-Ausführung. Preis Klassenanker.
+  A("mprice.knobl_lege", "mprice.knobl_lege", "Knoblauch-Legemaschine (Beet, 8-reihig)", "money", 6000000),
   A("mprice.streuer", "mprice.streuer", "Düngerstreuer RAUCH AERO GT 36 m", "money", 8500000),
   A("mprice.streuer_xeric", "mprice.streuer_xeric", "Düngerstreuer HORSCH Leeb Xeric 14 FS (48 m, 14.000 l)", "money", 16500000),
   A("mprice.boom48_pkg", "mprice.boom48_pkg", "48-m-Paket: Gestänge-Umrüstung PT/TD + Fahrgassen-Terminal", "money", 17000000),
@@ -1958,6 +1967,15 @@ const SPEC: Spec[] = [
   { id: "saatbett",   label: "Saatbettkombi HORSCH Cruiser 12 XL · 12,0 m",              priceKey: "mprice.saatbett",   cat: "gezogen", neupreis: 7000000, nutzung: 10, hJ: 500, restw: 0.25, dieselLh: 18, afa: 2400, zins: 800, vers: 640, rep: 2240, schmier: 270, cEff: 9.60, fleet: 1, tractorId: "zug_9r" },
   { id: "drille",     label: "Getreidedrille HORSCH Pronto 9 DC · 9,0 m", priceKey: "mprice.drille", cat: "gezogen", neupreis: 13000000, nutzung: 12, hJ: 350, restw: 0.25, dieselLh: 14, afa: 3036, zins: 1214, vers: 971, rep: 2429, schmier: 210, cEff: 6.00, fleet: 1, tractorId: "zug_9r" },
   { id: "einzelkorn", label: "Einzelkorn HORSCH Maestro 24.50 SX · 24 R 50 cm (12,0 m)", priceKey: "mprice.einzelkorn", cat: "gezogen", neupreis: 24000000, nutzung: 12, hJ: 300, restw: 0.25, dieselLh: 12, afa: 3958, zins: 1583, vers: 1267, rep: 3167, schmier: 180, cEff: 4.02, fleet: 2, tractorId: "zug_9r" },
+  // FEINGEMÜSE-SÄTECHNIK. Der Maestro ist eine Mais-/Soja-/Raps-Einzelkornsämaschine mit
+  //  50 cm Reihenabstand — für Zwiebel und Möhre die falsche Maschine: die werden auf Beeten
+  //  in Mehrfachreihen (5–7 cm) gesät. cEff = 5,4 m × 4,5 km/h × 0,65 ÷ 10 = 1,58 ha/h;
+  //  Präzisionssaat fährt langsam, das ist der Preis für die Standgenauigkeit.
+  { id: "gem_saat",   label: "Beetsämaschine Feingemüse · 3 Beete (5,40 m)", priceKey: "mprice.gem_saat", cat: "gezogen", neupreis: 5500000, nutzung: 12, hJ: 200, restw: 0.25, dieselLh: 8, afa: 1719, zins: 516, vers: 430, rep: 1289, schmier: 120, cEff: 1.58, fleet: 1, tractorId: "ops_6r" },
+  // KNOBLAUCH-LEGETECHNIK. Zehen müssen mit der Spitze nach oben gesteckt werden — das kann
+  //  keine Sämaschine. cEff = 1,8 m × 2,2 km/h × 0,60 ÷ 10 = 0,24 ha/h: die langsamste
+  //  Maschine im Park, deshalb bei 50 ha trotzdem nur eine Einheit (Herbstfenster ~25 Tage).
+  { id: "knobl_lege", label: "Knoblauch-Legemaschine · Beet, 8-reihig (1,80 m)", priceKey: "mprice.knobl_lege", cat: "gezogen", neupreis: 6000000, nutzung: 12, hJ: 150, restw: 0.20, dieselLh: 8, afa: 2667, zins: 800, vers: 667, rep: 2000, schmier: 120, cEff: 0.24, fleet: 1, tractorId: "ops_6r" },
   // BESTAND 2× RAUCH AERO GT 36 m (pneum. Balkenstreuer) — decken die Düngung @ Stufe 1.
   { id: "streuer",    label: "Düngerstreuer Bredal K135 gezogen · 36,0 m",  priceKey: "mprice.streuer",    cat: "gezogen", neupreis: 8500000, nutzung: 10, hJ: 400, restw: 0.20, dieselLh: 10, afa: 2800, zins: 840, vers: 700, rep: 1750, schmier: 150, cEff: 18.62, fleet: 1, owned: 0, activeWhen: "base", tractorId: "ops_6r" },
   // spritze14: bleibt der COGS-/Betriebskosten-Träger (Diesel/Rep/Vers/Schmier je ha aus den
@@ -2039,6 +2057,8 @@ const MACHINE_META: Record<string, { category: string; manufacturer: string; pro
   sc360:       { category: "Bodenbearbeitung", manufacturer: "Dewulf", product: "SC-Front Frontfräse (Kartoffelbeet)" },
   drille:      { category: "Aussaat & Pflanzung", manufacturer: "HORSCH", product: "Getreidedrille Pronto 9 DC · 9,0 m" },
   einzelkorn:  { category: "Aussaat & Pflanzung", manufacturer: "HORSCH", product: "Maestro 24.50 SX · 24-reihig 50 cm (12,0 m)" },
+  gem_saat:    { category: "Aussaat & Pflanzung", manufacturer: "Agricola-Klasse", product: "Beetsämaschine Feingemüse · 3 Beete (5,40 m) — Zwiebel/Möhre" },
+  knobl_lege:  { category: "Aussaat & Pflanzung", manufacturer: "Garmach-/C&M-Klasse", product: "Knoblauch-Legemaschine · Beet, 8-reihig (1,80 m)" },
   onepass:     { category: "Aussaat & Pflanzung", manufacturer: "Dewulf", product: "CP 42 Becherlegemaschine · 4-reihig (3,0 m)" },
   tompflanz:   { category: "Aussaat & Pflanzung", manufacturer: "Checchi & Magli", product: "Pflanzmaschine DUAL 12 GOLD · 6-reihig (3,0 m)" },
   streuer:     { category: "Düngung", manufacturer: "Bredal", product: "Düngerstreuer K135 · gezogen 36 m (Bestand 2×)" },
@@ -2070,6 +2090,7 @@ const MACHINE_META: Record<string, { category: string; manufacturer: string; pro
 const MACHINE_KIN: Record<string, { w: number; eff: number; feldTage: number }> = {
   pflug: { w: 6.2, eff: 0.72, feldTage: 24 }, saatbett: { w: 12, eff: 0.80, feldTage: 30 },
   drille: { w: 9, eff: 0.75, feldTage: 30 }, einzelkorn: { w: 12, eff: 0.70, feldTage: 23 },
+  gem_saat: { w: 5.4, eff: 0.65, feldTage: 20 }, knobl_lege: { w: 1.8, eff: 0.60, feldTage: 25 },
   streuer: { w: 36, eff: 0.72, feldTage: 41 }, spritze14: { w: 36, eff: 0.75, feldTage: 0 },
   krautschl: { w: 3, eff: 0.80, feldTage: 16 }, onepass: { w: 3, eff: 0.75, feldTage: 31 },
   roder_ropa: { w: 1.5, eff: 0.90, feldTage: 18 }, tompflanz: { w: 3, eff: 0.80, feldTage: 18 },
@@ -2243,6 +2264,8 @@ const LOHN_SAETZE: LohnSatz[] = [
   { m: "saatbett",    gruppe: "boden",       label: "Saatbettbereitung",               eurHa: 28,  quelle: LWK + " (Saatbettkombination 4 m 33 €, auf 12 m gerechnet)" },
   { m: "onepass",     gruppe: "pflanzung",   label: "Kartoffeln legen",                eurHa: 90,  quelle: LWK + " (Kartoffellegemaschine 4-reihig)" },
   { m: "einzelkorn",  gruppe: "pflanzung",   label: "Einzelkornsaat",                  eurHa: 40,  quelle: LWK + " (Einzelkornsägerät 12-reihig 55,50 €, auf 24 R gerechnet)" },
+  { m: "gem_saat",    gruppe: "pflanzung",   label: "Beetsaat Zwiebel/Möhre",          eurHa: 95,  quelle: SCHAETZ },
+  { m: "knobl_lege",  gruppe: "pflanzung",   label: "Knoblauch stecken",               eurHa: 320, quelle: SCHAETZ },
   { m: "tompflanz",   gruppe: "pflanzung",   label: "Setzling-Pflanzung",              eurHa: 220, quelle: SCHAETZ },
   { m: "streuer",     gruppe: "psm_duenger", label: "Düngerstreuen",                   eurHa: 13,  quelle: LWK + " (Schleuderstreuer 1000 l)" },
   { m: "spritze14",   gruppe: "psm_duenger", label: "Pflanzenschutz",                  eurHa: 14,  quelle: LWK + " (Feldspritze 1000 l 17,50 €, auf 36 m gerechnet)" },
@@ -3322,6 +3345,8 @@ const MACHINE_PHASE: Record<string, { phase: string; order: number; bbch: string
   saatbett: { phase: "Saatbettbereitung", order: 2, bbch: "—", timing: "S − 10…2 T", when: (s) => s - 0.4 },
   drille: { phase: "Aussaat (Drille)", order: 3, bbch: "00", timing: "S (Saat)", when: (s) => s },
   einzelkorn: { phase: "Aussaat (Einzelkorn)", order: 3, bbch: "00", timing: "S (Saat)", when: (s) => s },
+  gem_saat: { phase: "Aussaat Feingemüse (Beet)", order: 3, bbch: "00", timing: "S (Saat)", when: (s) => s },
+  knobl_lege: { phase: "Stecken (Knoblauch, Zehenausrichtung)", order: 3, bbch: "00", timing: "S (Legen)", when: (s) => s },
   onepass: { phase: "Legen/Pflanzung (One-Pass)", order: 3, bbch: "00", timing: "S (Legen)", when: (s) => s },
   tompflanz: { phase: "Pflanzung", order: 3, bbch: "00 (Jungpfl.)", timing: "S (Pflanzung)", when: (s) => s },
   streuer: { phase: "Düngung (Grund + Kopf, Streuer)", order: 4, bbch: "00–49", timing: "Gaben lt. BBCH-Programm", when: (s) => s },
@@ -4555,7 +4580,7 @@ export type FleetSize = {
 
 /** Maschinen-ids, deren Flotte fenstergetrieben (bottom-up) gesizt wird. */
 // krautschl NICHT mehr fenstergesizt: als Frontanbau am Roder folgt die Stückzahl 1:1 dem Roder (s. machineFleetCount).
-export const SIZED_MACHINE_IDS = new Set(["pflug", "saatbett", "drille", "einzelkorn", "streuer", "maehdr", "roder_ropa", "gem_schwad", "gem_lader", "gem_moehre", "tomernte", "tompflanz", "onepass", "transport"]);
+export const SIZED_MACHINE_IDS = new Set(["pflug", "saatbett", "drille", "einzelkorn", "streuer", "maehdr", "roder_ropa", "gem_schwad", "gem_lader", "gem_moehre", "gem_saat", "knobl_lege", "tomernte", "tompflanz", "onepass", "transport"]);
 export const SIZED_TRACTOR_IDS = new Set(["zug_9r", "zug_8rx", "ops_6r"]);
 export const isSizedId = (id: string) => SIZED_MACHINE_IDS.has(id) || SIZED_TRACTOR_IDS.has(id);
 
@@ -4565,7 +4590,7 @@ export const isSizedId = (id: string) => SIZED_MACHINE_IDS.has(id) || SIZED_TRAC
 export const WINDOW_FELDTAGE: Record<string, number> = {
   pflug: 24, saatbett: 30, drille: 30, einzelkorn: 23, streuer: 41, maehdr: 97, roder_ropa: 18,
   tomernte: 24, tompflanz: 18, krautschl: 16, onepass: 31, transport: 44,
-  gem_schwad: 20, gem_lader: 20, gem_moehre: 28,
+  gem_schwad: 20, gem_lader: 20, gem_moehre: 28, gem_saat: 20, knobl_lege: 25,
   zug_9r: 40, zug_8rx: 31, ops_6r: 76,
 };
 /** Feldtage einer Maschine: eigenes windowDays (editierbar) sonst Fallback-Tabelle. */
@@ -5885,7 +5910,8 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "mprice.pflug", "mprice.saatbett", "mprice.drille", "mprice.einzelkorn", "mprice.streuer",
     "mprice.spritze14", "mprice.krautschl", "mprice.onepass", "mprice.sc360", "mprice.roder_ropa",
     "mprice.zug_8rx", "mprice.ops_6r", "mprice.radlader", "mprice.shuttle", "mprice.fieldloader",
-    "mprice.tompflanz", "mprice.tomernte", "mprice.gem_schwad", "mprice.gem_lader", "mprice.gem_moehre", "mprice.maehdr", "mprice.transport",
+    "mprice.tompflanz", "mprice.tomernte", "mprice.gem_schwad", "mprice.gem_lader", "mprice.gem_moehre",
+    "mprice.gem_saat", "mprice.knobl_lege", "mprice.maehdr", "mprice.transport",
     "mprice.spray_gz", "mprice.spray_sf",
     "mprice.irrig_perha", "irrig.capex_from_year", "mprice.store_pert", "mprice.store_tech_pert",
   ]},

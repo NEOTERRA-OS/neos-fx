@@ -165,16 +165,18 @@ export function MaschinenSizingView() {
         <table className="w-full text-[12px]" style={{ minWidth: 1100 }}>
           <thead><tr>
             <th className={thStick + " text-left"}>{t("Maschine / Kulturen")}</th>
-            <th className={thStick + " text-right"}>{t("Breite m")}</th>
-            <th className={thStick + " text-right"}>km/h</th>
-            <th className={thStick + " text-right"}>{t("Eff %")}</th>
-            <th className={thStick + " text-right"}>C_eff</th>
-            <th className={thStick + " text-right"}>{t("Feldtage")}</th>
-            <th className={thStick + " text-right"}>{t("Bedarf h")}</th>
-            <th className={thStick + " text-right"}>{t("Minimum")}</th>
-            <th className={thStick + " text-right"}>{t("Bestand")}</th>
-            <th className={thStick + " text-right"}>{t("Ausl.")}</th>
-            <th className={thStick + " text-right"}>{t("Reserve")}</th>
+            <th className={thStick + " text-right"}>{t("Breite")} <span className="font-normal">m</span></th>
+            <th className={thStick + " text-right"}>{t("Geschw.")} <span className="font-normal">km/h</span></th>
+            <th className={thStick + " text-right"}>{t("Feldeff.")} <span className="font-normal">%</span></th>
+            <th className={thStick + " text-right"} title={t("Effektive Flächenleistung = Breite × Geschwindigkeit × Feldeffizienz ÷ 10")}>
+              C_eff <span className="font-normal">ha/h</span>
+            </th>
+            <th className={thStick + " text-right"}>{t("Feldtage")} <span className="font-normal">d</span></th>
+            <th className={thStick + " text-right"}>{t("Bedarf")} <span className="font-normal">h</span></th>
+            <th className={thStick + " text-right"}>{t("Minimum")} <span className="font-normal">{t("Stk")}</span></th>
+            <th className={thStick + " text-right"}>{t("Bestand")} <span className="font-normal">{t("Stk")}</span></th>
+            <th className={thStick + " text-right"}>{t("Ausl.")} <span className="font-normal">%</span></th>
+            <th className={thStick + " text-right"}>{t("Reserve")} <span className="font-normal">{t("Stk")}</span></th>
             <th className={thStick + " text-left"}>{t("Status")}</th>
             <th className={thStick + " text-right"}>{t("Neu")}</th>
             <th className={thStick + " text-right"}>{t("Σ Neu")}</th>
