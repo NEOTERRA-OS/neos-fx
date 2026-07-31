@@ -87,19 +87,17 @@ export type Stage = 1 | 2 | "3b";
  *   3c = + Fläche & Beregnung (Zukauf bis Zielausbau)      [c = Fläche + Beregnung]
  *  Intern: 1→s1a · 1a→s1 · 2b→s2 · 3c→s3b. */
 export type StageSel = "1" | "1a" | "2b" | "3c";
-/** Semantik-Beschreibung der Stufen (für Legenden/Tooltips). */
-export const STAGE_SEMANTICS: { sel: StageSel; growth: string; short: string; desc: string }[] = [
-  { sel: "1",  growth: "s1a", short: "Basis · nur Ackerbau",     desc: "Status quo ohne Wertkulturen — reine Cash-Crop-Rotation (Getreide/Raps/Mais/Soja). Benchmark." },
-  { sel: "1a", growth: "s1",  short: "+ Wertkulturen",           desc: "a = Anbau der Wertkulturen (Gemüse/Kartoffel) auf der heutigen Beregnungsfläche." },
-  { sel: "2b", growth: "s2",  short: "+ Vollberegnung",          desc: "b = Beregnung: gesamte Betriebsfläche unter Beregnung, keine Flächenzukäufe." },
-  { sel: "3c", growth: "s3b", short: "+ Fläche & Beregnung",     desc: "c = Fläche + Beregnung: Zukauf/Übernahme bis zum Zielausbau (20.000 ha)." },
-];
+/* ENTFERNT 31.07.2026: STAGE_SEMANTICS (Legende Stufe 1/1a/2b/3c) — es gibt nur noch
+   eine Stufe; die Karte im Dashboard beschrieb eine Welt, die das Modell nicht mehr kennt. */
+/** Betriebsgröße als KALIBRIERUNGSBASIS — keine Ausbaustufen mehr. Der Betrieb wächst über
+ *  den Kultur-Skalierungspfad (SKALIERUNG_HA), nicht über Stufen. Die 4.000 ha sind die
+ *  Bezugsgröße, auf die der Pfad kalibriert ist (buildAnbauplan / skalierungPolicy).
+ *  ENTFERNT 31.07.2026: Stufe 2 (10.000 ha) und Stufe 3b (20.000 ha). domain.stage war
+ *  ohnehin fest auf 1 verdrahtet, stageFactorOf lieferte damit immer 1. */
 export const STAGES: Record<string, { label: string; beregneteFlaecheHa: number; stageFactor: number; feldHa: number }> = {
-  "1":  { label: "Stufe 1 (2027)",  beregneteFlaecheHa: 4000,  stageFactor: 1,   feldHa: 667 },
-  "2":  { label: "Stufe 2 (2035)",  beregneteFlaecheHa: 10000, stageFactor: 2.5, feldHa: 1667 },
-  "3b": { label: "Stufe 3b (Ziel)", beregneteFlaecheHa: 20000, stageFactor: 5,   feldHa: 3333 },
+  "1": { label: "NEOTERRA SRL", beregneteFlaecheHa: 4000, stageFactor: 1, feldHa: 667 },
 };
-const stageFactorOf = (stage: Stage): number => STAGES[String(stage)]?.stageFactor ?? 1;
+const stageFactorOf = (_stage: Stage): number => 1;
 
 /* --------------------------------------------------------------------------
  * Export-Vertrag: Typen
@@ -814,87 +812,41 @@ const TRANSPORT_DEFAULT: TransportConfig = {
   driverEurPerHourCent: 800, lifeYears: 8, residualPct: 0.30, interestRate: 0.04,
 };
 
-/** Unberegnete (Trocken-)Rotation — Break Crops, geringere Erträge (Rain-fed). DB je ha (CENT).
- *  HARTE REGEL (Agronomie Süd-Dolj): Soja (auch Doppel-Soja als Zweitfrucht) und Mais sind
- *  reine BEWÄSSERUNGS-Kulturen — sie dürfen NIE in der Trockenrotation stehen.
- *  `label` überschreibt den Katalognamen (z. B. Wintergerste OHNE das Doppel-Soja-Suffix). */
-export type DrylandCrop = { cropId: CropId; sharePct: number; dbPerHaCent: number; label?: string;
-  /** Rain-fed Ertrag (t/ha) & Feld-/Lagerverlust — nur für die physische Produktions-Anzeige
-   *  (Ökonomie läuft über dbPerHaCent, nicht über Ertrag × Preis). */
-  yieldTHa?: number; lossPct?: number };
+/* ENTFERNT 31.07.2026: DrylandCrop — die Trockenrotation gehörte Isolde Farms. */
 export type GrowthPlan = {
   years: number;
   /** BEREGNETE Fläche je Jahr = Irrigations-Ramp (Stufe 1→3b). Treibt das Kern-Modell (Wertrotation). */
   areaByYear: number[];
-  /** GESAMT-Betriebsfläche je Jahr (beregnet + unberegnet). Wächst über Zukauf/Übernahme. */
+  /** GESAMT-Betriebsfläche je Jahr. Im Solo-Modell identisch mit areaByYear (alles beregnet). */
   totalByYear?: number[];
-  /** Startpunkt heute (t0): Gesamt ~10.000 ha, davon ~4.000 ha beregnet. */
+  /** Startpunkt (t0) = erstes Planjahr des Skalierungspfads. */
   startTotalHa?: number;
   startIrrigatedHa?: number;
-  /** Zukauf / Übernahme Betrieb €/ha (Land + Übernahme) → Land-CAPEX. */
-  acqEurPerHaCent?: number;
-  /** Fremdfinanzierungsanteil des Zukaufs (LTV, 0..1) über Übernahme-/Bodenkredit. Default 1. */
-  acqDebtShare?: number;
-  /** Laufzeit des Übernahme-/Bodenkredits (Monate). Default 144 (12 J.). */
-  acqLoanTermMonths?: number;
-  /** Bewässerungs-Ausbau €/ha (Pivot/Verrohrung) — Planwert für neu beregnete ha. */
+  /** Bewässerungs-Ausbau €/ha (Pivot/Verrohrung) — Planwert für neu beregnete ha.
+   *  Greift erst ab `irrig.capex_from_year`; davor wird bereits beregnete Fläche gepachtet. */
   irrigEurPerHaCent?: number;
-  /** Unberegnete Rotation (Break Crops) — Anteile & DB/ha (Rain-fed). */
-  drylandRotation?: DrylandCrop[];
-  /** Stufe-3b Akquiseprofil: Übernahme ganzer Betriebe (Fläche + Beregnung + Maschinenbestand). */
-  acquisitions?: FarmDeal[];
-  /** Aktive Wachstumsstufe (Szenario der Flächenstrategie):
-   *  s1  = Status Quo heute (kein Flächenwachstum, keine Beregnungserweiterung),
-   *  s2  = Vollberegnung (gesamte Fläche unter Beregnung, kein Flächenzukauf),
-   *  s3b = Flächen-Ramp (Akquiseprofil, Zukauf + Beregnungsausbau bis Ziel).
-   *  s1a = wie s1 (flach, Status Quo), aber NUR Cash-Crop-Rotation (kein Gemüse) — Benchmark
-   *        „Ackerbaubetrieb vor Wertkulturen" für die Gesellschafter-Analyse. */
-  stage?: "s1" | "s1a" | "s2" | "s3b";
+  /** Aktive Wachstumsstufe. Nur noch "s3b" = Kurven werden verbatim übernommen; die
+   *  Flächenkurve IST der Kultur-Skalierungspfad. Die früheren Stufen s1/s1a/s2 (flach,
+   *  Cash-only, Vollberegnung) sind entfallen — sie haben den Pfad überschrieben. */
+  stage?: "s3b";
 };
 
-/** Effektiver Wachstumsplan nach aktiver Stufe. Leitet areaByYear/totalByYear/acquisitions
- *  aus der gewählten Stufe ab — treibt Umsatz, OpEx, Dryland-DB, CAPEX & Finanzierung. */
+/** Effektiver Wachstumsplan: reicht die geplanten Flächenkurven durch und stellt nur sicher,
+ *  dass die beregnete Fläche die Gesamtfläche nie übersteigt. */
 export function effectiveGrowth(gp: GrowthPlan | undefined): GrowthPlan | undefined {
   if (!gp) return gp;
-  const stage = gp.stage ?? "s3b";
-  if (stage === "s3b") {
-    // PHYSIK-GUARD: beregnete Fläche kann die Gesamtfläche nie übersteigen — der Beregnungs-Ramp
-    //  darf dem Flächenzukauf nicht vorauslaufen (sonst Beregnungsgrad > 100 % und Phantom-Umsatz).
-    if (gp.totalByYear?.length) {
-      const area = gp.areaByYear.map((a, y) => Math.min(a, gp.totalByYear![Math.min(y, gp.totalByYear!.length - 1)] ?? a));
-      return { ...gp, areaByYear: area };
-    }
-    return gp;
+  // PHYSIK-GUARD: beregnete Fläche kann die Gesamtfläche nie übersteigen.
+  //  Die früheren Stufen-Zweige (s1/s1a flach, s2 Vollberegnung) sind entfallen — sie hätten
+  //  die Flächenkurve auf das Startjahr flachgedrückt und damit den Skalierungspfad gelöscht.
+  if (gp.totalByYear?.length) {
+    const area = gp.areaByYear.map((a, y) => Math.min(a, gp.totalByYear![Math.min(y, gp.totalByYear!.length - 1)] ?? a));
+    return { ...gp, areaByYear: area };
   }
-  const n = Math.max(1, gp.years);
-  const startTot = gp.startTotalHa ?? gp.totalByYear?.[0] ?? 0;
-  const startIrr = gp.startIrrigatedHa ?? gp.areaByYear[0] ?? 0;
-  if (stage === "s1" || stage === "s1a") {
-    // Status Quo: alles flach auf heute, keine Übernahmen. (s1a = Cash-only-Kulturmix, s. buildModelState.)
-    return { ...gp, areaByYear: Array.from({ length: n }, () => startIrr), totalByYear: Array.from({ length: n }, () => startTot), acquisitions: [] };
-  }
-  // s2 — Beregnungsausbau bis gesamte Betriebsfläche beregnet ist; Gesamtfläche bleibt konstant.
-  //  TEMPO = der geplante Beregnungs-Ramp (areaByYear, editierbar), gedeckelt auf die Gesamtfläche —
-  //  Vollberegnung wird also ~2029 erreicht (wie im s3b-Pfad), nicht künstlich über den Horizont gestreckt.
-  const area = Array.from({ length: n }, (_, y) =>
-    Math.min(startTot, gp.areaByYear[Math.min(y, gp.areaByYear.length - 1)] ?? startIrr));
-  return { ...gp, areaByYear: area, totalByYear: Array.from({ length: n }, () => startTot), acquisitions: [] };
+  return gp;
 }
-/** Farm-Akquisition — zwei Modi:
- *  · "lease" = Übernahme von Pachtflächen (Ablöse ~500 €/ha, asset-light): keine Land-/Maschinen-
- *    Assets, dafür laufende Pacht auf die übernommene Fläche.
- *  · "asset" = Kauf ganzer Betriebe (2.000–3.000 €/ha): Land + Gebäude als Asset, Maschinen-Zeitwert
- *    als Bestand (mindert Neu-CAPEX), keine laufende Pacht. */
-export type FarmDeal = {
-  id: string; year: number; name: string;
-  dealType: "lease" | "asset";
-  totalHa: number; irrHa: number;      // übernommene Fläche gesamt / davon beregnet
-  eurPerHaCent: number;                // Ablöse/Kaufpreis je ha (CENT) — ~500 lease / 2.000–3.000 asset
-  machineValueCent: number;            // Zeitwert übernommener Maschinen (nur asset; mindert Neu-CAPEX)
-  leaseRentPerHaCent?: number;         // laufende Pacht €/ha (nur lease); fehlt → Pacht-Basissatz
-  /** Fremdfinanzierungsquote der Übernahme (0..1, Akquisitionskredit/Leasing); Rest aus Cash/EK. */
-  debtShare?: number;
-};
+
+/* ENTFERNT 31.07.2026: FarmDeal — Betriebsübernahmen/Pachtpakete (Stufe 3b). Es gibt keinen
+   Flächenzukauf mehr: gewachsen wird über den Kultur-Skalierungspfad auf Pachtfläche. */
 /** Ersatzinvestitions-Konfiguration je Maschine (überschreibt globale Defaults). */
 export type ReplCfg = { cycleYears?: number; afaYears?: number; hoursPerYear?: number; enabled?: boolean };
 const GROWTH: GrowthPlan = {
@@ -907,15 +859,10 @@ const GROWTH: GrowthPlan = {
   totalByYear: SKALIERUNG_TOTAL_HA.slice(),
   startTotalHa: SKALIERUNG_TOTAL_HA[0],
   startIrrigatedHa: SKALIERUNG_TOTAL_HA[0],
-  // Wachstum heißt hier: MEHR PACHTFLÄCHE, kein Landkauf. Der Zukaufpreis steht auf 0, sonst
-  //  bucht die Engine jedes zusätzliche Hektar als Landerwerb (2028 wären das 4,8 Mio € gewesen).
-  //  Die Fläche kostet laufende Pacht (opex.pacht ~300 €/ha), die Beregnung bleibt CAPEX.
-  acqEurPerHaCent: 0,
-  acqDebtShare: 0.4,
-  acqLoanTermMonths: 360,
+  // Wachstum heißt hier: MEHR PACHTFLÄCHE, kein Landkauf — die Zukauf-Mechanik ist entfernt.
+  //  Die Fläche kostet laufende Pacht (opex.pacht, 750 €/ha), die Beregnung bleibt CAPEX.
+
   irrigEurPerHaCent: 300000,  // 3.000 €/ha Beregnungsausbau (Pivot + Verrohrung + Pumpe)
-  drylandRotation: [],        // Trockenrotation gehörte Isolde Farms — im Solo-Modell entfallen
-  acquisitions: [],           // kein Flächenzukauf, keine Betriebsübernahmen
   stage: "s3b",
 };
 
@@ -3449,32 +3396,9 @@ function machineServiceAnnualCent(domain: Domain, scenarioId: string): number {
   return cent;
 }
 
-/** Intercompany-Maschinenmiete (CENT/Jahr): für jede Maschine mit rentedUnits > 0 laufen die
- *  gemieteten Einheiten NICHT über CAPEX, sondern stundenbasiert als Miet-OPEX.
- *   Miete = gemietete Stück × (Maschinenstunden/Jahr ÷ benötigte Flotte) × Satz€/h;
- *   Satz€/h = (AfA/h + Service/h) × (1 + machine.rent_markup) — Stundenkosten × Aufschlag. */
-export function machineRentAnnualCent(domain: Domain, scenarioId: string, lessorId?: string): number {
-  const markup = 1 + resolveScalar(domain, "machine.rent_markup", scenarioId);
-  let cent = 0;
-  for (const m of domain.machineCatalog) {
-    const rentedReq = Math.round(m.rentedUnits ?? 0);
-    if (m.mode !== "fixedFleet" || rentedReq <= 0) continue;
-    // Verleiher-Filter (explizite Mietrichtung): nur Maschinen zählen, deren rentedFrom == lessorId
-    //  (fehlt → Default-Verleiher Isolde). Ohne lessorId: gesamte Miete (Mieter-Sicht/Elimination).
-    if (lessorId && (m.rentedFrom ?? ENTITY_ISOLDE) !== lessorId) continue;
-    const required = machineFleetCount(domain, m, scenarioId);
-    const owned = Math.max(0, Math.round(m.ownedUnits ?? 0));
-    const rented = Math.max(0, Math.min(rentedReq, Math.max(0, required - owned)));
-    if (rented <= 0 || required <= 0) continue;
-    const hoursTotal = serviceHoursPerYear(domain, m);              // Ist-Stunden der Flotte (cEff/Träger)
-    const hoursPerUnit = hoursTotal / required;
-    const afaH = m.afaPerHourCent ?? 0;                             // AfA €/h (CENT)
-    const serviceH = m.serviceRateKey ? resolveScalar(domain, m.serviceRateKey, scenarioId) : 0;
-    const ratePerH = (afaH + serviceH) * markup;                   // Stundenkosten × Aufschlag
-    cent += rented * hoursPerUnit * ratePerH;
-  }
-  return Math.round(cent);
-}
+/* ENTFERNT 31.07.2026: machineRentAnnualCent — Intercompany-Maschinenmiete. Sie setzte eine
+   zweite operative Gesellschaft (Isolde) als Verleiher voraus; im Solo-Modell hat keine
+   Maschine rentedUnits > 0 und die Funktion lieferte konstant 0. */
 
 /* --------------------------------------------------------------------------
  * Delta 21.07. (2): Spritzstrategie — fenstergetriebene Flotte (Mehrkultur-Sommerpeak).
@@ -4473,6 +4397,10 @@ export function deriveContribution(
   for (const cat of domain.catalog) {
     const cropId = cat.cropId;
     const area = areaByCrop.get(cropId) ?? 0;
+    // Kulturen ohne Fläche im Plan erzeugen keine Zeile. Der Katalog trägt weiterhin die
+    //  Stammdaten der Ackerbau-Kulturen (Weizen/Gerste/Mais/Raps/Soja) als Referenz — sie
+    //  sollen aber nicht als Nullzeilen in Contribution-Tabelle und -Chart auftauchen.
+    if (area <= 0) continue;
     const y = resolveScalar(domain, cat.yieldKey, sc);       // t/ha
     const price = resolveScalar(domain, cat.priceKey, sc);   // CENT/t
     const loss = resolveScalar(domain, cat.lossKey, sc);     // Rate
@@ -4515,158 +4443,30 @@ export function deriveContribution(
   };
 }
 
-/* --------------------------------------------------------------------------
- * scopeToValueOnly — Domäne auf die Wertkulturen stand-alone reduzieren.
- *  Anbauplan → nur VALUE_CROP_IDS. Maschinen, die von KEINER genutzten (Wert-)Kultur
- *  gebraucht werden, fallen aus der Flotte (z. B. Mähdrescher/Getreidedrille — nur Break
- *  Crops). Beregnung/Lager (perHa/perTonne) sowie CAPEX-only-Träger, deren Anbaugerät
- *  genutzt wird, bleiben. Verbleibende fixe Flotte bleibt je Typ konservativ voll.
- * ------------------------------------------------------------------------ */
-function scopeToValueOnly(domain: Domain): Domain {
-  const anbauplan = domain.anbauplan.filter((a) => VALUE_CROP_IDS.includes(a.cropId));
-  const usedCropIds = new Set(anbauplan.map((a) => a.cropId));
-  const usedMachineIds = new Set<string>();
-  for (const cid of usedCropIds) {
-    for (const g of domain.arbeitsgaenge[cid] ?? []) usedMachineIds.add(g.m);
-  }
-  const machineCatalog = domain.machineCatalog.filter((m) => {
-    if (m.mode !== "fixedFleet") return true;         // Beregnung/Lager immer
-    if (m.cEff) return usedMachineIds.has(m.id);       // Feldmaschine: nur wenn genutzt
-    if (m.serviceHoursLike) return usedMachineIds.has(m.serviceHoursLike); // Träger: wenn Anbaugerät genutzt
-    return true;                                        // Radlader/Shuttle (Lager/Logistik)
-  });
-  return { ...domain, anbauplan, machineCatalog };
-}
+/* ENTFERNT 31.07.2026 (Aufräumen Solo-Modell): scopeToValueOnly · scopeToEntity ·
+   scaleGrowthToEntity · scopeToCashOnly · VALUE_ONLY_MACHINE_IDS · deriveValueCropCase ·
+   scopedDomain. Nach der Solo-Umstellung waren das reine Identitätsfunktionen oder sie
+   bauten Zustände auf, die es nicht mehr gibt:
+    · scopeToValueOnly filterte auf Wertkulturen — der Anbauplan BESTEHT nur aus Wertkulturen;
+      den Maschinenfilter wendet valueCropMachineCatalog bereits im SEED an.
+    · scopeToEntity/scaleGrowthToEntity filterten auf EINE Gesellschaft — es gibt nur eine
+      operative Gesellschaft, der Filter traf immer alle Zeilen.
+    · scopeToCashOnly baute einen synthetischen Ackerbau-Betrieb aus Kulturen, die aus dem
+      Modell entfernt sind; erreichbar war das nur über den gelöschten Stufen-Umschalter.
+    · deriveValueCropCase leitete "den Wertkultur-Fall" aus dem Kombimodell ab — das SEED IST
+      dieser Fall.
+   Aufrufer arbeiten jetzt direkt auf der Domäne. */
+
 
 /** Entity-Sicht: filtert das Kombimodell auf EINE Gesellschaft (Vollkosten-Standalone) — nur ihre
  *  Kulturen (entityOfEntry), nur die davon genutzten Maschinen, Wachstum flach auf die Entity-Fläche
  *  (Zwei-Pool: beregnet + trocken erhalten). Die Engine rechnet daraus ALLE Sektionen voll (P&L,
  *  Bilanz, Cashflow, Liquidität, Demand). Read-only-Transform (mutiert die gespeicherte Domäne nicht). */
-/** Skaliert den KOMBINIERTEN Wachstumspfad proportional auf eine Gesellschaft herunter — die Entity
- *  folgt damit derselben aktiven Stufe (1a/2b/3c) wie das Gesamtmodell, statt flach zu bleiben:
- *   · Gesamtfläche der Entity wächst mit dem Footprint-Ramp des Konzerns (totalByYear-Verhältnis),
- *   · Beregnungsgrad der Entity läuft vom EIGENEN Startwert (irrHa/totHa) auf 100 %, im selben Tempo,
- *     in dem der Konzern Vollberegnung erreicht (Penetrations-Fortschritt 0→1).
- *  Die aufgelösten Kurven werden vorgebacken und als s3b zurückgegeben (Physik-Guard area≤total,
- *  keine erneute s1/s2-Neuberechnung). Keine Konzern-Akquisen (Ramp trägt das Wachstum, kein Doppel). */
-function scaleGrowthToEntity(g: GrowthPlan, irrHa: number, totHa: number): GrowthPlan {
-  const years = Math.max(1, g.years ?? 1);
-  const eff = effectiveGrowth(g)!;                                   // aufgelöste Kurven der aktiven Stufe
-  const cStartIrr = eff.startIrrigatedHa ?? eff.areaByYear?.[0] ?? irrHa;
-  const cStartTot = eff.startTotalHa ?? eff.totalByYear?.[0] ?? totHa;
-  const at = (arr: number[] | undefined, y: number, fb: number) => arr?.[Math.min(y, (arr?.length ?? 1) - 1)] ?? fb;
-  const totRatio = (y: number) => (cStartTot > 0 ? at(eff.totalByYear, y, cStartTot) / cStartTot : 1);
-  const irrShare0 = cStartTot > 0 ? Math.min(1, cStartIrr / cStartTot) : 1;   // Konzern-Startpenetration
-  const irrShareY = (y: number) => { const tt = at(eff.totalByYear, y, cStartTot); return tt > 0 ? Math.min(1, at(eff.areaByYear, y, cStartIrr) / tt) : irrShare0; };
-  const prog = (y: number) => (irrShare0 < 1 ? Math.max(0, Math.min(1, (irrShareY(y) - irrShare0) / (1 - irrShare0))) : 1);
-  const entShare0 = totHa > 0 ? Math.min(1, irrHa / totHa) : 1;      // EIGENE Startpenetration der Entity
-  const totalByYear = Array.from({ length: years }, (_, y) => Math.max(1, Math.round(totHa * totRatio(y))));
-  const areaByYear = Array.from({ length: years }, (_, y) => {
-    const share = entShare0 + prog(y) * (1 - entShare0);
-    return Math.max(1, Math.min(totalByYear[y], Math.round(totalByYear[y] * share)));
-  });
-  return { ...g, years, stage: "s3b", areaByYear, totalByYear, startIrrigatedHa: irrHa, startTotalHa: totHa, acquisitions: [] };
-}
 
-export function scopeToEntity(domain: Domain, entityId: string): Domain {
-  const anbauplan = domain.anbauplan.filter((a) => entityOfEntry(a) === entityId);
-  if (!anbauplan.length) return domain; // leere Entity → unverändert (Fallback)
-  const usedCropIds = new Set(anbauplan.map((a) => a.cropId));
-  const usedMachineIds = new Set<string>();
-  for (const cid of usedCropIds) for (const g of domain.arbeitsgaenge[cid] ?? []) usedMachineIds.add(g.m);
-  const machineCatalog = domain.machineCatalog.filter((m) => {
-    if (m.mode !== "fixedFleet") return true;
-    if (m.cEff) return usedMachineIds.has(m.id);
-    if (m.serviceHoursLike) return usedMachineIds.has(m.serviceHoursLike);
-    return true;
-  });
-  const irrHa = anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0) || 1;
-  const totHa = anbauplan.reduce((s, a) => s + a.areaHa, 0) || irrHa;
-  // Per-Entity-Wachstumspfad: proportional zum aktiven Konzern-Ramp (nicht mehr flach) — die
-  //  Gesellschaft rampt in derselben Stufe (2b/3c) wie das Gesamtmodell, auf ihre Basisfläche skaliert.
-  const growth = domain.growth ? scaleGrowthToEntity(domain.growth, irrHa, totHa) : domain.growth;
-  return { ...domain, anbauplan, machineCatalog, growth, scope: "full", stage: 1 };
-}
 
-/** Leitet aus dem Kombimodell (Isolde = Cash/Trocken · neoterra = Value Crops) einen EIGENSTÄNDIGEN
- *  neoterra-Value-Crop-Case ab, der als separates Modell gespeichert werden kann:
- *   · Anbauplan nur Wertkulturen (Isolde-Cash/Trockenrotation entfällt),
- *   · Maschinenpark nur die von den Wertkulturen genutzte Spezialtechnik (Tomaten-/Kartoffel-/
- *     Gemüse-Erntekette, Pflanzer + geteilte Feldtechnik) — auf die Wertkultur-Fläche dimensioniert,
- *   · `scope: "full"` → VOLLKOSTEN (eigene Flotte + eigene Struktur, KEINE anteilige Verwässerung),
- *   · Wachstum flach auf die Wertkultur-Fläche (kein Cash-Ramp, keine Trockenrotation/Zukäufe).
- *  Overhead/Personal bleiben editierbar — für den Standalone bewusst zu prüfen. */
-export function deriveValueCropCase(domain: Domain): Domain {
-  const vco = scopeToValueOnly(domain);                              // Anbauplan + Maschinen gefiltert
-  const vcHa = vco.anbauplan.reduce((s, a) => s + a.areaHa, 0) || 1;
-  const years = Math.max(1, domain.growth?.years ?? 1);
-  const growth = domain.growth ? {
-    ...domain.growth,
-    stage: "s1" as const,                                            // flach, Status quo (kein Cash-Ramp)
-    areaByYear: Array.from({ length: years }, () => vcHa),
-    totalByYear: Array.from({ length: years }, () => vcHa),
-    startTotalHa: vcHa, startIrrigatedHa: vcHa,
-    drylandRotation: [], acquisitions: [],
-  } : domain.growth;
-  return {
-    ...vco,
-    meta: { ...domain.meta, name: "NEOTERRA (Value Crops)" },
-    scope: "full",                                                   // Vollkosten-Standalone
-    stage: 1,
-    growth,
-  };
-}
 
-/** Value-crop-spezifische Maschinen (Gemüse/Kartoffel-Kette) — entfallen im reinen Ackerbau (1a). */
-const VALUE_ONLY_MACHINE_IDS = new Set([
-  "tomernte", "roder_ropa", "krautschl", "gem_schwad", "gem_lader", "gem_moehre",
-  "tompflanz", "onepass", "sc360", "fieldloader",
-]);
 
-/* --------------------------------------------------------------------------
- * scopeToCashOnly — Stufe 1a: reiner Ackerbaubetrieb VOR den Wertkulturen.
- *  Die gesamte beregnete Fläche läuft eine Cash-Crop-Rotation (Mais/Soja auf Beregnung +
- *  Getreide/Raps), KEIN Gemüse. Value-crop-Maschinen (Ernter/Roder/Gemüse/Pflanz) entfallen.
- *  Benchmark „Betrieb ohne Wertkulturen" für die Gesellschafter-Analyse (Hebel des Gemüsebaus).
- * ------------------------------------------------------------------------ */
-function scopeToCashOnly(domain: Domain): Domain {
-  // NUR der beregnete Block wird zur Cash-Crop-Rotation umgebaut (Wasser bevorzugt Mais/Soja).
-  //  Die Trockenrotation (pool:"dryland") ist bereits reine Getreide-/Raps-Cash-Crop und bleibt
-  //  UNVERÄNDERT erhalten — sonst rollt sie in die beregnete Fläche und der Ramp-scale (areaByYear ÷
-  //  Basisfläche) zieht sie ab Jahr 1 wieder heraus (Y0-Spike + Kollaps auf die beregnete Fläche).
-  const dry = domain.anbauplan.filter((a) => a.pool === "dryland");
-  const irrHa = domain.anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0);
-  const rot: { cropId: CropId; share: number }[] = [
-    { cropId: "mais", share: 0.25 },
-    { cropId: "soja_luzerne", share: 0.20 },
-    { cropId: "weizen", share: 0.25 },
-    { cropId: "winterraps", share: 0.15 },
-    { cropId: "gerste_zw", share: 0.15 },
-  ];
-  const irrPlan: AnbauEntry[] = rot.map((r) => ({
-    id: `ab-cash-${r.cropId}`,
-    cropId: r.cropId,
-    areaHa: Math.round(irrHa * r.share),
-    plantingPeriod: CROP_CAL[r.cropId].plant,
-    harvestPeriods: CROP_CAL[r.cropId].harvest.slice(),
-  }));
-  const anbauplan: AnbauEntry[] = [...irrPlan, ...dry];
-  const machineCatalog = domain.machineCatalog.filter((m) => !VALUE_ONLY_MACHINE_IDS.has(m.id));
-  // Kultur-Politik (Kartoffel-Ramp/Markt-Caps) greift ohne Wertkulturen nicht — leeren.
-  return { ...domain, anbauplan, machineCatalog, cropPolicy: {} };
-}
 
-/** Effektive Domäne nach aktiver Stufe/Scope — DIESELBE Transformation wie im Composer, damit
- *  direkte Ableitungen (Dashboard-Kultur-Karten: Anbaustruktur, Contribution, Stufen-Board)
- *  bei Stufe 1 (nur Ackerbau) bzw. Scope valueOnly konsistent zur GuV rechnen. */
-export function scopedDomain(domain: Domain): Domain {
-  // Entity-Sicht zuerst (Vollkosten-Standalone der Gesellschaft), dann Stage/Scope darauf.
-  const ev = domain.entityView;
-  const d = (ev && ev !== "combined") ? scopeToEntity(domain, ev) : domain;
-  if (d.growth?.stage === "s1a") return scopeToCashOnly(d);
-  if ((d.scope ?? "full") === "valueOnly") return scopeToValueOnly(d);
-  return d;
-}
 
 /* --------------------------------------------------------------------------
  * Finanzierung: Vertrag → DebtTranche + abgeleitete Kennzahlen (Composer + View).
@@ -4794,34 +4594,18 @@ export function deriveReplacementCapex(domain: Domain, scenarioId: string): {
  * buildModelState — Composer: Domäne → gültiger ModelState.
  * ------------------------------------------------------------------------ */
 export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.baseScenarioId): ModelState {
-  // Scope 'valueOnly': Anbauplan auf Wertkulturen filtern und Maschinen, die NUR Break Crops
-  // nutzen (z. B. Mähdrescher, Getreidedrille), aus der Flotte nehmen. Alle Downstream-Rechnungen
-  // (Fläche, Flotte/CAPEX, opex.fix, Beregnung/Lager, P&L) laufen dann auf `domain`.
-  // Entity-Sicht (Header) zuerst: auf die gewählte Gesellschaft filtern (Vollkosten-Standalone) —
-  //  danach greifen Scope/Stage auf dem gefilterten Modell. 'combined'/leer → Gesamtmodell.
-  const entityView = domainIn.entityView;
-  const isCombined = !entityView || entityView === "combined";
-  // Kombiniert: Intercompany-Maschinenmiete ELIMINIEREN — gemietete Einheiten als EIGEN behandeln
-  //  (rentedUnits→0), da Verleiher & Mieter dieselbe Gruppe sind. In den Entity-Sichten bleibt die Miete.
-  const domainE: Domain = isCombined
-    ? { ...domainIn, machineCatalog: domainIn.machineCatalog.map((m) => (m.rentedUnits ? { ...m, rentedUnits: 0 } : m)) }
-    : scopeToEntity(domainIn, entityView!);
-  const scope = domainE.scope ?? "full";
-  // Zwei-Pool: der Beregnungs-Ramp (scale/usedArea) bezieht sich NUR auf die beregneten Kulturen.
-  //  Dryland-Einträge (pool:"dryland") skalieren separat (totalByYear − areaByYear) und dürfen den
-  //  Beregnungs-scale nicht verwässern. Solange kein Dryland im Plan steht, ist der Filter ein No-Op.
-  const isIrr = (a: AnbauEntry) => a.pool !== "dryland";
-  const fullArea = domainE.anbauplan.filter(isIrr).reduce((s, a) => s + a.areaHa, 0);
-  // Stufe 1a (nur Ackerbau) hat Vorrang vor dem Scope: reine Cash-Crop-Rotation, kein Gemüse.
-  const cashOnly = domainE.growth?.stage === "s1a";
-  const domain: Domain = cashOnly ? scopeToCashOnly(domainE)
-    : scope === "valueOnly" ? scopeToValueOnly(domainE) : domainE;
-  const usedArea = domain.anbauplan.filter(isIrr).reduce((s, a) => s + a.areaHa, 0);
+  // SOLO-MODELL: keine Entity-Filterung, kein Scope, keine Stufen-Umschaltung mehr.
+  //  Es gibt eine operative Gesellschaft, der Anbauplan besteht ausschließlich aus
+  //  Wertkulturen, und Intercompany-Maschinenmiete existiert nicht (rentedUnits immer 0).
+  const isCombined = true;
+  const domain: Domain = domainIn;
+  const fullArea = domain.anbauplan.reduce((s, a) => s + a.areaHa, 0);
+  const usedArea = fullArea;
   // Personal skaliert mit der genutzten Fläche (bevorzugt); die verbleibende Flotte bleibt
   // je Typ konservativ voll (Spitzenmonat-Sizing skaliert nicht linear) — nur Break-only-
   // Maschinen entfallen. areaFactor = genutzte/volle Fläche.
   const areaFactor = fullArea > 0 ? usedArea / fullArea : 1;
-  const scopeFactor = scope === "valueOnly" ? areaFactor : 1;
+  const scopeFactor = 1;   // Solo-Modell: kein Scope-Abschlag mehr (areaFactor bleibt für die Flotte)
 
   const sf = stageFactorOf(domain.stage);
   const farmId = "farm-neos";
@@ -5038,13 +4822,9 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     return a && a > 0 ? a / baseArea : 1;
   });
   const dScale = scale.map((s, y) => s - (y > 0 ? scale[y - 1] : 0));
-  // Maschinen-Skalierung (Anti-Doppelzählung): übernommene Betriebe (asset-Deals) bringen ihre
-  //  Flotte MIT (Maschinen-Zeitwert im Deal) → ihre beregnete Fläche wird aus der Flotten-Vintage-
-  //  Skalierung herausgerechnet. Pacht-Übernahmen (asset-light, ohne Maschinen) bleiben enthalten.
-  const assetIrrCum = (y: number) => (gEff?.acquisitions ?? [])
-    .filter((d) => d.dealType === "asset" && Math.round(d.year) <= y)
-    .reduce((s, d) => s + (d.irrHa ?? 0), 0);
-  const machScale = scale.map((sc, y) => Math.max(0, (baseArea * sc - assetIrrCum(y)) / baseArea));
+  // Maschinen-Skalierung: ohne Betriebsübernahmen (entfallen) identisch mit der Flächen-
+  //  Skalierung — es gibt keine mitgekaufte Fremdflotte mehr herauszurechnen.
+  const machScale = scale.slice();
   const dMachScale = machScale.map((s, y) => s - (y > 0 ? machScale[y - 1] : 0));
   // Kultur-Politik-Kurven (Kartoffel-Ramp/Tomaten-Fix/Residual) — EINMAL hier abgeleitet, treiben
   //  Umsatz (cropPlansMY), Subventionen, OPEX-Fix, Lager-/Maschinen-Vintages und Finanzierungs-Vintages.
@@ -5144,12 +4924,10 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // Basiswerte (Jahr-1 / scale=1) → Monatswerte:
   const baseFixMonthly = Math.round((annualFixEur * 100) / 12);
   const baseMachMonthly = Math.round(machineServiceAnnualCent(domain, scenarioId) / 12);
-  const baseRentMonthly = Math.round(machineRentAnnualCent(domain, scenarioId) / 12);
-  // Intercompany-Miet-ERTRAG: in der Verleiher-Sicht der Gesellschaft, die die Einheiten verleiht
-  //  (rentedFrom je Maschine, Default Isolde). Gemietete Maschinen laufen beim MIETER → aus der VOLLEN
-  //  Domäne (domainIn) gerechnet, gefiltert auf lessor == aktuelle Entity. Negativ in OpEx → hebt EBITDA
-  //  des Verleihers. In 'combined' 0 (eliminiert). Konsistent zur Mieter-OPEX (Summe über alle Verleiher).
-  const rentIncomeCent = !isCombined ? machineRentAnnualCent(domainIn, scenarioId, entityView!) : 0;
+  const baseRentMonthly = 0;   // Intercompany-Maschinenmiete entfällt im Solo-Modell
+  // Intercompany-Miet-ERTRAG entfällt im Solo-Modell: es gibt keine zweite operative
+  //  Gesellschaft, die Maschinen verleiht.
+  const rentIncomeCent = 0;
   const baseRentIncomeMonthly = Math.round(-rentIncomeCent / 12);
   const baseTransMonthly = Math.round(transportTotalCent / 12);
   const baseSgaMonthly = Math.round(overheadMonthly * scopeFactor);
@@ -5177,11 +4955,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       const areaY = baseArea * scale[y];
       const thirdCent = Math.max(0, areaY - ownHa) * PACHT_PER_HA * 100 * iIn(y);
       const besitzCent = (pc && !pc.ifrs16) ? ownHa * besitzRate * pachtIndexFactor(pc, y) : 0;
-      // Wiring: laufende Pacht der Pacht-Übernahmen (Lease-Deals) ab dem Übernahmejahr.
-      const leaseCent = (gEff?.acquisitions ?? [])
-        .filter((dd) => dd.dealType === "lease" && dd.year <= y)
-        .reduce((s, dd) => s + dd.totalHa * (dd.leaseRentPerHaCent ?? 30000) * iIn(y), 0);
-      return thirdCent + besitzCent + leaseCent;
+      return thirdCent + besitzCent;
     };
     // Auszahlungstranchen (Monat 1–12 → Anteil); ohne Konfiguration gleichmäßig über 12 Monate.
     const pm = pc?.payMonths && pc.payMonths.length ? pc.payMonths : null;
@@ -5321,29 +5095,9 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   //  Analog zur Gerste-Zweitfrucht als eigener Ertragsstrom modelliert (DB je ha ist bereits
   //  netto der variablen Kosten). Fließt in Bruttoergebnis + Cash; finanziert den Landzukauf-
   //  Kapitaldienst. Ernte der Break Crops ~Juli. Output-Inflation je Jahr.
-  const gpFwd = gEff;
-  // Ab der Vollintegration laufen die Trockenkulturen NATIV als Rain-fed-Kulturvarianten durch die
-  //  Erlös−Kosten-Maschinen-Rechnung (pool:"dryland" im Anbauplan). Der alte DB-Lump-Sum darf dann
-  //  NICHT mehr laufen (sonst Doppelzählung). Nur Fallback, wenn kein natives Dryland im Plan steht.
-  const hasNativeDryland = domain.anbauplan.some((a) => a.pool === "dryland");
-  if (!hasNativeDryland && years > 1 && gpFwd?.totalByYear && gpFwd.drylandRotation?.length) {
-    const dryDbPerHa = gpFwd.drylandRotation.reduce((s, r) => s + r.sharePct * r.dbPerHaCent, 0);
-    let prevTot = gpFwd.startTotalHa ?? gpFwd.totalByYear[0] ?? 0;
-    for (let y = 0; y < years; y++) {
-      const totHa = gpFwd.totalByYear[y] ?? prevTot; prevTot = totHa;
-      const dryHa = Math.max(0, totHa - (gpFwd.areaByYear[y] ?? 0));
-      const amt = Math.round(dryHa * dryDbPerHa * iOut(y));
-      if (amt <= 0) continue;
-      subsidies.push({
-        id: `dryland-db-y${y}`, name: "Deckungsbeitrag unberegnete Fläche (Trockenrotation)",
-        basis: "lump_sum", lumpSumCent: amt,
-        receiptPeriods: [6 + y * 12],
-        payout: [{ period: 6 + y * 12, share: 0.6 }, { period: 8 + y * 12, share: 0.4 }],
-        category: "national", active: true,
-      });
-    }
-  }
-
+  /* ENTFERNT 31.07.2026: Deckungsbeitrags-Pauschale der unberegneten Trockenrotation.
+     Sie war der Fallback für Stände ohne native Dryland-Kulturen; im Solo-Modell gibt es
+     weder Trockenrotation noch unberegnete Restfläche (totalByYear === areaByYear). */
   // CropPlans über die Jahre replizieren (Fläche × scale, Perioden + y·12).
   // Kultur-Skalierungspolitik: je Kultur eigener Flächenpfad (cropFactor, oben abgeleitet).
   const cropPlansMY: CropPlan[] = years <= 1 ? cropPlans : cropPlans.flatMap((cp) =>
@@ -5459,90 +5213,24 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     }
   }
 
-  // Wachstum — Land-/Betriebszukauf (Übernahme): Δ Gesamtfläche je Jahr × €/ha als Land-CAPEX
-  //  (assetClass 'land' → keine AfA). Wirkt auf Bilanz (PPE-Land) & Cashflow (Investition),
-  //  die Bilanz-Identität erzwingt die Engine strukturell.
-  //  Finanzierung: eigener Übernahme-/Bodenkredit (acquisition facility), im Kaufjahr gezogen
-  //  (LTV editierbar via growth.acqDebtShare; Default 100 % zunächst — Landkäufe hypothekarisch/
-  //  über Übernahmekredit finanziert, damit die Liquidität trägt). Rest (1−LTV) aus Kasse/Equity.
+  /* ENTFERNT 31.07.2026: Land-/Betriebszukauf und das Stufe-3b-Akquiseprofil (Land-CAPEX,
+     Übernahme-/Bodenkredit, Betriebskauf mit Maschinenbestand, Pacht-Ablöse). NEOTERRA wächst
+     über zusätzliche PACHTFLÄCHE — Landerwerb ist nicht Teil des Plans. */
   const gp = gEff;
-  // Bei konfiguriertem Akquiseprofil steuern die Deals die Akquise-CAPEX (s. u.) → generischer
-  //  ha-Zukauf entfällt, um Doppelzählung zu vermeiden.
-  if (years > 1 && gp?.totalByYear && (gp.acqEurPerHaCent ?? 0) > 0 && !(gp.acquisitions?.length)) {
-    const acq = gp.acqEurPerHaCent ?? 0;
-    const ltv = gp.acqDebtShare != null ? Math.max(0, Math.min(1, gp.acqDebtShare)) : 1;
-    let prevTotal = gp.startTotalHa ?? gp.totalByYear[0] ?? 0;
-    for (let y = 0; y < years; y++) {
-      const tot = gp.totalByYear[y] ?? prevTotal;
-      const dHa = Math.max(0, tot - prevTotal);
-      prevTotal = tot;
-      if (dHa <= 0) continue;
-      const amt = Math.round(dHa * acq * iCap(y));
-      capexMY.push({
-        id: `cx-land-acq-y${y}`,
-        name: `Flächen-Zukauf/Übernahme (${Math.round(dHa)} ha)`,
-        assetClass: "land",
-        amount: amt,
-        purchasePeriod: y * 12,
-        usefulLifeMonths: 1200, usefulLifeFiscalMonths: 1200,
-        financingMode: ltv > 0 ? "loan" : "cash",
-      });
-      if (ltv > 0) {
-        debtMY.push({
-          id: `debt-land-acq-y${y}`,
-          name: `Übernahme-/Bodenkredit ${START_YEAR + y}`,
-          principal: Math.round(amt * ltv),
-          drawPeriod: y * 12,
-          termMonths: gp.acqLoanTermMonths ?? 144,   // Default 12 J. Annuität (editierbar)
-          rateBasis: "fixed", fixedRate: 0.05,
-          repayment: "annuity",
-        });
-      }
-    }
-  }
-
-  // Wiring: Farm-Akquiseprofil (Stufe 3b) — je Deal Assets + Finanzierung.
-  //  · asset (Betriebskauf): Land/Gebäude (kein AfA) + Maschinen-Zeitwert (AfA 8 J.).
-  //  · lease (Pacht-Übernahme): Ablöse als immaterieller Wert (AfA 10 J.); laufende Pacht s. opex.pacht.
-  //  Finanzierung: debtShare × Gesamtinvest als Akquisitionskredit (Annuität 10 J.); Rest bar/EK.
-  //  Capex-Auszahlung − Kreditziehung = Eigenmittelanteil (korrekter Cash-Effekt).
-  if (years > 1 && gp?.acquisitions?.length) {
-    for (const d of gp.acquisitions) {
-      const y = Math.max(0, Math.min(years - 1, Math.round(d.year)));
-      const price = Math.round(d.totalHa * d.eurPerHaCent * iCap(y));
-      const mach = d.dealType === "asset" ? Math.round(d.machineValueCent * iCap(y)) : 0;
-      const invest = price + mach;
-      if (invest <= 0) continue;
-      const dShare = Math.max(0, Math.min(1, d.debtShare ?? 0));
-      if (d.dealType === "asset") {
-        capexMY.push({ id: `cx-farm-land-${d.id}`, name: `${d.name} — Land/Gebäude`, assetClass: "land",
-          amount: price, purchasePeriod: y * 12, usefulLifeMonths: 1200, usefulLifeFiscalMonths: 1200, financingMode: "cash" });
-        if (mach > 0) capexMY.push({ id: `cx-farm-mach-${d.id}`, name: `${d.name} — Maschinen (Zeitwert)`, assetClass: "machinery",
-          amount: mach, purchasePeriod: y * 12, usefulLifeMonths: 96, usefulLifeFiscalMonths: 84, financingMode: "cash" });
-      } else {
-        capexMY.push({ id: `cx-farm-lease-${d.id}`, name: `${d.name} — Pacht-Ablöse`, assetClass: "other",
-          amount: price, purchasePeriod: y * 12, usefulLifeMonths: 120, usefulLifeFiscalMonths: 120, financingMode: "cash" });
-      }
-      if (dShare > 0) {
-        debtMY.push({ id: `debt-farm-${d.id}`, name: `Akquisitionskredit ${d.name}`,
-          principal: Math.round(invest * dShare), drawPeriod: y * 12, termMonths: 120,
-          rateBasis: "fixed", fixedRate: 0.05, repayment: "annuity" });
-      }
-    }
-  }
 
   // Wachstum — Beregnungsausbau (Pivot/Verrohrung/Pumpe): Δ eigene beregnete ha × €/ha als
-  //  Irrigation-CAPEX (assetClass 'irrigation', AfA). Nur EIGENE Umwandlung Trocken→beregnet —
-  //  bereits beregnete ha aus Übernahmen (deal.irrHa) bringen ihre Pivots mit → nicht doppelt.
-  //  Finanzierung: acqDebtShare als Investitionskredit; Rest bar/EK.
+  //  Irrigation-CAPEX (assetClass 'irrigation', AfA). Greift erst ab irrig.capex_from_year —
+  //  davor wird bereits beregnete Fläche gepachtet. Finanzierung: 50 % Investitionskredit.
   if (years > 1 && gp?.areaByYear && (gp.irrigEurPerHaCent ?? 0) > 0 && !(domain.capexPlanActive?.bewaesserung)) {
     const perHa = gp.irrigEurPerHaCent ?? 0;
-    const ltv = gp.acqDebtShare != null ? Math.max(0, Math.min(1, gp.acqDebtShare)) : 0.5;
-    const dealIrrIn = (y: number) => (gp.acquisitions ?? []).filter((d) => Math.round(d.year) === y).reduce((s, d) => s + (d.irrHa ?? 0), 0);
+    // Beregnungs-Investitionskredit: 40 % FK, Rest Eigenmittel. Der Wert kam bisher aus
+    //  growth.acqDebtShare (0,4) — der Parameter gehörte zum entfernten Flächenzukauf und
+    //  steht hier jetzt als eigener Wert, damit sich die Finanzierung nicht still verschiebt.
+    const ltv = 0.4;
     let prevIrr = gp.startIrrigatedHa ?? gp.areaByYear[0] ?? 0;
     for (let y = 0; y < years; y++) {
       const irrY = gp.areaByYear[y] ?? prevIrr;
-      const dOwn = Math.max(0, (irrY - prevIrr) - dealIrrIn(y)); // eigene Neu-Beregnung
+      const dOwn = Math.max(0, irrY - prevIrr);   // neu zu beregnende Fläche des Jahres
       prevIrr = irrY;
       if (dOwn <= 0) continue;
       if (y < irrigFromYear) continue;   // bis dahin wird beregnete Fläche gepachtet, nicht gebaut

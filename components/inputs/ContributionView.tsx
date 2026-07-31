@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
-import { deriveContribution, scopedDomain, CROP_COLOR } from "../../store/model";
+import { deriveContribution, CROP_COLOR } from "../../store/model";
 import { Segmented } from "../primitives/Segmented";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
@@ -23,7 +23,7 @@ export function ContributionView() {
   const tick = useModelStore((s) => s.recalcTick);
   const [mode, setMode] = React.useState<"db" | "be">("db");
   // Gescopte Domäne → bei STUFE 1 (Cash-only) konsistent zur GuV/KpiBand (keine Wertkulturen).
-  const res = React.useMemo(() => deriveContribution(scopedDomain(domain), sc), [domain, sc, tick]);
+  const res = React.useMemo(() => deriveContribution(domain, sc), [domain, sc, tick]);
 
   const val = (c: any) => (mode === "be" ? c.betriebsergebnisCent : c.contributionCent);
   const perHa = (c: any) => (mode === "be" ? c.bePerHaCent : c.contribPerHaCent);

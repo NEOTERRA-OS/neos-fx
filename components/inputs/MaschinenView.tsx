@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, selectDerivedCapex, selectScopedDomain, readAssumption } from "../../store/modelStore";
-import { machineUnitPriceCent, ENTITY_ISOLDE, type MachineType } from "../../store/model";
+import { machineUnitPriceCent, type MachineType } from "../../store/model";
 import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
@@ -158,15 +158,9 @@ export function MaschinenView() {
                         <td className="px-2 py-1.5 text-right">
                           {isFleet ? (
                             <div className="inline-flex flex-col items-end gap-1">
+                              {/* Verleiher-Auswahl entfernt 31.07.2026: Intercompany-Miete setzte eine
+                                  zweite operative Gesellschaft voraus, die es nicht mehr gibt. */}
                               <NumberInput value={m.rentedUnits ?? 0} width={48} onCommit={(nn) => upd(m.id, (mm) => { mm.rentedUnits = Math.max(0, Math.round(nn)); })} />
-                              {(m.rentedUnits ?? 0) > 0 && (domain.entities?.length ?? 0) > 0 && (
-                                <select className="rounded-control border px-1.5 text-[10.5px]" style={{ ...selStyle, height: 26 }}
-                                  title={t("Verleiher-Gesellschaft (wer die Maschinen bereitstellt)")}
-                                  value={m.rentedFrom ?? ENTITY_ISOLDE}
-                                  onChange={(e) => upd(m.id, (mm) => { mm.rentedFrom = e.target.value; })}>
-                                  {(domain.entities ?? []).map((en) => <option key={en.id} value={en.id}>{en.name}</option>)}
-                                </select>
-                              )}
                             </div>
                           ) : <span className="num text-[11px] text-nx-text-muted">–</span>}
                         </td>

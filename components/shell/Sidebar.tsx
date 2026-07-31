@@ -17,7 +17,7 @@ export type ViewId =
   | "dashboard" | "preise" | "anbauplan" | "maschinen" | "leistung"
   | "personal" | "arbeitszeit" | "finanzierung" | "subventionen" | "holding" | "eroeffnung" | "kulturkalk" | "investitionen"
   | "einsatz" | "bewertung" | "contribution" | "overhead" | "verwaltung"
-  | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht" | "anbaustrategie" | "hebel"
+  | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht" | "anbaustrategie"
   | "gesellschaften" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
   | "studio" | "abnahme" | "lagerkst";
 
@@ -33,7 +33,6 @@ const IA: Group[] = [
     { id: "kulturkalk", label: "Kultur-Kalkulation (Maßnahmen + Katalog)", view: "kulturkalk" },
     { id: "produktkatalog", label: "Produktkatalog (Dünger · PSM · Sorten)", view: "produktkatalog" },
     { id: "anbaustrategie", label: "Anbaustrategie & Fruchtfolge", view: "anbaustrategie" },
-    { id: "hebel", label: "Wertkulturen-Hebel (Gesellschafter)", view: "hebel" },
     { id: "abnahme", label: "Abnahmeverträge (Off-taker)", view: "abnahme" },
     { id: "lagerkst", label: "Lager & Packhaus (Kostenstelle)", view: "lagerkst" },
   ]},

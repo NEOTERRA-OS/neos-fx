@@ -7,7 +7,7 @@ import { AssumptionGroupCards } from "./AssumptionGroupCards";
 import { AnbauAnalysePanel } from "./AnbauAnalysePanel";
 import { AnbauWhatIfPanel } from "./AnbauWhatIfPanel";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
-import { deriveCropAreasMY, scopedDomain, type CropPolicy } from "../../store/model";
+import { deriveCropAreasMY, type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
 import { Droplets, Sun, X } from "lucide-react";
 import { Segmented } from "../primitives/Segmented";
@@ -59,10 +59,8 @@ export function AnbauplanView() {
   const { domain, view, patch } = useModelStore();
   const sc = view.scenarioId;
   const [tab, setTab] = React.useState<"anbau" | "ertraege" | "preise">("anbau");
-  // Stufe 1 (s1a): reiner Ackerbau-Benchmark → abgeleitete Cash-Crop-Rotation (schreibgeschützt).
-  //  Sonst: der editierbare Basis-Anbauplan (mit Wertkulturen).
-  const stageCashOnly = domain.growth?.stage === "s1a";
-  const planDomain = stageCashOnly ? scopedDomain(domain) : domain;
+  const stageCashOnly = false;   // Ackerbau-Benchmark entfallen: es gibt nur den Wertkultur-Plan
+  const planDomain = domain;
   const plan = planDomain.anbauplan;
   // Trockenrotation läuft jetzt NATIV im Anbauplan (pool:"dryland"). Aufteilung rein über das pool-Feld.
   const agroOf = (e: { cropId: string; areaHa: number }) => {

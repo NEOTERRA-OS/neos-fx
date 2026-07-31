@@ -721,36 +721,9 @@ export function computeHolding(
   };
 }
 
-/**
- * Konzern-Konsolidierung: OpCo + Holding. Die Management-Fee ist ein interner
- * Transfer und wird eliminiert (nur Holding-Überkopf mindert das Konzern-EBITDA).
- * Keine Steuergruppe: Konzernsteuer = Σ der Einzelsteuern.
- */
-export function consolidateGroup(
-  opco: ComputedModel,
-  holding: import('./types').HoldingResult,
-): import('./types').GroupResult {
-  const n = opco.timeline.periodCount;
-  const L = (key: string, label: string, values: number[]) => makeLine(key, label, 'money', values);
-  const holdingOverhead = holding.operatingCosts.values.map(
-    (oc, i) => oc + holding.personnelCost.values[i],
-  );
-  const ebitda = opco.pnl.ebitda.values.map((e, i) => e - holdingOverhead[i]);
-  const ebit = ebitda.map((e, i) => e - opco.pnl.depreciation.values[i]);
-  const tax = opco.pnl.tax.values.map((t, i) => t + holding.tax.values[i]);
-  // Konzern-NI: OpCo-NI + Holding-Beitrag OHNE IC-Fee (eliminiert)
-  const netIncome = opco.pnl.netIncome.values.map(
-    (ni, i) => ni - holding.operatingCosts.values[i] - holding.personnelCost.values[i]
-      - holding.financingInterest.values[i] - holding.tax.values[i],
-  );
-  return {
-    ebitda: L('grp.ebitda', 'Konzern-EBITDA', ebitda),
-    ebit: L('grp.ebit', 'Konzern-EBIT', ebit),
-    netIncome: L('grp.ni', 'Konzern-Jahresergebnis', netIncome),
-    tax: L('grp.tax', 'Konzernsteuer (Σ)', tax),
-    holdingCostShare: L('grp.holdcost', 'Holding-Kostenanteil', holdingOverhead),
-  };
-}
+/* ENTFERNT 31.07.2026: consolidateGroup — Konzern-Aggregation über mehrere Gesellschaften.
+   Die Funktion hatte im gesamten Repo keinen einzigen Aufrufer. computeHolding bleibt:
+   die NEOS Holding GmbH wird weiterhin gerechnet. */
 
 /** Ein fakturierter Erlösstrom mit eigenem Zahlungsziel (Paket B).
  *  Σ aller Terme einer Periode == revenue[p] (exakt, Restbetrag im letzten Term). */

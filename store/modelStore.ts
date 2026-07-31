@@ -3,7 +3,7 @@ import { create } from "zustand";
 import type { ComputedModel, ModelState, Granularity } from "../core/types";
 import { computeModel } from "../core/engine";
 import { aggregateComputed } from "../core/aggregate";
-import { SEED, buildModelState, deriveCapex, buildAnbauplan, scopedDomain, BASE_SCENARIO_ID, type Domain, type DerivedCapex, type StageSel } from "./model";
+import { SEED, buildModelState, deriveCapex, BASE_SCENARIO_ID, type Domain, type DerivedCapex } from "./model";
 import { setFormatLocale } from "../design/format";
 import { setLang as i18nSetLang, localeFor, type Lang } from "../lib/i18n";
 
@@ -33,9 +33,6 @@ type Store = {
   setGranularity: (g: Granularity) => void;
   setCurrency: (c: "EUR" | "RON") => void;
   setLang: (l: Lang) => void;
-  setStage: (stage: StageSel) => void;
-  setScope: (scope: "full" | "valueOnly") => void;
-  setEntityView: (entityId: string) => void;
   loadDomain: (domain: Domain) => void;
   patch: (mutator: (draft: Domain) => void) => void;
 };
@@ -56,23 +53,9 @@ export const useModelStore = create<Store>((set) => ({
   setGranularity: (g) => set((s) => ({ view: { ...s.view, granularity: g } })),
   setCurrency: (c) => set((s) => { setFormatLocale(localeFor(s.view.lang), c); return { view: { ...s.view, currency: c } }; }),
   setLang: (l) => set((s) => { i18nSetLang(l); setFormatLocale(localeFor(l), s.view.currency); return { view: { ...s.view, lang: l } }; }),
-  setStage: (stage) =>
-    set((s) => {
-      const next = structuredClone(s.domain);
-      // STUFE = Wachstumspfad (s1 Status Quo flach · s2 Vollberegnung · s3b Flächen-Ramp).
-      //  Der BASIS-Anbauplan bleibt IMMER die heutige Rotation (4.000 ha beregnet) — der Ramp
-      //  startet bei t0; Flotten-/CAPEX-/Lager-Basis rechnen auf derselben t0-Basis (kein
-      //  Sprung des statischen Plans auf 10k/20k mehr — das erzeugte 20.000 ha bei „Stufe 1").
-      next.stage = 1;
-      //  1 = nur Ackerbau (Benchmark, s1a) · 1a = + Wertkulturen (s1, Default) · 2b = + Beregnung · 3c = + Fläche&Beregnung.
-      if (next.growth) next.growth.stage =
-        stage === "3c" ? "s3b" : stage === "2b" ? "s2" : stage === "1" ? "s1a" : "s1";
-      return { domain: next, recalcTick: s.recalcTick + 1 };
-    }),
-  setScope: (scope) =>
-    set((s) => { const d = structuredClone(s.domain); (d as any).scope = scope; return { domain: d, recalcTick: s.recalcTick + 1 }; }),
-  setEntityView: (entityId) =>
-    set((s) => { const d = structuredClone(s.domain); (d as any).entityView = entityId; return { domain: d, recalcTick: s.recalcTick + 1 }; }),
+  // ENTFERNT 31.07.2026: setStage / setScope / setEntityView. Es gibt nur noch eine Stufe,
+  //  einen Scope (Wertkulturen) und eine operative Gesellschaft; die drei Setter konnten das
+  //  Modell nur beschädigen (Anbauplan auf Cash Crops umbauen, Flächenkurve flachdrücken).
   loadDomain: (domain) => set((s) => ({ domain, recalcTick: s.recalcTick + 1 })),
   patch: (mutator) =>
     set((s) => {
@@ -125,14 +108,14 @@ export function selectComputedAnnual(s: Store): ComputedModel {
 let _sdKey = "", _sd: Domain | null = null;
 export function selectScopedDomain(s: Store): Domain {
   const key = `${s.recalcTick}`;
-  if (key !== _sdKey || !_sd) { _sd = scopedDomain(s.domain); _sdKey = key; }
+  if (key !== _sdKey || !_sd) { _sd = s.domain; _sdKey = key; }
   return _sd;
 }
 
 let _dcKey = "", _dc: DerivedCapex[] | null = null;
 export function selectDerivedCapex(s: Store): DerivedCapex[] {
   const key = `${s.recalcTick}|${s.view.scenarioId}`;
-  if (key !== _dcKey || !_dc) { _dc = deriveCapex(scopedDomain(s.domain), s.view.scenarioId); _dcKey = key; }
+  if (key !== _dcKey || !_dc) { _dc = deriveCapex(s.domain, s.view.scenarioId); _dcKey = key; }
   return _dc;
 }
 

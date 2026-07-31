@@ -415,5 +415,13 @@ const B12: Record<string, string> = {
   "Aktives Szenario. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,5.": "Active scenario. Red marks covenant breaches: DSCR < 1.10 or net debt / EBITDA > 3.5.",
   "Net Debt / EBITDA": "Net debt / EBITDA",
   "Kultur-Politik: expliziter Skalierungspfad je Kultur (Kartoffel 300 \u2192 1.000 ha bis 2031)": "Crop policy: explicit scaling path per crop (potato 300 \u2192 1,000 ha by 2031)",
+  "Meilensteine des Skalierungspfads": "Scaling path milestones",
+  "Betriebsfl\u00e4che": "Farmed area",
+  "Zielfl\u00e4che erreicht": "Target area reached",
+  "Letztes Planjahr": "Final plan year",
+  "Skalierungspfad der Kulturen": "Crop scaling path",
+  "Fl\u00e4chen-Ramp (ha je Jahr \u2014 editierbar)": "Area ramp (ha per year \u2014 editable)",
+  "\u03a3 Beregnungsausbau": "\u03a3 irrigation build-out",
+  "Beregnungsausbau \u2192 Pivot-Asset (AfA, 15 J.), finanziert zu 40 % \u00fcber einen Investitionskredit. Greift erst ab dem in den Annahmen gesetzten Startjahr \u2014 davor wird bereits beregnete Fl\u00e4che gepachtet.": "Irrigation build-out \u2192 pivot asset (15-yr depreciation), 40 % funded by an investment loan. Only applies from the start year set in the assumptions \u2014 before that, already-irrigated land is leased.",
 };
 export default B12;

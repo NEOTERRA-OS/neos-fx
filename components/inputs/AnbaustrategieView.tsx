@@ -53,8 +53,8 @@ export function AnbaustrategieView() {
     const by = new Map(c.crops.map((x) => [x.cropId, x]));
     const dbIrr = (id: string) => by.get(id)?.contribPerHaCent ?? 0;                 // CENT/ha beregnet
     const revIrr = (id: string) => { const x = by.get(id); return x && x.areaHa > 0 ? (x.revenueCent + x.subsidyCent) / x.areaHa : 0; };
-    const dry = domain.growth?.drylandRotation ?? [];
-    const dbDry = (id: string) => (dry.find((r) => r.cropId === id)?.dbPerHaCent) ?? Math.round(dbIrr(id) * 0.55);
+    // Trockenrotation entfallen — Rain-fed-DB als Näherung 55 % des beregneten DB, falls doch angefragt.
+    const dbDry = (id: string) => Math.round(dbIrr(id) * 0.55);
     return { dbIrr, revIrr, dbDry };
   }, [domain, sc, tick]);
 

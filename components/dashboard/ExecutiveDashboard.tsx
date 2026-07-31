@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, selectComputedAnnual, selectComputedMonthly } from "../../store/modelStore";
-import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, scopedDomain, START_YEAR } from "../../store/model";
+import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, START_YEAR } from "../../store/model";
 import { useModelStore as useStore, readAssumption } from "../../store/modelStore";
 import { cropName, cropColor, cropYield, cropLoss } from "../inputs/cropCalc";
 import { CheckPanel } from "../statements/CheckPanel";
@@ -48,7 +48,7 @@ export function ExecutiveDashboard() {
   const currency = useModelStore((s) => s.view.currency);
   // Kultur-Karten laufen auf der EFFEKTIVEN Domäne (Stufe 1 = nur Ackerbau, sonst Scope) —
   //  damit Anbaustruktur/Contribution/Stufen-Board konsistent zur GuV sind (Dashboard „bei 1" komplett angepasst).
-  const sdomain = React.useMemo(() => scopedDomain(domain), [domain]);
+  const sdomain = domain;   // Solo-Modell: keine Scope-/Entity-Filterung mehr
   const contrib = React.useMemo(() => deriveContribution(sdomain, scenarioId), [sdomain, scenarioId]);
 
   const p = annual.pnl, k = annual.kpis, b = annual.balanceSheet;
@@ -212,32 +212,20 @@ function FinancialEvolution({ annual }: { annual: ComputedModel }) {
   );
 }
 
-/** Stufen-Board — Meilensteine des Ramps nebeneinander (Stufe 1 · Stufe 2 · Stufe 3b):
- *  Flächen, Kartoffel-/Tomaten-Mengen (Kultur-Politik!), Umsatz, EBITDA, Jahresüberschuss. */
+/** Meilenstein-Board des Skalierungspfads: Fläche, Kartoffel-/Tomatenmengen, Umsatz,
+ *  EBITDA und Jahresüberschuss zu Start, Zielerreichung und letztem Planjahr. */
 function StufenBoard({ domain, annual, scenarioId }: { domain: any; annual: ComputedModel; scenarioId: string }) {
   const my = deriveCropAreasMY(domain);
   const gEff = effectiveGrowth(domain.growth);
-  // Meilensteine STUFENBEWUSST (aktiver Wachstumspfad, nicht immer der 3b-Endausbau):
-  //  s1  → Start + Status quo (flach, letztes Jahr)
-  //  s2  → Start + Erreichungsjahr der Vollberegnung (≈2029) + Zieljahr (falls später)
-  //  s3b → Start + Stufe 2 (≥10.000 ha beregnet) + Stufe 3b (≥20.000 ha bzw. letztes Jahr)
-  const stage: string = domain.growth?.stage ?? "s1";
-  const first = (min: number) => my.irrHa.findIndex((v) => v >= min - 1);
+  // Meilensteine des Skalierungspfads: Start · das Jahr, in dem die Zielfläche erstmals
+  //  erreicht ist · das letzte Planjahr. Die früheren Stufen-Zweige (s1/s1a/s2/s3b) sind
+  //  entfallen — es gibt nur noch einen Pfad.
   const last = my.years - 1;
-  const startTot = gEff?.totalByYear?.[0] ?? my.irrHa[0];
-  // Stufen-Semantik: 1 (Ackerbau) · 1a (+Wertkulturen) · 2b (+Vollberegnung) · 3c (+Fläche&Beregnung).
-  const cand: { y: number; label: string }[] = [{ y: 0, label: stage === "s1a" ? t("1 · Ackerbau") : t("1a · Start") }];
-  if (stage === "s1a") {
-    cand.push({ y: last, label: t("Status quo (Ackerbau)") });
-  } else if (stage === "s1") {
-    cand.push({ y: last, label: t("1a · Wertkulturen") });
-  } else if (stage === "s2") {
-    const y2 = first(startTot); if (y2 > 0) cand.push({ y: y2, label: t("2b · Vollberegnung") });
-    cand.push({ y: last, label: t("Zieljahr") });
-  } else {
-    const y2 = first(Math.min(startTot, 10000)); if (y2 > 0) cand.push({ y: y2, label: t("2b · Beregnung") });
-    const y3 = first(20000); cand.push({ y: y3 >= 0 ? y3 : last, label: t("3c · Ziel") });
-  }
+  const targetHa = my.irrHa[last] ?? 0;
+  const yReach = my.irrHa.findIndex((v) => v >= targetHa - 1);
+  const cand: { y: number; label: string }[] = [{ y: 0, label: t("Start") }];
+  if (yReach > 0 && yReach < last) cand.push({ y: yReach, label: t("Zielfläche erreicht") });
+  cand.push({ y: last, label: t("Letztes Planjahr") });
   const miles = cand.filter((m, i, a) => a.findIndex((x) => x.y === m.y) === i);
 
   const pv = (li: { values: number[] }, y: number) => li.values[Math.min(y, li.values.length - 1)] ?? 0;
@@ -247,24 +235,19 @@ function StufenBoard({ domain, annual, scenarioId }: { domain: any; annual: Comp
   const tomT = (y: number) => (my.areas["tomate"]?.[y] ?? 0) * yieldOf("tomate");
   const f0 = (v: number) => fmtNumber(v, 0);
 
-  const totOf = (y: number) => gEff?.totalByYear?.[y] ?? my.irrHa[y];
-  const cashOnly = stage === "s1a"; // Stufe 1 = nur Ackerbau → keine Wertkultur-Zeilen.
-  const rows: ({ label: string; val: (y: number) => string | React.ReactNode } | null)[] = [
-    { label: t("Beregnete Fläche"), val: (y) => `${f0(my.irrHa[y])} ha` },
-    { label: t("Trockenrotation"), val: (y) => `${f0(Math.max(0, totOf(y) - my.irrHa[y]))} ha` },
-    { label: t("Gesamtfläche"), val: (y) => `${f0(totOf(y))} ha` },
-    // Beregnungsgrad in BLAU (Wasser) — der eigentliche Wachstumsmotor der Stufen.
-    { label: t("Beregnungsgrad"), val: (y) => <b style={{ color: "var(--nx-locate)" }}>{f0(totOf(y) > 0 ? my.irrHa[y] / totOf(y) * 100 : 0)} %</b> },
-    cashOnly ? { label: t("Kulturmix"), val: () => t("reine Cash-Crop-Rotation (kein Gemüse)") } : { label: t("Kartoffel (PRIO 1)"), val: (y) => `${f0(kartHa(y))} ha · ${f0(kartT(y))} t` },
-    cashOnly ? null : { label: t("Industrietomate (fix)"), val: (y) => `${f0(my.areas["tomate"]?.[y] ?? 0)} ha · ${f0(tomT(y))} t` },
+  // Trockenrotation, Gesamtfläche und Beregnungsgrad sind entfallen: im Solo-Modell ist die
+  //  gesamte Betriebsfläche beregnet, die drei Zeilen zeigten nur noch 0 ha bzw. konstant 100 %.
+  const shownRows: { label: string; val: (y: number) => string | React.ReactNode }[] = [
+    { label: t("Betriebsfläche"), val: (y) => `${f0(my.irrHa[y])} ha` },
+    { label: t("Kartoffel (PRIO 1)"), val: (y) => `${f0(kartHa(y))} ha · ${f0(kartT(y))} t` },
+    { label: t("Industrietomate"), val: (y) => `${f0(my.areas["tomate"]?.[y] ?? 0)} ha · ${f0(tomT(y))} t` },
     { label: t("Umsatz p.a."), val: (y) => fmtMoney(pv(annual.pnl.revenue, y) + pv(annual.pnl.subsidies, y)) + " €" },
     { label: "EBITDA", val: (y) => fmtMoney(pv(annual.pnl.ebitda, y)) + " €" },
     { label: t("Jahresüberschuss"), val: (y) => fmtMoney(pv(annual.pnl.netIncome, y)) + " €" },
   ];
-  const shownRows = rows.filter((r): r is { label: string; val: (y: number) => string | React.ReactNode } => r != null);
 
   return (
-    <Tile title={t("Stufen-Board — der Weg zum Zielbild")} hint={cashOnly ? t("Stufe 1 · reiner Ackerbau (Benchmark, kein Gemüse)") : t("Kultur-Politik: expliziter Skalierungspfad je Kultur (Kartoffel 300 → 1.000 ha bis 2031)")}>
+    <Tile title={t("Meilensteine des Skalierungspfads")} hint={t("Kultur-Politik: expliziter Skalierungspfad je Kultur (Kartoffel 300 → 1.000 ha bis 2031)")}>
       <div className="overflow-x-auto">
         <table className="w-full text-[12px]">
           <thead><tr>

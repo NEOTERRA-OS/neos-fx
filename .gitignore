@@ -8,3 +8,4 @@ dist/
 _shot*.cjs
 /tmp/
 .DS_Store
+__pycache__/

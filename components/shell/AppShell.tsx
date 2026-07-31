@@ -29,7 +29,6 @@ import { BewertungView } from "../inputs/BewertungView";
 import { ShareholderView } from "../inputs/ShareholderView";
 import { PachtView } from "../inputs/PachtView";
 import { AnbaustrategieView } from "../inputs/AnbaustrategieView";
-import { WertkulturenHebelView } from "../inputs/WertkulturenHebelView";
 import { AbnahmevertraegeView } from "../inputs/AbnahmevertraegeView";
 import { LagerKostenstelleView } from "../inputs/LagerKostenstelleView";
 import { CapexScenarienView } from "../inputs/CapexScenarienView";
@@ -43,7 +42,6 @@ import { LiquiditaetView } from "../inputs/LiquiditaetView";
 import { ExecutiveDashboard } from "../dashboard/ExecutiveDashboard";
 import { CheckPanel } from "../statements/CheckPanel";
 import { KpiBand } from "../kpi/KpiBand";
-import { StageSemanticsCard } from "../inputs/StageSemanticsCard";
 import { useModelStore, selectComputed, selectComputedAnnual } from "../../store/modelStore";
 import { deriveMassnahmenChecks, type Domain } from "../../store/model";
 import { autoLoadLatest, autoSave, getMyMaxRole, localLoad, localSave } from "../../store/persistence";
@@ -148,11 +146,6 @@ export function AppShell() {
             <button className="rounded-control border px-2 py-0.5 text-[11px]" style={{ borderColor: "currentColor" }} onClick={() => setReadOnly(false)}>{t("Bearbeiten aktivieren")}</button>
           </div>
         )}
-        {view === "dashboard" && (
-          <div className="px-6 pt-4 pb-1">
-            <StageSemanticsCard floating />
-          </div>
-        )}
         {showKpi && (
           <div className="px-6 pt-3 pb-1">
             <KpiBand annual={annual} currency={currency} periodLabel={annualLabel} />
@@ -171,7 +164,6 @@ export function AppShell() {
                 : view === "kommentare" ? <KommentareView />
                 : view === "team" ? <TeamAdminView />
                 : view === "anbaustrategie" ? <AnbaustrategieView />
-                : view === "hebel" ? <WertkulturenHebelView />
                 : view === "capexScenarien" ? <CapexScenarienView />
                 : view === "maschinen" ? <MaschinenHub />
                 : view === "investitionen" ? <InvestitionenView />

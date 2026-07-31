@@ -25,9 +25,8 @@ export function MaschinenSizingView() {
   const upd = (id: string, fn: (m: MachineType) => void) => patch((d) => { const i = d.machineCatalog.findIndex((m) => m.id === id); if (i >= 0) fn(d.machineCatalog[i]); });
   const mById = (id: string) => domain.machineCatalog.find((m) => m.id === id);
 
-  const stage = domain.growth?.stage ?? "s3b";
-  const stageLbl = stage === "s1a" ? t("Stufe 1 · nur Ackerbau") : stage === "s1" ? t("Stufe 1a · + Wertkulturen") : stage === "s2" ? t("Stufe 2 · Vollberegnung") : t("Stufe 3b · Flächen-Ramp");
-  // Bedarf/Flotte über die STUFEN-/SCOPE-gescopte Domäne (Stufe 1 = nur Ackerbau → keine Wertkultur-Maschinen).
+  const stageLbl = t("Skalierungspfad der Kulturen");
+  // Bedarf/Flotte über die Domäne (Solo-Modell: keine Stufen-/Scope-Filterung mehr).
   const sdomain = useModelStore(selectScopedDomain);
   const { machines, tractors } = deriveFleetSizing(sdomain, sc);
   const all = [...tractors, ...machines];

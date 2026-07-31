@@ -10,12 +10,7 @@ import type { Granularity } from "../../core/types";
 /** Global controls, always visible. Scenario switch tints the bar subtly (NO yellow —
  *  yellow stays the single CTA). Balance-check + convergence are always shown. */
 export function TopBar({ theme, onToggleTheme }: { theme: "light" | "dark"; onToggleTheme: () => void }) {
-  const { view, setScenario, setGranularity, setCurrency, setLang, setStage, setScope, setEntityView, recalcTick } = useModelStore();
-  const entityView = useModelStore((s) => (s.domain as any).entityView ?? "combined");
-  // Stufen-Anzeige aus dem WACHSTUMSPLAN — 1 (nur Ackerbau) · 1a (+ Wertkulturen) · 2b (+ Beregnung) · 3c (+ Fläche&Beregnung).
-  const growthStage = useModelStore((s) => s.domain.growth?.stage ?? "s1");
-  const stage: string = growthStage === "s3b" ? "3c" : growthStage === "s2" ? "2b" : growthStage === "s1a" ? "1" : "1a";
-  const scope = useModelStore((s) => (s.domain as any).scope ?? "full");
+  const { view, setScenario, setGranularity, setCurrency, setLang, recalcTick } = useModelStore();
   const computed = useModelStore(selectComputed);
   const balance = computed.checks.find((c) => c.id === "balance_zero");
   const converged = computed.meta.converged;
