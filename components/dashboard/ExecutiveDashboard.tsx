@@ -429,15 +429,21 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
                       // anderer Form. Ein Balken, der nichts sagt, was nicht danebensteht, ist
                       // keine Visualisierung, sondern Dekoration.
                       <td key={y} className="px-3 py-1.5 text-right" style={{ whiteSpace: "nowrap" }}>
-                        <span className="inline-flex items-baseline justify-end gap-1.5">
-                          <span className={"num " + (r.stark ? "font-semibold text-[13px]" : "")} style={{ color: farbe }}>
+                        {/* ZWEI FESTE SPALTEN in der Zelle. Vorher lagen Wert und
+                            Vorjahresvergleich in einem rechtsbündigen Flex — dadurch verschob
+                            der Badge den Wert nach links, und zwar je Zeile unterschiedlich
+                            weit: Zeilen ohne Vergleich (Margen, Covenants) standen am rechten
+                            Rand, Zeilen mit Vergleich davor. Die Zahlenkolonne war versetzt.
+                            Jetzt hat der Wert einen eigenen rechtsbündigen Block und der
+                            Vergleich einen Slot fester Breite — auch dort, wo keiner steht. */}
+                        <span className="flex items-baseline justify-end">
+                          <span className={"num " + (r.stark ? "font-semibold text-[13px]" : "")}
+                                style={{ color: farbe, textAlign: "right" }}>
                             {r.fmt ? r.fmt(v) : v}
                           </span>
-                          {r.kind === "geld" && (
-                            <span className="num text-[9.5px]" style={{ minWidth: 42, textAlign: "left" }}>
-                              {d === null ? <span className="text-nx-text-muted">·</span> : <Pfeil d={d} />}
-                            </span>
-                          )}
+                          <span className="num text-[9.5px]" style={{ width: 52, textAlign: "right", flex: "0 0 52px" }}>
+                            {r.kind === "geld" && (d === null ? <span className="text-nx-text-muted">·</span> : d !== null ? <Pfeil d={d} /> : null)}
+                          </span>
                         </span>
                       </td>
                     );
