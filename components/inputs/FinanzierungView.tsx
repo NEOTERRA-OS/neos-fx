@@ -186,7 +186,7 @@ export function FinanzierungView() {
               </Field>
               <Field label={t("Lieferant (Furnizor)")}><TextInput value={c.supplier ?? ""} width={220} onCommit={(v) => updC(c.id, (x) => { x.supplier = v; })} /></Field>
               <Field label={t("Bürge (Fideiusor)")}><TextInput value={c.guarantor ?? ""} width={220} onCommit={(v) => updC(c.id, (x) => { x.guarantor = v; })} /></Field>
-              <Field label={t("Ziehung (Periode)")}><NumberInput value={c.drawPeriod} width={64} onCommit={(n) => updC(c.id, (x) => { x.drawPeriod = Math.max(0, Math.round(n)); })} /></Field>
+              <Field label={t("Ziehung (Periode)")}><NumberInput value={c.drawPeriod} unit="month" width={64} onCommit={(n) => updC(c.id, (x) => { x.drawPeriod = Math.max(0, Math.round(n)); })} /></Field>
             </div>
 
             {/* Objekte / Paket */}
@@ -206,20 +206,20 @@ export function FinanzierungView() {
             {/* Kommerzielle Konditionen */}
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 px-4 py-3 md:grid-cols-4" style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
               <Field label={t("Objektwert netto")}>
-                <NumberInput value={c.entryValueCent ?? 0} moneyCent width={120} onCommit={(n) => updC(c.id, (x) => { x.entryValueCent = n > 0 ? n : undefined; })} />
+                <NumberInput value={c.entryValueCent ?? 0} unit="money" width={120} onCommit={(n) => updC(c.id, (x) => { x.entryValueCent = n > 0 ? n : undefined; })} />
                 <span className="caption text-[9.5px] text-nx-text-muted"> {c.entryValueCent ? "Override" : "= " + fmtMoney(f.entryValueCent) + " € (Σ)"}</span>
               </Field>
-              <Field label="Avans %"><NumberInput value={(c.avansRate ?? 0) * 100} width={64} suffix="%" onCommit={(n) => updC(c.id, (x) => { x.avansRate = n / 100; })} /></Field>
-              <Field label={t("Restwert %")}><NumberInput value={(c.residualRate ?? 0) * 100} width={64} suffix="%" onCommit={(n) => updC(c.id, (x) => { x.residualRate = n / 100; })} /></Field>
-              <Field label={t("Laufzeit (Monate)")}><NumberInput value={c.termMonths} width={64} onCommit={(n) => updC(c.id, (x) => { x.termMonths = Math.max(1, Math.round(n)); })} /></Field>
+              <Field label="Avans"><NumberInput value={c.avansRate ?? 0} width={64} unit="percent" onCommit={(n) => updC(c.id, (x) => { x.avansRate = n; })} /></Field>
+              <Field label={t("Restwert")}><NumberInput value={c.residualRate ?? 0} width={64} unit="percent" onCommit={(n) => updC(c.id, (x) => { x.residualRate = n; })} /></Field>
+              <Field label={t("Laufzeit (Monate)")}><NumberInput value={c.termMonths} unit="months" width={64} onCommit={(n) => updC(c.id, (x) => { x.termMonths = Math.max(1, Math.round(n)); })} /></Field>
               <Field label={t("Zinstyp")}>
                 <select className="rounded-control border px-2 text-[11.5px]" style={selCls(130)} value={c.rateBasis} onChange={(e) => updC(c.id, (x) => { x.rateBasis = e.target.value as RateBasis; })}>
                   <option value="floating">{t("variabel")}</option><option value="fixed">{t("fest")}</option>
                 </select>
               </Field>
               {c.rateBasis === "fixed"
-                ? <Field label={t("Fester Satz %")}><NumberInput value={(c.fixedRate ?? 0) * 100} width={72} suffix="%" onCommit={(n) => updC(c.id, (x) => { x.fixedRate = n / 100; })} /></Field>
-                : <Field label={`${t("Marge % (+ EURIBOR ")}${fmtNumber(euribor * 100, 2)}%)`}><NumberInput value={(c.floatingSpread ?? 0) * 100} width={72} suffix="%" onCommit={(n) => updC(c.id, (x) => { x.floatingSpread = n / 100; })} /></Field>}
+                ? <Field label={t("Fester Satz")}><NumberInput value={c.fixedRate ?? 0} width={72} unit="percent" onCommit={(n) => updC(c.id, (x) => { x.fixedRate = n; })} /></Field>
+                : <Field label={`${t("Marge (+ EURIBOR ")}${fmtNumber(euribor * 100, 2)} %)`}><NumberInput value={c.floatingSpread ?? 0} width={72} unit="percent" onCommit={(n) => updC(c.id, (x) => { x.floatingSpread = n; })} /></Field>}
               <Field label={t("Zahlfrequenz")}>
                 <select className="rounded-control border px-2 text-[11.5px]" style={selCls(130)} value={c.frequency} onChange={(e) => updC(c.id, (x) => { x.frequency = e.target.value as PaymentFrequency; })}>
                   {(Object.keys(FREQ_LABEL) as PaymentFrequency[]).map((k) => <option key={k} value={k}>{t(FREQ_LABEL[k])}</option>)}
@@ -247,18 +247,18 @@ export function FinanzierungView() {
 
             {/* Gebühren & Zahlung */}
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 px-4 py-3 md:grid-cols-4" style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
-              <Field label={t("Analysegebühr €")}><NumberInput value={c.feeAnalysisCent ?? 0} moneyCent width={92} onCommit={(n) => updC(c.id, (x) => { x.feeAnalysisCent = n; })} /></Field>
-              <Field label={t("Registrierung (RNPM) €")}><NumberInput value={c.feeRegistrationCent ?? 0} moneyCent width={92} onCommit={(n) => updC(c.id, (x) => { x.feeRegistrationCent = n; })} /></Field>
-              <Field label={t("Verwaltung %")}><NumberInput value={(c.feeAdminRate ?? 0) * 100} width={64} suffix="%" onCommit={(n) => updC(c.id, (x) => { x.feeAdminRate = n / 100; })} /></Field>
-              <Field label={t("Abschlussgebühr €")}><NumberInput value={c.feeClosingCent ?? 0} moneyCent width={92} onCommit={(n) => updC(c.id, (x) => { x.feeClosingCent = n; })} /></Field>
-              <Field label={t("Vorfälligkeit %")}><NumberInput value={(c.prepaymentRate ?? 0) * 100} width={64} suffix="%" onCommit={(n) => updC(c.id, (x) => { x.prepaymentRate = n / 100; })} /></Field>
-              <Field label={t("Verzugszins %/Tag")}><NumberInput value={(c.lateInterestDaily ?? 0) * 100} width={72} suffix="%" onCommit={(n) => updC(c.id, (x) => { x.lateInterestDaily = n / 100; })} /></Field>
+              <Field label={t("Analysegebühr")}><NumberInput value={c.feeAnalysisCent ?? 0} unit="money" width={92} onCommit={(n) => updC(c.id, (x) => { x.feeAnalysisCent = n; })} /></Field>
+              <Field label={t("Registrierung (RNPM)")}><NumberInput value={c.feeRegistrationCent ?? 0} unit="money" width={92} onCommit={(n) => updC(c.id, (x) => { x.feeRegistrationCent = n; })} /></Field>
+              <Field label={t("Verwaltung")}><NumberInput value={c.feeAdminRate ?? 0} width={64} unit="percent" onCommit={(n) => updC(c.id, (x) => { x.feeAdminRate = n; })} /></Field>
+              <Field label={t("Abschlussgebühr")}><NumberInput value={c.feeClosingCent ?? 0} unit="money" width={92} onCommit={(n) => updC(c.id, (x) => { x.feeClosingCent = n; })} /></Field>
+              <Field label={t("Vorfälligkeit")}><NumberInput value={c.prepaymentRate ?? 0} width={64} unit="percent" onCommit={(n) => updC(c.id, (x) => { x.prepaymentRate = n; })} /></Field>
+              <Field label={t("Verzugszins je Tag")}><NumberInput value={c.lateInterestDaily ?? 0} width={72} unit="percent" onCommit={(n) => updC(c.id, (x) => { x.lateInterestDaily = n; })} /></Field>
               <Field label={t("Zahlungswährung")}>
                 <select className="rounded-control border px-2 text-[11.5px]" style={selCls(90)} value={c.currency ?? "RON"} onChange={(e) => updC(c.id, (x) => { x.currency = e.target.value; })}>
                   <option value="RON">RON</option><option value="EUR">EUR</option>
                 </select>
               </Field>
-              <Field label={t("TVA / MwSt %")}><NumberInput value={(c.vatRate ?? 0) * 100} width={64} suffix="%" onCommit={(n) => updC(c.id, (x) => { x.vatRate = n / 100; })} /></Field>
+              <Field label={t("TVA / MwSt")}><NumberInput value={c.vatRate ?? 0} width={64} unit="percent" onCommit={(n) => updC(c.id, (x) => { x.vatRate = n; })} /></Field>
               <Field label={t("Umrechnungskurs (Quelle)")}><TextInput value={c.fxSource ?? ""} width={180} onCommit={(v) => updC(c.id, (x) => { x.fxSource = v; })} /></Field>
               <Field label="IFRS 16 — Right-of-Use">
                 <label className="inline-flex items-center gap-1.5 text-[11.5px]">
@@ -299,9 +299,9 @@ export function FinanzierungView() {
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="px-4 py-2.5 border-b" style={{ borderColor: "var(--nx-border)" }}><h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Revolver (Betriebsmittellinie)")}</h3></div>
         <div className="flex flex-wrap gap-x-8 gap-y-2 px-4 py-3">
-          <Field label={t("Rahmen €")}><NumberInput value={domain.revolver.limit} moneyCent width={130} onCommit={(n) => patch((d) => { d.revolver.limit = n; })} /></Field>
-          <Field label="Spread %"><NumberInput value={(domain.revolver.floatingSpread ?? 0) * 100} width={72} suffix="%" onCommit={(n) => patch((d) => { d.revolver.floatingSpread = n / 100; })} /></Field>
-          <Field label={t("Mindest-Kasse €")}><NumberInput value={domain.revolver.minCashTarget} moneyCent width={110} onCommit={(n) => patch((d) => { d.revolver.minCashTarget = n; })} /></Field>
+          <Field label={t("Rahmen €")}><NumberInput value={domain.revolver.limit} unit="money" width={130} onCommit={(n) => patch((d) => { d.revolver.limit = n; })} /></Field>
+          <Field label="Spread %"><NumberInput value={domain.revolver.floatingSpread ?? 0} width={72} unit="percent" onCommit={(n) => patch((d) => { d.revolver.floatingSpread = n; })} /></Field>
+          <Field label={t("Mindest-Kasse €")}><NumberInput value={domain.revolver.minCashTarget} unit="money" width={110} onCommit={(n) => patch((d) => { d.revolver.minCashTarget = n; })} /></Field>
         </div>
         <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border-divider)" }}>
           {t("Der Revolver gleicht Liquiditätslücken bis zum Rahmen automatisch aus (Saison-Swing, CAPEX-/Avans-/USt-Spitzen) — siehe Liquiditätsplanung.")}
@@ -313,13 +313,13 @@ export function FinanzierungView() {
         <div className="px-4 py-2.5 border-b" style={{ borderColor: "var(--nx-border)" }}><h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Working Capital (Netto-Umlaufvermögen)")}</h3></div>
         <div className="flex flex-wrap gap-x-8 gap-y-3 px-4 py-3">
           <Field label={t("DSO — Forderungslaufzeit (Tage)")}>
-            <NumberInput value={readAssumption(domain, domain.workingCapital.dsoAssumptionKey, scenarioId) ?? 0} width={72} suffix="d"
+            <NumberInput value={readAssumption(domain, domain.workingCapital.dsoAssumptionKey, scenarioId) ?? 0} width={72} unit="days"
               onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.dsoAssumptionKey]; if (b) b.scenarioProfiles[d.baseScenarioId] = { kind: "constant", value: n }; })} /></Field>
           <Field label={t("DPO — Verbindlichkeitslaufzeit (Tage)")}>
-            <NumberInput value={readAssumption(domain, domain.workingCapital.dpoAssumptionKey, scenarioId) ?? 0} width={72} suffix="d"
+            <NumberInput value={readAssumption(domain, domain.workingCapital.dpoAssumptionKey, scenarioId) ?? 0} width={72} unit="days"
               onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.dpoAssumptionKey]; if (b) b.scenarioProfiles[d.baseScenarioId] = { kind: "constant", value: n }; })} /></Field>
           <Field label={t("Vorrats-Reichweite (Tage)")}>
-            <NumberInput value={readAssumption(domain, domain.workingCapital.inventoryDaysAssumptionKey, scenarioId) ?? 0} width={72} suffix="d"
+            <NumberInput value={readAssumption(domain, domain.workingCapital.inventoryDaysAssumptionKey, scenarioId) ?? 0} width={72} unit="days"
               onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.inventoryDaysAssumptionKey]; if (b) b.scenarioProfiles[d.baseScenarioId] = { kind: "constant", value: n }; })} /></Field>
         </div>
         <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border-divider)" }}>
@@ -377,13 +377,13 @@ function PlanFinanzierung({ domain, patch }: { domain: any; patch: (fn: (d: any)
                   </td>
                   <td className="num px-2 py-1.5 text-right">{fmtMoney(n0)} €</td>
                   <td className="num px-2 py-1.5 text-right">
-                    <NumberInput value={fk * 100} width={58} suffix="%" onCommit={(n) => upd(it.id, (x) => { x.fkQuote = clamp01(n / 100); })} />
+                    <NumberInput value={fk} width={58} unit="percent" onCommit={(n) => upd(it.id, (x) => { x.fkQuote = clamp01(n); })} />
                   </td>
                   <td className="num px-2 py-1.5 text-right">
-                    <NumberInput value={(it.zins ?? 0.05) * 100} width={58} suffix="%" onCommit={(n) => upd(it.id, (x) => { x.zins = Math.max(0, n / 100); })} />
+                    <NumberInput value={it.zins ?? 0.05} width={58} unit="percent" onCommit={(n) => upd(it.id, (x) => { x.zins = Math.max(0, n); })} />
                   </td>
                   <td className="num px-2 py-1.5 text-right">
-                    <NumberInput value={it.laufzeitJahre ?? 12} width={52} onCommit={(n) => upd(it.id, (x) => { x.laufzeitJahre = Math.max(1, Math.round(n)); })} />
+                    <NumberInput value={it.laufzeitJahre ?? 12} unit="years" suffix="" width={52} onCommit={(n) => upd(it.id, (x) => { x.laufzeitJahre = Math.max(1, Math.round(n)); })} />
                   </td>
                   <td className="px-2 py-1.5 text-[11px] text-nx-text-muted">{fk > 0 ? `${t("Investitionskredit ")}${fmtNumber(fk * 100, 0)}${t(" % · Rest bar")}` : t("Bar / Eigenmittel")}</td>
                 </tr>

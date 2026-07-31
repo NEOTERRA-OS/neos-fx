@@ -77,14 +77,14 @@ export function VatView() {
             <h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Sätze, Vorsteuer & Timing")}</h3>
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
-            <Field label={t("Regelsatz %")}><NumberInput value={v.standardRate * 100} width={64} suffix="%" onCommit={(n) => setV((d) => { d.standardRate = n / 100; })} /></Field>
-            <Field label={t("Ermäßigter Satz %")}><NumberInput value={v.reducedRate * 100} width={64} suffix="%" onCommit={(n) => setV((d) => { d.reducedRate = n / 100; })} /></Field>
-            <Field label={t("Vorsteuer CAPEX %")}><NumberInput value={v.inputRateCapex * 100} width={64} suffix="%" onCommit={(n) => setV((d) => { d.inputRateCapex = n / 100; })} /></Field>
-            <Field label={t("Vorsteuer Inputs %")}><NumberInput value={v.inputRateCost * 100} width={64} suffix="%" onCommit={(n) => setV((d) => { d.inputRateCost = n / 100; })} /></Field>
-            <Field label={t("abziehbar COGS-Anteil %")}><NumberInput value={v.recoverableCogsShare * 100} width={64} suffix="%" onCommit={(n) => setV((d) => { d.recoverableCogsShare = n / 100; })} /></Field>
-            <Field label={t("abziehbar OpEx-Anteil %")}><NumberInput value={v.recoverableOpexShare * 100} width={64} suffix="%" onCommit={(n) => setV((d) => { d.recoverableOpexShare = n / 100; })} /></Field>
-            <Field label={t("Zahllast-Lag (Monate)")}><NumberInput value={v.settlementLagMonths} width={56} onCommit={(n) => setV((d) => { d.settlementLagMonths = Math.max(0, Math.round(n)); })} /></Field>
-            <Field label={t("Erstattungs-Lag (Monate)")}><NumberInput value={v.refundLagMonths} width={56} onCommit={(n) => setV((d) => { d.refundLagMonths = Math.max(0, Math.round(n)); })} /></Field>
+            <Field label={t("Regelsatz %")}><NumberInput value={v.standardRate} width={64} unit="percent" onCommit={(n) => setV((d) => { d.standardRate = n; })} /></Field>
+            <Field label={t("Ermäßigter Satz %")}><NumberInput value={v.reducedRate} width={64} unit="percent" onCommit={(n) => setV((d) => { d.reducedRate = n; })} /></Field>
+            <Field label={t("Vorsteuer CAPEX %")}><NumberInput value={v.inputRateCapex} width={64} unit="percent" onCommit={(n) => setV((d) => { d.inputRateCapex = n; })} /></Field>
+            <Field label={t("Vorsteuer Inputs %")}><NumberInput value={v.inputRateCost} width={64} unit="percent" onCommit={(n) => setV((d) => { d.inputRateCost = n; })} /></Field>
+            <Field label={t("abziehbar COGS-Anteil %")}><NumberInput value={v.recoverableCogsShare} width={64} unit="percent" onCommit={(n) => setV((d) => { d.recoverableCogsShare = n; })} /></Field>
+            <Field label={t("abziehbar OpEx-Anteil %")}><NumberInput value={v.recoverableOpexShare} width={64} unit="percent" onCommit={(n) => setV((d) => { d.recoverableOpexShare = n; })} /></Field>
+            <Field label={t("Zahllast-Lag (Monate)")}><NumberInput value={v.settlementLagMonths} unit="months" width={56} onCommit={(n) => setV((d) => { d.settlementLagMonths = Math.max(0, Math.round(n)); })} /></Field>
+            <Field label={t("Erstattungs-Lag (Monate)")}><NumberInput value={v.refundLagMonths} unit="months" width={56} onCommit={(n) => setV((d) => { d.refundLagMonths = Math.max(0, Math.round(n)); })} /></Field>
           </div>
         </section>
 

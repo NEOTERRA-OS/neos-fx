@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
+import { ASSUMPTION_NOTE } from "../../store/model";
 import { fmtEditable, parseDe } from "../../design/format";
 import { einheit, zurAnzeige, ausAnzeige } from "../../design/units";
 import type { Unit } from "../../core/types";
@@ -102,7 +103,7 @@ export function Feld({ akey, breite = 96, einheitZeigen = true }: {
   return (
     <span className="inline-flex items-center gap-1.5">
       <Zahlenfeld anzeige={anzeige} breite={breite} onCommit={commit} ariaLabel={a.label}
-        titel={`${a.label} — ${spec.lang || spec.kurz}`} />
+        titel={[a.label, spec.lang || spec.kurz, ASSUMPTION_NOTE[akey]].filter(Boolean).join("  ·  ")} />
       <EinheitSlot unit={unit} zeigen={einheitZeigen} />
       <span style={{ width: 26, flex: "0 0 26px" }}>
         {override && (

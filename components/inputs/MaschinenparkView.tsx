@@ -239,13 +239,13 @@ export function MaschinenparkView() {
                       ) : (
                         <>
                           <td className="px-1 py-1.5 text-right">
-                            <NumberInput value={m.widthM} width={46} onCommit={(v) => setSpec(m.machineId, (x) => { x.widthM = v; })} />
+                            <NumberInput value={m.widthM} unit="metre" suffix="" width={46} onCommit={(v) => setSpec(m.machineId, (x) => { x.widthM = v; })} />
                           </td>
                           <td className="px-1 py-1.5 text-right">
-                            <NumberInput value={m.speedKmh} width={46} onCommit={(v) => setSpec(m.machineId, (x) => { x.speedKmh = v; })} />
+                            <NumberInput value={m.speedKmh} unit="kmh" suffix="" width={46} onCommit={(v) => setSpec(m.machineId, (x) => { x.speedKmh = v; })} />
                           </td>
                           <td className="px-1 py-1.5 text-right">
-                            <NumberInput value={Math.round(m.fieldEff * 100)} width={42} onCommit={(v) => setSpec(m.machineId, (x) => { x.fieldEff = v / 100; })} />
+                            <NumberInput value={m.fieldEff} unit="percent" suffix="" width={42} onCommit={(v) => setSpec(m.machineId, (x) => { x.fieldEff = v; })} />
                           </td>
                           <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{fmtNumber(m.cEff, 2)}</td>
                         </>
@@ -669,7 +669,7 @@ function WeitereInvestitionen() {
                 <td className="px-2 py-1.5"><TextInput value={it.bezeichnung} width={210} onCommit={(v) => upd(it.id, (x) => { x.bezeichnung = v; })} /></td>
                 <td className="px-1 py-1.5 text-right"><NumberInput value={it.menge} width={48} onCommit={(v) => upd(it.id, (x) => { x.menge = v; })} /></td>
                 <td className="px-1 py-1.5"><TextInput value={it.einheit} width={52} onCommit={(v) => upd(it.id, (x) => { x.einheit = v; })} /></td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={it.eurProEinheitCent} moneyCent width={86} onCommit={(v) => upd(it.id, (x) => { x.eurProEinheitCent = v; })} /></td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={it.eurProEinheitCent} unit="money" width={86} onCommit={(v) => upd(it.id, (x) => { x.eurProEinheitCent = v; })} /></td>
                 <td className="px-1 py-1.5 text-right">
                   <select value={it.jahr} disabled={readOnly}
                     className="rounded-control border px-1 text-[11.5px]"
@@ -678,9 +678,9 @@ function WeitereInvestitionen() {
                     {Array.from({ length: years }, (_, y) => <option key={y} value={y}>{START_YEAR + y}</option>)}
                   </select>
                 </td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={it.afaYears} width={40} onCommit={(v) => upd(it.id, (x) => { x.afaYears = Math.max(1, Math.round(v)); })} /></td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={Math.round(it.subventionPct * 100)} width={40} suffix="%" onCommit={(v) => upd(it.id, (x) => { x.subventionPct = v / 100; })} /></td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={Math.round(it.fkQuote * 100)} width={40} suffix="%" onCommit={(v) => upd(it.id, (x) => { x.fkQuote = v / 100; })} /></td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={it.afaYears} unit="years" suffix="" width={40} onCommit={(v) => upd(it.id, (x) => { x.afaYears = Math.max(1, Math.round(v)); })} /></td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={Math.round(it.subventionPct * 100)} width={40} unit="percent" onCommit={(v) => upd(it.id, (x) => { x.subventionPct = v / 100; })} /></td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={Math.round(it.fkQuote * 100)} width={40} unit="percent" onCommit={(v) => upd(it.id, (x) => { x.fkQuote = v / 100; })} /></td>
                 <td className="px-2 py-1.5 text-center">
                   <input type="checkbox" checked={it.bestand} disabled={readOnly}
                     title={t("bereits vorhanden — kein Neu-CAPEX")}

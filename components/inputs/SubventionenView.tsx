@@ -133,10 +133,10 @@ export function SubventionenView() {
                         <td className="px-2 py-1.5"><TextInput value={s.name} width={250} onCommit={(v) => upd(i, (x) => { x.name = v; })} /></td>
                         <td className="px-2 py-1.5 text-[11px] text-nx-text-muted" style={{ maxWidth: 150 }}>{elig}</td>
                         <td className="px-2 py-1.5 text-right">
-                          <NumberInput value={s.ratePerHaCent ?? 0} moneyCent width={92} onCommit={(n) => upd(i, (x) => { x.ratePerHaCent = n; })} />
+                          <NumberInput value={s.ratePerHaCent ?? 0} unit="money" width={92} onCommit={(n) => upd(i, (x) => { x.ratePerHaCent = n; })} />
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          <NumberInput value={s.firstHaCap ?? 0} width={56} onCommit={(n) => upd(i, (x) => { x.firstHaCap = n > 0 ? Math.round(n) : undefined; })} />
+                          <NumberInput value={s.firstHaCap ?? 0} unit="hectare" suffix="" width={56} onCommit={(n) => upd(i, (x) => { x.firstHaCap = n > 0 ? Math.round(n) : undefined; })} />
                         </td>
                         <td className="px-2 py-1.5 text-right">
                           <NumberInput value={adv} width={52} onCommit={(n) => setAdvance(i, n)} />

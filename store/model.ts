@@ -1029,7 +1029,13 @@ const AGRO_COSTS: Record<CropId, [number, number, number, number, number, number
 // Dritt-Pacht Süd-Dolj, €/ha/Jahr. 750 € statt 250 €: NEOTERRA pachtet BEREITS BEREGNETE
 // Flächen — die Pivots sind im Pachtzins enthalten, dafür entfällt die eigene
 // Beregnungsinvestition (siehe irrig.capex_from_year). Entscheidung 30.07.2026.
-const PACHT_PER_HA = 750;
+const PACHT_PER_HA = 750;                 // EUR/ha (Referenzwert fuer die Vollkosten-Sicht)
+/** Derselbe Satz in CENT — die Speichereinheit jedes Geldwerts im Modell.
+ *  `pacht.ratePerHaByYear` lag als EINZIGE Geldgroesse in EURO statt in Cent. Solange jede
+ *  Ansicht ihre Umrechnung selbst mitbrachte, fiel das nicht auf; mit einem gemeinsamen
+ *  Einheiten-Register faellt es sofort auf, weil das Feld dann 7,50 EUR/ha anzeigen wuerde.
+ *  Der Ausreisser ist beseitigt, gespeicherte Staende werden in migrateDomain umgestellt. */
+const PACHT_PER_HA_CENT = PACHT_PER_HA * 100;
 const OVERHEAD_PER_HA: Record<CropId, number> = {
   weizen: 150, gerste_zw: 140, soja_luzerne: 130, winterraps: 140, mais: 150, tomate: 680,
   kartoffel_pommes: 410, kartoffel_chips: 470, zwiebel_moehre: 300,
@@ -2805,6 +2811,14 @@ export function migrateDomain(dIn: Domain): Domain {
     for (const o of SEED.overhead ?? []) if (!vorhanden.has(o.id)) overhead.push({ ...o });
   }
 
+  // PACHTSATZ VON EURO AUF CENT. Gespeicherte Staende tragen die Tabelle in Euro (750);
+  //  ab jetzt liegt sie wie jeder Geldwert in Cent (75.000). Erkennungsmerkmal: ein
+  //  realistischer Pachtsatz in Cent liegt nie unter 10.000 (= 100 EUR/ha).
+  const pacht = d.pacht && Array.isArray(d.pacht.ratePerHaByYear) && d.pacht.ratePerHaByYear.length
+    && Math.max(...d.pacht.ratePerHaByYear) < 10000
+    ? { ...d.pacht, ratePerHaByYear: d.pacht.ratePerHaByYear.map((v) => Math.round(v * 100)) }
+    : d.pacht;
+
   // SUBVENTIONSREGISTER: Sätze und Kulturzuordnung sind Recht, keine Planentscheidung —
   //  beim Versionssprung folgen sie dem Seed. Der Aktiv-Schalter je Zeile bleibt beim Nutzer.
   const subsidies = stammNeu && Array.isArray(d.subsidies)
@@ -2815,7 +2829,7 @@ export function migrateDomain(dIn: Domain): Domain {
     : d.subsidies;
 
   return { ...d, anbauplan, cropPolicy, catalog, growth, timeline, holding, entities,
-    assumptions, overhead, subsidies, machineCatalog, stammdatenVersion: STAMMDATEN_VERSION,
+    assumptions, overhead, subsidies, machineCatalog, pacht, stammdatenVersion: STAMMDATEN_VERSION,
     scope: "full", stage: 1, entityView: undefined };
 }
 
@@ -3482,7 +3496,7 @@ export const SEED: Domain = {
   //  ~300 €/ha, Index-Stufe +8 % alle 5 Jahre (≈ 1,5 %/Jahr CPI-nah). Editierbar im Simulator.
   // Solo-Modell: NEOTERRA besitzt keine Fläche (die Besitzgesellschaft ist nicht Teil des Modells) —
   //  die gesamte bewirtschaftete Fläche ist Dritt-Pacht zum Süd-Dolj-Satz.
-  pacht: { ratePerHaByYear: Array.from({ length: N_YEARS }, () => PACHT_PER_HA),
+  pacht: { ratePerHaByYear: Array.from({ length: N_YEARS }, () => PACHT_PER_HA_CENT),
     ownedHa: 0, baseRentPerHaCent: 0, indexPct: 0, intervalYears: 5, indexBasis: "fixed",
     ifrs16: false, leaseTermYears: 15, discountRate: 0.05,
     payMonths: [{ month: 8, share: 0.6 }, { month: 10, share: 0.4 }] },
@@ -6113,14 +6127,14 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     //  Satz je Planjahr aus der Pacht-Tabelle. KEINE zusätzliche Input-Inflation mehr: der
     //  Satz IST die Eingabe, eine Steigerung gehört in die Tabelle und nicht in einen
     //  unsichtbaren Faktor — sonst zahlt man 2034 mehr, als in der Zeile steht.
-    const rateOf = (y: number) => {
+    const rateOf = (y: number) => {          // CENT je ha
       const tbl = pc?.ratePerHaByYear;
-      if (!tbl?.length) return PACHT_PER_HA;
-      return tbl[Math.min(y, tbl.length - 1)] ?? PACHT_PER_HA;
+      if (!tbl?.length) return PACHT_PER_HA_CENT;
+      return tbl[Math.min(y, tbl.length - 1)] ?? PACHT_PER_HA_CENT;
     };
     const pachtAnnual = (y: number) => {
       const areaY = baseArea * scale[y];
-      const thirdCent = Math.max(0, areaY - ownHa) * rateOf(y) * 100;
+      const thirdCent = Math.max(0, areaY - ownHa) * rateOf(y);
       const besitzCent = (pc && !pc.ifrs16) ? ownHa * besitzRate * pachtIndexFactor(pc, y) : 0;
       return thirdCent + besitzCent;
     };

@@ -28,13 +28,13 @@ export function PachtView() {
 
   const rateOf = (y: number) => {
     const tbl = domain.pacht?.ratePerHaByYear;
-    if (!tbl?.length) return 750;
-    return tbl[Math.min(y, tbl.length - 1)] ?? 750;
+    if (!tbl?.length) return 75000;      // CENT je ha
+    return tbl[Math.min(y, tbl.length - 1)] ?? 75000;
   };
   const setRate = (y: number, v: number) => patch((d) => {
     if (!d.pacht) return;
     const tbl = (d.pacht.ratePerHaByYear ?? []).slice();
-    while (tbl.length < years) tbl.push(tbl[tbl.length - 1] ?? 750);
+    while (tbl.length < years) tbl.push(tbl[tbl.length - 1] ?? 75000);
     tbl[y] = Math.max(0, Math.round(v));
     d.pacht.ratePerHaByYear = tbl;
   });
@@ -42,13 +42,13 @@ export function PachtView() {
   const fortschreiben = (y: number) => patch((d) => {
     if (!d.pacht) return;
     const tbl = (d.pacht.ratePerHaByYear ?? []).slice();
-    while (tbl.length < years) tbl.push(tbl[tbl.length - 1] ?? 750);
+    while (tbl.length < years) tbl.push(tbl[tbl.length - 1] ?? 75000);
     for (let k = y + 1; k < years; k++) tbl[k] = tbl[y];
     d.pacht.ratePerHaByYear = tbl;
   });
 
   const Y = Array.from({ length: years }, (_, y) => y);
-  const jahrCent = (y: number) => haOf(y) * rateOf(y) * 100;
+  const jahrCent = (y: number) => haOf(y) * rateOf(y);
   const summe = Y.reduce((s, y) => s + jahrCent(y), 0);
   const th = "px-2 py-1.5 caption text-[10px] text-nx-text-muted";
   const card: React.CSSProperties = { borderColor: "var(--nx-border)", background: "var(--nx-surface)" };
@@ -96,7 +96,7 @@ export function PachtView() {
                 {Y.map((y) => (
                   <td key={y} className="px-2 py-1.5 text-right">
                     <div className="inline-flex items-center gap-1">
-                      <NumberInput value={rateOf(y)} width={62} onCommit={(v) => setRate(y, v)} />
+                      <NumberInput value={rateOf(y)} unit="money_per_ha" suffix="" width={62} onCommit={(v) => setRate(y, v)} />
                       {y < years - 1 && (
                         <button className="text-[10px] text-nx-text-muted hover:text-nx-locate"
                           title={t("Diesen Satz auf alle Folgejahre übernehmen")}

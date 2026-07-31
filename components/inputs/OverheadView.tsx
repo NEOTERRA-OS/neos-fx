@@ -94,7 +94,7 @@ export function OverheadView() {
                   {groupItems.map(({ it, gi }) => (
                     <tr key={it.id} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
                       <td className="px-2 py-1.5"><TextInput value={it.label} width={360} onCommit={(v) => updItem(gi, (o) => { o.label = v; })} /></td>
-                      <td className="px-2 py-1.5 text-right"><NumberInput value={it.monthlyCent} moneyCent width={110} onCommit={(nv) => updItem(gi, (o) => { o.monthlyCent = nv; })} /></td>
+                      <td className="px-2 py-1.5 text-right"><NumberInput value={it.monthlyCent} unit="money" width={110} onCommit={(nv) => updItem(gi, (o) => { o.monthlyCent = nv; })} /></td>
                       <td className="num px-2 py-1.5 text-right text-nx-text-secondary">{fmtMoney(it.monthlyCent * 12)} €</td>
                       <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" title={t("Position entfernen")} onClick={() => removeItem(gi)}><X size={13} strokeWidth={2.5} aria-hidden /></button></td>
                     </tr>

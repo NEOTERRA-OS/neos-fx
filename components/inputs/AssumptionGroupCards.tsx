@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
-import { PRICE_GROUPS } from "../../store/model";
+import { PRICE_GROUPS, ASSUMPTION_NOTE } from "../../store/model";
 import { Feld } from "./Feld";
 import { einheit } from "../../design/units";
 import { t } from "../../lib/i18n";
@@ -40,7 +40,7 @@ export function AssumptionGroupCards({ groups }: { groups: string[] }) {
                 <React.Fragment key={k}>
                   <span className="min-w-0 truncate border-b py-2 text-[12.5px] text-nx-text-secondary"
                     style={{ borderColor: "var(--nx-border-divider)" }}
-                    title={`${a?.label ?? k}  ·  ${k}`}>{a?.label ?? k}</span>
+                    title={[a?.label ?? k, ASSUMPTION_NOTE[k], k].filter(Boolean).join("  ·  ")}>{a?.label ?? k}</span>
                   <span className="border-b py-2 text-[11px] text-nx-text-muted"
                     style={{ borderColor: "var(--nx-border-divider)" }} title={e.lang}>{e.kurz}</span>
                   <span className="flex justify-end border-b py-1.5" style={{ borderColor: "var(--nx-border-divider)" }}>

@@ -150,7 +150,7 @@ export function KulturKalkulationView() {
             <span className="w-[64px] text-[10px] text-nx-text-muted">{b.physical ? b.unit : "€/ha"}</span>
             {b.physical && b.unitCostKey !== "price.per_euro" ? (
               <>
-                <NumberInput value={b.unitPriceCent} moneyCent width={62} onCommit={(v) => updPrice(b.unitCostKey, v)} />
+                <NumberInput value={b.unitPriceCent} unit="money" width={62} onCommit={(v) => updPrice(b.unitCostKey, v)} />
                 <span className="w-[58px] text-[10px] text-nx-text-muted">{priceUnit(b.unit)}</span>
               </>
             ) : <span style={{ width: 62 + 4 + 58, display: "inline-block" }} />}
@@ -291,7 +291,7 @@ export function KulturKalkulationView() {
                           <span className="inline-flex items-center gap-1">
                             {isStreuer
                               ? <span className="num text-[11.5px] font-semibold" style={{ color: "var(--nx-locate)" }}>1</span>
-                              : <NumberInput value={r.passes} width={40} onCommit={(v) => isPsm ? updLinePasses("OP-PSM", r.lineIdxs![0], v) : updPasses(r.machineId!, v)} />}
+                              : <NumberInput value={r.passes} unit="count" suffix="" width={40} onCommit={(v) => isPsm ? updLinePasses("OP-PSM", r.lineIdxs![0], v) : updPasses(r.machineId!, v)} />}
                             <span className="text-[11.5px]">× {r.machineLabel}</span>
                           </span>
                           {m?.widthM != null && (

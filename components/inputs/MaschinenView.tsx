@@ -149,29 +149,29 @@ export function MaschinenView() {
                             </select>
                           ) : <span className="text-[11px] text-nx-text-muted">{m.mode === "perHa" ? "€/ha" : "€/t"}</span>}
                         </td>
-                        <td className="px-2 py-1.5 text-right"><NumberInput value={listCent} moneyCent width={110} onCommit={(nn) => upd(m.id, (mm) => { mm.priceCent = nn; })} /></td>
-                        <td className="px-2 py-1.5 text-right"><NumberInput value={disc * 100} width={56} suffix="%" onCommit={(nn) => upd(m.id, (mm) => { mm.discountPct = Math.max(0, nn / 100); })} /></td>
+                        <td className="px-2 py-1.5 text-right"><NumberInput value={listCent} unit="money" width={110} onCommit={(nn) => upd(m.id, (mm) => { mm.priceCent = nn; })} /></td>
+                        <td className="px-2 py-1.5 text-right"><NumberInput value={disc} width={56} unit="percent" onCommit={(nn) => upd(m.id, (mm) => { mm.discountPct = Math.max(0, nn); })} /></td>
                         <td className="num px-2 py-1.5 text-right text-nx-text-muted">{fmtMoney(netCent)}</td>
-                        <td className="px-2 py-1.5 text-right"><NumberInput value={res * 100} width={56} suffix="%" onCommit={(nn) => upd(m.id, (mm) => { mm.residualPctList = Math.max(0, nn / 100); })} /></td>
+                        <td className="px-2 py-1.5 text-right"><NumberInput value={res} width={56} unit="percent" onCommit={(nn) => upd(m.id, (mm) => { mm.residualPctList = Math.max(0, nn); })} /></td>
                         <td className="num px-2 py-1.5 text-right text-nx-text-muted">{fmtMoney(resCent)}</td>
-                        <td className="px-2 py-1.5 text-right">{isFleet ? <NumberInput value={m.ownedUnits ?? 0} width={48} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedUnits = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
+                        <td className="px-2 py-1.5 text-right">{isFleet ? <NumberInput value={m.ownedUnits ?? 0} unit="count" suffix="" width={48} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedUnits = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
                         <td className="px-2 py-1.5 text-right">
                           {isFleet ? (
                             <div className="inline-flex flex-col items-end gap-1">
                               {/* Verleiher-Auswahl entfernt 31.07.2026: Intercompany-Miete setzte eine
                                   zweite operative Gesellschaft voraus, die es nicht mehr gibt. */}
-                              <NumberInput value={m.rentedUnits ?? 0} width={48} onCommit={(nn) => upd(m.id, (mm) => { mm.rentedUnits = Math.max(0, Math.round(nn)); })} />
+                              <NumberInput value={m.rentedUnits ?? 0} unit="count" suffix="" width={48} onCommit={(nn) => upd(m.id, (mm) => { mm.rentedUnits = Math.max(0, Math.round(nn)); })} />
                             </div>
                           ) : <span className="num text-[11px] text-nx-text-muted">–</span>}
                         </td>
                         {/* Augmentierung aus den Investitionen (Bedarf − Bestand): + Neu → = Park gesamt */}
                         <td className="num px-2 py-1.5 text-right" style={{ color: "var(--nx-locate)" }}>{isFleet && (newById.get(m.id) ?? 0) > 0 ? `+${fmtNumber(newById.get(m.id) ?? 0, 0)}` : "–"}</td>
                         <td className="num px-2 py-1.5 text-right font-semibold">{isFleet ? fmtNumber((m.ownedUnits ?? 0) + (newById.get(m.id) ?? 0), 0) : "–"}</td>
-                        <td className="px-2 py-1.5 text-right">{isFleet && (m.ownedUnits ?? 0) > 0 ? <NumberInput value={m.ownedAgeYears ?? 0} width={44} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedAgeYears = Math.max(0, nn); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
+                        <td className="px-2 py-1.5 text-right">{isFleet && (m.ownedUnits ?? 0) > 0 ? <NumberInput value={m.ownedAgeYears ?? 0} unit="years" suffix="" width={44} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedAgeYears = Math.max(0, nn); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
                         {/* Betriebsstunden (alle Bestandsmaschinen) */}
-                        <td className="px-2 py-1.5 text-right">{isFleet && (m.ownedUnits ?? 0) > 0 ? <NumberInput value={m.ownedHours ?? 0} width={64} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedHours = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
+                        <td className="px-2 py-1.5 text-right">{isFleet && (m.ownedUnits ?? 0) > 0 ? <NumberInput value={m.ownedHours ?? 0} unit="hours" suffix="" width={64} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedHours = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
                         {/* Bearbeitete Fläche (nur Anbaugeräte mit C_eff) */}
-                        <td className="px-2 py-1.5 text-right">{isFleet && (m.ownedUnits ?? 0) > 0 && m.cEff ? <NumberInput value={m.ownedHa ?? 0} width={64} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedHa = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
+                        <td className="px-2 py-1.5 text-right">{isFleet && (m.ownedUnits ?? 0) > 0 && m.cEff ? <NumberInput value={m.ownedHa ?? 0} unit="hectare" suffix="" width={64} onCommit={(nn) => upd(m.id, (mm) => { mm.ownedHa = Math.max(0, Math.round(nn)); })} /> : <span className="num text-[11px] text-nx-text-muted">–</span>}</td>
                         <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: (m.ownedUnits ?? 0) > 0 ? "var(--nx-brand-lift)" : "var(--nx-text-muted)" }} title={(m.ownedUnits ?? 0) > 0 ? `${t("Verschleiß")} ${Math.round(wearFrac(m) * 100)} ${t("% (Alter/Bh/ha, Maximum)")}` : undefined}>{(m.ownedUnits ?? 0) > 0 ? fmtMoney(bestandWert(m)) : "–"}</td>
                         <td className="px-2 py-1.5 text-right"><button className="text-[12px] text-nx-error" title={t("Maschine entfernen")} onClick={() => patch((dd) => { const i = idxOf(m.id); if (i >= 0) dd.machineCatalog.splice(i, 1); })}><X size={13} strokeWidth={2.5} aria-hidden /></button></td>
                       </tr>

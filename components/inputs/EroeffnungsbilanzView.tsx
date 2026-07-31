@@ -79,7 +79,7 @@ export function EroeffnungsbilanzView() {
       {rows.map(([k, label]) => (
         <div key={k} className="flex items-center justify-between gap-3 border-b py-1.5" style={{ borderColor: "var(--nx-border-divider)" }}>
           <span className="text-[12.5px]">{t(label)}</span>
-          <NumberInput value={ob[k] as number} moneyCent width={130} onCommit={(n) => patch((d) => { (d.openingBalance as any)[k] = n; })} />
+          <NumberInput value={ob[k] as number} unit="money" width={130} onCommit={(n) => patch((d) => { (d.openingBalance as any)[k] = n; })} />
         </div>
       ))}
       <div className="flex items-center justify-between py-2 text-[12.5px] font-semibold">
@@ -129,7 +129,7 @@ export function EroeffnungsbilanzView() {
             </div>
             <div className="flex flex-wrap items-center gap-4">
               <label className="inline-flex items-center gap-2 text-[11.5px] text-nx-text-muted">{t("Kurs RON→EUR (÷)")}
-                <NumberInput value={fx} width={70} onCommit={(n) => setFx(n > 0 ? n : 1)} /></label>
+                <NumberInput value={fx} unit="factor" suffix="" width={70} onCommit={(n) => setFx(n > 0 ? n : 1)} /></label>
               <span className="text-[11px] text-nx-text-muted">{t("1 = Werte bereits in EUR")}</span>
               <button className="text-[11px] underline text-nx-text-muted" onClick={() => setText(SAMPLE)}>{t("Beispiel einfügen")}</button>
             </div>
