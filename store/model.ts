@@ -6118,6 +6118,32 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       }
       // Maschine: Kohorten mit Ausmusterung. Zyklus C, AfA-Dauer L (Monate).
       const C = r.cycleYears, L = r.afaYears * 12;
+      // ANSCHAFFUNGSMONAT. Bisher fiel der gesamte Jahres-CAPEX im JANUAR an — ein Betrieb
+      //  kauft die Maschinen eines Jahres aber nicht am 1. Januar. Realistisch ist die
+      //  Lieferung kurz VOR dem ersten Einsatz: die Pflanzmaschine im März, der Roder im
+      //  August, die Bodenbearbeitung im Februar. Das verschiebt Kapitalbindung, Revolver-
+      //  Spitze und Zinslast spürbar — und zwar in die richtige Richtung, weil das Geld
+      //  später abfließt.
+      //  Regel (Entscheidung 31.07.2026): Bedarfsmonat minus 1. Der Bedarfsmonat kommt aus
+      //  der Arbeitsgang-Phase der Maschine über den Kulturkalender; ist keiner hinterlegt
+      //  (Zugmaschinen, Logistik), bleibt es beim Januar, weil sie ganzjährig laufen.
+      const midK = ci.id.startsWith("cx-") ? ci.id.slice(3) : ci.id;
+      const kaufMonat = (() => {
+        const ph = MACHINE_PHASE[midK];
+        if (!ph) return 0;
+        let frueh = 13;
+        for (const a of domain.anbauplan) {
+          if (!(domain.arbeitsgaenge[a.cropId] ?? []).some((g) => g.m === midK)) continue;
+          const cat = domain.catalog.find((c) => c.cropId === a.cropId);
+          const sow = cat?.sowMonth ?? SOW_MONTH[a.cropId as CropId] ?? 0;
+          const hRaw = cat?.harvestPeriods?.[0] ?? sow + 4;
+          const harv = hRaw < sow ? hRaw + 12 : hRaw;
+          const m = ph.when(sow, harv);
+          if (isFinite(m)) frueh = Math.min(frueh, m);
+        }
+        if (frueh > 12) return 0;
+        return Math.max(0, Math.min(11, Math.round(frueh) - 2));   // Bedarfsmonat − 1, 0-basiert
+      })();
       const mkChain = (startY: number, netCent: number, resCent: number, firstDispAge: number) => {
         let py = startY, age = firstDispAge, guard = 0;
         while (py < years && guard++ < 40) {
@@ -6126,7 +6152,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
           const inf = iCap(py); // CAPEX-Inflation je Anschaffungsjahr (auch revolvierende Ersatzkäufe)
           capexMY.push({
             ...ci, id: `${ci.id}-c${py}-${age}-${capexMY.length}`, amount: Math.round(netCent * inf), salvageValue: 0,
-            usefulLifeMonths: L, usefulLifeFiscalMonths: L, purchasePeriod: py * 12,
+            usefulLifeMonths: L, usefulLifeFiscalMonths: L, purchasePeriod: py * 12 + kaufMonat,
             disposalPeriod: disposed ? dispY * 12 : undefined,
             disposalProceedsCent: disposed ? Math.round(resCent * inf) : undefined,
             financingMode: py === startY ? ci.financingMode : "cash",   // Erstanschaffung finanziert, Ersatz aus Cash
