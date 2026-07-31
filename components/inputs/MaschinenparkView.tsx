@@ -1,9 +1,11 @@
 "use client";
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
+import { computeModel } from "../../core/engine";
+import { aggregateComputed } from "../../core/aggregate";
 import {
-  deriveMaschinenpark, setMachineOutsourced, setMachineRented, START_YEAR,
-  type MaschinenPfad, type CapexPlanItem,
+  deriveMaschinenpark, setMachineOutsourced, setMachineRented, buildModelState, START_YEAR,
+  type MaschinenPfad, type CapexPlanItem, type Domain,
 } from "../../store/model";
 import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
@@ -378,8 +380,173 @@ export function MaschinenparkView() {
         </div>
       </section>
 
+      <BeschaffungsVergleich park={park} />
       <WeitereInvestitionen />
     </div>
+  );
+}
+
+/** BESCHAFFUNGS-VERGLEICH — kaufen, mieten oder im Lohn, durch das VOLLE Modell gerechnet.
+ *
+ *  Die Tabelle oben vergleicht €/ha. Das ist die richtige erste Frage, beantwortet aber nicht
+ *  die zweite: was macht die Entscheidung mit Liquidität, Verschuldung und Covenants? Eine
+ *  Maschine für 450.000 € kann je Hektar günstiger sein und den Betrieb trotzdem an die
+ *  Verschuldungsgrenze bringen — das sieht man erst, wenn Bilanz und Cashflow mitlaufen.
+ *
+ *  Deshalb hier drei vollständige Modellläufe je Klasse (buildModelState → computeModel →
+ *  Jahresaggregat), nicht drei Formeln. Alles, was am Modell hängt — AfA, Zins, Working
+ *  Capital, Revolver-Zirkel, Steuer, Personal —, wirkt automatisch mit.
+ */
+type VglErgebnis = { modus: "kauf" | "miete" | "lohn"; label: string; capexSum: number; ebitda: number;
+  ni: number; peakRevolver: number; dscrMin: number; levMax: number; ok: boolean };
+
+function BeschaffungsVergleich({ park }: { park: MaschinenPfad[] }) {
+  const { domain } = useModelStore();
+  const sc = useModelStore((s) => s.view.scenarioId);
+  const [ziel, setZiel] = React.useState<string>("");
+  const wahl = park.find((m) => m.machineId === ziel) ?? null;
+
+  const ergebnisse = React.useMemo<VglErgebnis[] | null>(() => {
+    if (!wahl) return null;
+    const moden: { modus: "kauf" | "miete" | "lohn"; label: string }[] = wahl.istZug
+      ? [{ modus: "kauf", label: "kaufen" }, { modus: "miete", label: "mieten" }]
+      : [{ modus: "kauf", label: "kaufen" }, { modus: "miete", label: "mieten" }, { modus: "lohn", label: "im Lohn" }];
+    return moden.map(({ modus, label }) => {
+      const d: Domain = structuredClone(domain);
+      setMachineOutsourced(d, wahl.machineId, modus === "lohn");
+      setMachineRented(d, wahl.machineId, modus === "miete");
+      const an = aggregateComputed(computeModel(buildModelState(d, sc), sc, {}), "year");
+      const g = (o: any, k: string): number[] => o?.[k]?.values ?? [];
+      const n = an.timeline.periodCount, i = n - 1;
+      const capexSum = g(an.cashFlow, "capex").reduce((a, b) => a + Math.abs(b), 0);
+      const dscr = g(an.kpis, "dscr").slice(0, n);
+      const lev = g(an.kpis, "netDebtToEbitda").slice(0, n);
+      const revolver = g(an.balanceSheet, "revolver");
+      return {
+        modus, label, capexSum,
+        ebitda: g(an.pnl, "ebitda")[i] ?? 0,
+        ni: g(an.pnl, "netIncome")[i] ?? 0,
+        peakRevolver: revolver.length ? Math.max(...revolver.map((v) => Math.abs(v))) : 0,
+        dscrMin: dscr.length ? Math.min(...dscr) : 0,
+        levMax: lev.length ? Math.max(...lev) : 0,
+        ok: (dscr.length ? Math.min(...dscr) : 0) >= 1.1 && (lev.length ? Math.max(...lev) : 0) <= 3.5,
+      };
+    });
+  }, [wahl, domain, sc]);
+
+  const basis = ergebnisse?.[0] ?? null;
+  const card: React.CSSProperties = { borderColor: "var(--nx-border)", background: "var(--nx-surface)" };
+  const th = "px-3 py-2 caption text-[10px] text-nx-text-muted";
+  const D = (v: number, b: number) => v - b;
+  const dz = (v: number, b: number, gutWennKleiner = false) => {
+    const d = D(v, b);
+    if (Math.abs(d) < 1) return <span className="text-nx-text-muted">–</span>;
+    const gut = gutWennKleiner ? d < 0 : d > 0;
+    return <span style={{ color: gut ? "var(--nx-success)" : "var(--nx-error)" }}>
+      {d > 0 ? "+" : ""}{fmtMoney(d)}
+    </span>;
+  };
+
+  return (
+    <section className="rounded-tile border" style={card}>
+      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
+        <h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Beschaffungs-Vergleich")}</h3>
+        <span className="text-[11px] text-nx-text-muted">
+          {t("Kaufen, mieten oder im Lohn — jede Variante als vollständiger Modelllauf. Zeigt, was die Entscheidung mit Liquidität, Verschuldung und Covenants macht, nicht nur mit den Kosten je Hektar.")}
+        </span>
+        <select value={ziel} onChange={(e) => setZiel(e.target.value)}
+          className="ml-auto rounded-control border px-2 text-[12px]"
+          style={{ height: 30, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)" }}>
+          <option value="">{t("Maschinenklasse wählen …")}</option>
+          {park.map((m) => <option key={m.machineId} value={m.machineId}>{m.label}</option>)}
+        </select>
+      </div>
+
+      {!wahl || !ergebnisse || !basis ? (
+        <div className="px-4 py-6 text-center text-[12px] text-nx-text-muted">
+          {t("Klasse wählen — die Varianten werden dann durch das volle Modell gerechnet (Bilanz, Cashflow, Covenants).")}
+        </div>
+      ) : (
+        <>
+          <div className="overflow-x-auto px-2 py-2">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr>
+                  <th className={th + " text-left"}>{t("Variante")}</th>
+                  <th className={th + " text-right"}>{t("Σ CAPEX")}</th>
+                  <th className={th + " text-right"}>{t("Δ CAPEX")}</th>
+                  <th className={th + " text-right"}>{t("EBITDA Endjahr")}</th>
+                  <th className={th + " text-right"}>{t("Δ EBITDA")}</th>
+                  <th className={th + " text-right"}>{t("Jahresergebnis")}</th>
+                  <th className={th + " text-right"}>{t("Peak-Revolver")}</th>
+                  <th className={th + " text-right"}>{t("DSCR min")}</th>
+                  <th className={th + " text-right"}>{t("ND/EBITDA max")}</th>
+                  <th className={th + " text-left"}>{t("Covenants")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ergebnisse.map((e) => {
+                  const aktiv = wahl.beschaffung === e.modus;
+                  return (
+                    <tr key={e.modus} style={{
+                      borderTop: "1px solid var(--nx-border-divider)",
+                      background: aktiv ? "color-mix(in srgb, var(--nx-brand-lift) 8%, transparent)" : undefined,
+                    }}>
+                      <td className="px-3 py-1.5 font-semibold">
+                        {t(e.label)}
+                        {aktiv && <span className="ml-1.5 rounded px-1 text-[9px] font-bold" style={{ color: "var(--nx-brand-lift)", background: "var(--nx-app-bg)" }}>{t("aktiv")}</span>}
+                      </td>
+                      <td className="num px-3 py-1.5 text-right">{fmtMoney(e.capexSum)}</td>
+                      <td className="num px-3 py-1.5 text-right">{e.modus === "kauf" ? "–" : dz(e.capexSum, basis.capexSum, true)}</td>
+                      <td className="num px-3 py-1.5 text-right">{fmtMoney(e.ebitda)}</td>
+                      <td className="num px-3 py-1.5 text-right">{e.modus === "kauf" ? "–" : dz(e.ebitda, basis.ebitda)}</td>
+                      <td className="num px-3 py-1.5 text-right">{fmtMoney(e.ni)}</td>
+                      <td className="num px-3 py-1.5 text-right">{fmtMoney(e.peakRevolver)}</td>
+                      <td className="num px-3 py-1.5 text-right" style={{ color: e.dscrMin < 1.1 ? "var(--nx-error)" : "var(--nx-success)" }}>{fmtNumber(e.dscrMin, 2)}</td>
+                      <td className="num px-3 py-1.5 text-right" style={{ color: e.levMax > 3.5 ? "var(--nx-error)" : "var(--nx-success)" }}>{fmtNumber(e.levMax, 1)}</td>
+                      <td className="px-3 py-1.5">
+                        <span className="rounded px-1.5 py-0.5 text-[9.5px] font-bold"
+                          style={{ color: e.ok ? "var(--nx-success)" : "var(--nx-error)", background: "var(--nx-app-bg)" }}>
+                          {e.ok ? t("eingehalten") : t("verletzt")}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Visualisierung: CAPEX gegen EBITDA-Effekt, je Variante. Der Trade-off in einem Bild —
+              Miete und Lohn senken den CAPEX, kosten aber laufend Ergebnis. */}
+          <div className="grid gap-px px-0" style={{ gridTemplateColumns: `repeat(${ergebnisse.length}, 1fr)`, background: "var(--nx-border-divider)" }}>
+            {ergebnisse.map((e) => {
+              const maxC = Math.max(...ergebnisse.map((x) => x.capexSum)) || 1;
+              const maxE = Math.max(...ergebnisse.map((x) => Math.abs(x.ebitda))) || 1;
+              return (
+                <div key={e.modus} className="px-4 py-3" style={{ background: "var(--nx-surface)" }}>
+                  <div className="caption text-[10px] font-bold text-nx-text-muted">{t(e.label)}</div>
+                  <div className="mt-1.5 text-[10px] text-nx-text-muted">{t("Σ CAPEX")}</div>
+                  <div className="mt-0.5 overflow-hidden rounded-pill" style={{ height: 6, background: "var(--nx-border-divider)" }}>
+                    <div style={{ width: `${(e.capexSum / maxC) * 100}%`, height: "100%", background: "var(--nx-brand-lift)" }} />
+                  </div>
+                  <div className="num mt-0.5 text-[11.5px] font-semibold">{fmtMoney(e.capexSum)} €</div>
+                  <div className="mt-2 text-[10px] text-nx-text-muted">{t("EBITDA Endjahr")}</div>
+                  <div className="mt-0.5 overflow-hidden rounded-pill" style={{ height: 6, background: "var(--nx-border-divider)" }}>
+                    <div style={{ width: `${(Math.abs(e.ebitda) / maxE) * 100}%`, height: "100%", background: "var(--nx-green)" }} />
+                  </div>
+                  <div className="num mt-0.5 text-[11.5px] font-semibold">{fmtMoney(e.ebitda)} €</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
+            {t("Jede Zeile ist ein eigener Durchlauf des vollständigen Modells — Abschreibung, Zins, Working Capital, Revolver-Zirkel, Steuer und Personal wirken mit. Δ gegen „kaufen\". Grün heißt: besser als kaufen. Eine Variante mit niedrigerem CAPEX kann trotzdem das schlechtere Ergebnis liefern — genau dafür ist der Vergleich da.")}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
