@@ -59,8 +59,10 @@ export function ExecutiveDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Stufen-Board — der Ramp greifbar: Meilensteine nebeneinander statt nur Zieljahr */}
-      <StufenBoard domain={sdomain} annual={annual} scenarioId={scenarioId} />
+      {/* AUSGEBLENDET 31.07.2026 (Benedikt): das Meilenstein-Board. Die beiden Tabellen darunter
+          zeigen dieselben Groessen vollstaendig je Planjahr statt in drei Stichjahren — das Board
+          war damit redundant. Die Komponente bleibt erhalten und ist mit einer Zeile zurueck. */}
+      {/* <StufenBoard domain={sdomain} annual={annual} scenarioId={scenarioId} /> */}
 
       {/* Skalierungspfad + Ergebnisband als Tabellen — untereinander (Wunsch 31.07.2026).
           Beides sind die Zahlen, die im Gespräch tatsächlich gebraucht werden. */}
