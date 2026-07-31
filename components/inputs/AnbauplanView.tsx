@@ -3,13 +3,12 @@ import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
 import type { Domain, CatalogEntry } from "../../store/model";
 import { fmtMoney, fmtNumber, fmtEditable, parseDe } from "../../design/format";
-import { AssumptionGroupCards } from "./AssumptionGroupCards";
+import { Feld } from "./Feld";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
-import { deriveCropAreasMY, setCropPathHa, rampCropPath, START_YEAR, type CropPolicy } from "../../store/model";
+import { deriveCropAreasMY, setCropPathHa, rampCropPath, deriveContribution, START_YEAR, type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
 import { JahrWahl, JAHR_DEFAULT } from "./JahrWahl";
-import { Droplets, Sun, X } from "lucide-react";
-import { Segmented } from "../primitives/Segmented";
+import { Droplets, Sun, X, ChevronDown, ChevronRight } from "lucide-react";
 
 /** Feldkosten €/ha einer Kultur = Σ opLine (Menge/ha × Stücksatz), aus dem KATALOG gezogen. */
 function fieldCostPerHaCent(domain: Domain, entry: CatalogEntry, scenarioId: string): number {
@@ -62,7 +61,6 @@ function BeregBadge({ kind }: { kind: "beregnet" | "trocken" }) {
 export function AnbauplanView() {
   const { domain, view, patch } = useModelStore();
   const sc = view.scenarioId;
-  const [tab, setTab] = React.useState<"anbau" | "ertraege" | "preise">("anbau");
   const planDomain = domain;
   const plan = planDomain.anbauplan;
   // ZUSAMMENGEFÜHRT 31.07.2026: der Skalierungspfad steckt jetzt in DIESER Tabelle. Eine Kultur,
@@ -98,21 +96,38 @@ export function AnbauplanView() {
   const avgPerHaCent = totalHa > 0 ? totalAgroCent / totalHa : 0;
   const showDry = dryHa > 0;
 
+  /* AGRONOMISCHER BLOCK JE KULTUR (aufklappbar, Muster wie im Maschinenpark).
+     Ertrag, Verlust, Qualitaet und Preis lagen bis 01.08.2026 in zwei eigenen Tabs und ein
+     zweites Mal im Annahmen-Register — als flache Liste, in der die Zuordnung zur Kultur nur
+     im NAMEN steckte ("Preis Kartoffel (Pommes)"). Wer eine Kultur plante, musste die Flaeche
+     hier und ihren Ertrag zwei Tabs weiter pflegen. Jetzt steht beides in derselben Zeile, und
+     darunter steht sofort, was daraus faellt: Erloes, Direktkosten und Deckungsbeitrag je Hektar.
+     Der Datenort bleibt die Annahme — das Register zeigt dieselben Zeilen weiterhin mit
+     Szenarioband, Status, Quelle und Historie. Ein Wert, zwei Linsen. */
+  const [auf, setAuf] = React.useState<string | null>(null);
+  const db = React.useMemo(() => {
+    // Je-ha-Groessen sind flaechenunabhaengig; das Bezugsjahr bestimmt nur, welche Kultur
+    //  ueberhaupt Flaeche hat. Deshalb auf den Flaechen des gewaehlten Jahres rechnen.
+    const probe = { ...domain, anbauplan: domain.anbauplan.map((a) => ({ ...a, areaHa: haZiel(a.cropId) })) };
+    const m: Record<string, { db: number; erloes: number; kosten: number; foerder: number }> = {};
+    for (const c of deriveContribution(probe as Domain, sc).crops) {
+      if (c.areaHa <= 0) continue;
+      m[c.cropId] = {
+        db: c.contribPerHaCent, erloes: c.revenueCent / c.areaHa,
+        kosten: c.cogsCent / c.areaHa, foerder: c.subsidyCent / c.areaHa,
+      };
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain, sc, zielJ]);
+
   return (
     <div className="space-y-4">
-    <Segmented ariaLabel={t("Ansicht")} value={tab} onChange={(v) => setTab(v as typeof tab)}
-      options={[
-        { value: "anbau", label: t("Anbauplan") },
-        { value: "ertraege", label: t("Erträge") },
-        { value: "preise", label: t("Preise") },
-      ]} />
-
-    {tab === "anbau" && (<>
     <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
         <div>
-          <h2 className="text-[14px] font-semibold">{t("Anbauplan — Kulturen & Flächen")}</h2>
-          <div className="text-[10.5px] text-nx-text-muted">{showDry ? t("Beregnete Kulturen + unberegnete Trockenrotation in einer Tabelle. Jede Kultur mit eigener Bottom-up-Kalkulation.") : t("Agronomie-Kosten aus dem Katalog (Maschinen separat).")}</div>
+          <h2 className="text-[14px] font-semibold">{t("Anbauplan — Kulturen, Flächen & Erlös")}</h2>
+          <div className="text-[10.5px] text-nx-text-muted">{t("Zeile aufklappen für Ertrag, Ernteverlust, Kontrakt-Qualität und Preis dieser Kultur — samt Deckungsbeitrag je Hektar. Dieselben Annahmen führt das Register mit Szenarioband und Review-Status.")}</div>
         </div>
         <span className="inline-flex items-center gap-3"><JahrWahl jahre={jahre.length} wert={zielJ} onChange={setBezugJ} /><span className="caption text-[10.5px] text-nx-text-muted">{t("Gesamtbetrieb · Σ")} {fmtNumber(totalHa, 0)} ha</span></span>
       </div>
@@ -136,16 +151,23 @@ export function AnbauplanView() {
               const entry = planDomain.catalog.find((c) => c.cropId === e.cropId);
               const perHa = entry ? fieldCostPerHaCent(planDomain, entry, sc) : 0;
               const cropLabel = entry ? t(entry.name) : cropName(e.cropId);
+              const offen = auf === e.cropId;
               return (
-                <tr key={e.id} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                <React.Fragment key={e.id}>
+                <tr style={{ borderTop: "1px solid var(--nx-border-divider)", background: offen ? "var(--nx-app-bg)" : undefined }}>
                   <td className="px-2 py-2">
-                    {(
+                    <span className="inline-flex items-center gap-1.5">
+                      <button type="button" title={t("Ertrag, Verlust, Qualität und Preis dieser Kultur")}
+                        onClick={() => setAuf(offen ? null : e.cropId)}
+                        className="text-nx-text-muted hover:text-nx-locate" style={{ lineHeight: 0 }}>
+                        {offen ? <ChevronDown size={14} strokeWidth={2.5} aria-hidden /> : <ChevronRight size={14} strokeWidth={2.5} aria-hidden />}
+                      </button>
                       <select className="rounded-control border px-2 text-[12.5px]" style={{ height: 34, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)", fontWeight: 600 }}
                         value={e.cropId}
                         onChange={(ev) => patch((d) => { d.anbauplan[i].cropId = ev.target.value; })}>
                         {domain.catalog.map((c) => <option key={c.cropId} value={c.cropId}>{t(c.name)}</option>)}
                       </select>
-                    )}
+                    </span>
                   </td>
                   <td className="px-2 py-2"><BeregBadge kind={e.pool === "dryland" ? "trocken" : "beregnet"} /></td>
                   <td className="px-2 py-2 text-right">
@@ -171,6 +193,14 @@ export function AnbauplanView() {
                       onClick={() => patch((d) => { d.anbauplan.splice(i, 1); })}><X size={13} strokeWidth={2.5} aria-hidden /></button>
                   </td>
                 </tr>
+                {offen && (
+                  <tr style={{ background: "var(--nx-app-bg)" }}>
+                    <td colSpan={jahre.length + 8} className="px-4 py-3">
+                      <AgroBlock cropId={e.cropId} label={cropLabel} db={db[e.cropId]} jahr={START_YEAR + zielJ} />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               );
             })}
           </tbody>
@@ -232,16 +262,61 @@ export function AnbauplanView() {
         Sektion Anbaustrategie, die vorerst komplett aus der App genommen ist. Der Code bleibt
         unter components/_archiv erhalten; die Anbaupausen-Wächter (Kartoffel 25 %,
         Doldenblütler 20 %) laufen unabhängig davon in der Prüfliste weiter. */}
-    </>)}
+    </div>
+  );
+}
 
-    {tab === "ertraege" && (
-      <AssumptionGroupCards groups={["Ertrag (t/ha)"]} />
-    )}
 
-    {tab === "preise" && (<>
-      <AssumptionGroupCards groups={["Preis & Verlust (€/t · %)"]} />
-      <AssumptionGroupCards groups={["Kontrakt-Qualität (Erfüllung 0..1)"]} />
-    </>)}
+/** AGRONOMISCHER BLOCK einer Kultur — Ertrag, Verlust, Qualität, Preis und was daraus fällt.
+ *
+ *  Die vier Felder schreiben dieselben Annahmen, die das Register führt (`yield.*`, `loss.*`,
+ *  `qual.*`, `price.*`) — kein zweiter Datenort, nur ein zweiter Blickwinkel. Rechts steht die
+ *  Wirkung: Erlös, Förderung, Direktkosten und Deckungsbeitrag je Hektar. Wer am Ertrag dreht,
+ *  sieht den Deckungsbeitrag im selben Blick springen, statt ihn zwei Ansichten weiter zu suchen.
+ */
+function AgroBlock({ cropId, label, db, jahr }: {
+  cropId: string; label: string;
+  db?: { db: number; erloes: number; kosten: number; foerder: number }; jahr: number;
+}) {
+  const Zeile = ({ k, akey }: { k: string; akey: string }) => (
+    <div className="flex items-center justify-between gap-3 border-b py-1.5" style={{ borderColor: "var(--nx-border-divider)" }}>
+      <span className="text-[12px] text-nx-text-secondary">{k}</span>
+      <Feld akey={akey} breite={92} />
+    </div>
+  );
+  const Wert = ({ k, v, stark, farbe }: { k: string; v: string; stark?: boolean; farbe?: string }) => (
+    <div className="flex items-center justify-between gap-3 border-b py-1.5" style={{ borderColor: "var(--nx-border-divider)" }}>
+      <span className="text-[12px] text-nx-text-secondary">{k}</span>
+      <span className={"num text-[12.5px] " + (stark ? "font-semibold" : "")} style={{ color: farbe }}>{v}</span>
+    </div>
+  );
+  return (
+    <div className="grid gap-x-8 gap-y-0 md:grid-cols-2">
+      <div>
+        <div className="caption mb-1 text-[10px]" style={{ color: "var(--nx-brand-lift)" }}>
+          {t("Agronomie & Erlös")} · {label}
+        </div>
+        <Zeile k={t("Ertrag")} akey={`yield.${cropId}`} />
+        <Zeile k={t("Ernteverlust")} akey={`loss.${cropId}`} />
+        <Zeile k={t("Kontrakt-Qualität")} akey={`qual.${cropId}`} />
+        <Zeile k={t("Preis")} akey={`price.${cropId}`} />
+      </div>
+      <div>
+        <div className="caption mb-1 text-[10px]" style={{ color: "var(--nx-brand-lift)" }}>
+          {t("Ergebnisbeitrag je Hektar")} · {jahr}
+        </div>
+        {db ? (<>
+          <Wert k={t("Erlös (Ertrag × (1 − Verlust) × Preis)")} v={`${fmtMoney(db.erloes)} €`} />
+          <Wert k={t("Förderung")} v={`${fmtMoney(db.foerder)} €`} />
+          <Wert k={t("Direktkosten (Agronomie + Maschinen-Betrieb)")} v={`− ${fmtMoney(db.kosten)} €`} />
+          <Wert k={t("Deckungsbeitrag")} v={`${fmtMoney(db.db)} €`} stark
+            farbe={db.db >= 0 ? "var(--nx-brand-lift)" : "var(--nx-error)"} />
+        </>) : (
+          <div className="py-2 text-[11.5px] text-nx-text-muted">
+            {t("Diese Kultur hat im gewählten Planjahr keine Fläche — der Ergebnisbeitrag erscheint, sobald sie anläuft.")}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
