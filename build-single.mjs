@@ -25,7 +25,11 @@ const html = `<!DOCTYPE html><html lang="de" data-neos-theme="dark"><head><meta 
 // Repo-lokaler Output (CI/Vercel deploy): dist/index.html
 fs.mkdirSync("dist", { recursive: true });
 fs.writeFileSync("dist/index.html", html);
-// Session-Workflow (lokaler Absolut-Pfad für SendUserFile) — best effort, in CI nicht vorhanden:
-try { fs.writeFileSync(process.env.NFX_OUT || "/home/claude/NEOS-FX-App.html", html); } catch { /* CI: Pfad existiert nicht */ }
+// Session-Workflow (lokaler Absolut-Pfad für SendUserFile) — best effort, in CI nicht vorhanden.
+//  Diese Fassung öffnet OHNE Login: die Datei trägt das ganze Modell im Quelltext, ein Passwort
+//  davor schützt nichts und ist in der Chat-Vorschau nicht bedienbar. `dist/index.html` (Deploy)
+//  behält den Login — dort steht die App im Netz und die Anmeldung ist der Zugangsschutz.
+const htmlOffen = html.replace('<div id="root"></div>', '<script>window.__NFX_NO_AUTH__=true</script><div id="root"></div>');
+try { fs.writeFileSync(process.env.NFX_OUT || "/home/claude/NEOS-FX-App.html", htmlOffen); } catch { /* CI: Pfad existiert nicht */ }
 fs.rmSync("web-entry.tsx");
 console.log("HTML:", (html.length / 1024).toFixed(0), "KB → dist/index.html");

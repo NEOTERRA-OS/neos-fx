@@ -50,7 +50,8 @@ export function ExecutiveDashboard() {
   // Kultur-Karten laufen auf der EFFEKTIVEN Domäne (Stufe 1 = nur Ackerbau, sonst Scope) —
   //  damit Anbaustruktur/Contribution/Stufen-Board konsistent zur GuV sind (Dashboard „bei 1" komplett angepasst).
   const sdomain = domain;   // Solo-Modell: keine Scope-/Entity-Filterung mehr
-  const contrib = React.useMemo(() => deriveContribution(sdomain, scenarioId), [sdomain, scenarioId]);
+  // ENTFERNT 01.08.2026: ein zweiter, ungenutzter deriveContribution-Lauf auf den Flaechen des
+  //  Startjahres. Der Contribution-Chart, der ihn gelesen hat, ist seit dem 31.07. weg.
 
   const p = annual.pnl, k = annual.kpis, b = annual.balanceSheet;
   const i = annual.timeline.periodCount - 1; // jüngstes Jahr
@@ -69,7 +70,7 @@ export function ExecutiveDashboard() {
 
       {/* Direkt unter den Financials: WORAUS die Zahlen kommen. Die Anbaustruktur stand vorher
           weit unten — man las erst das Ergebnis und fand die Mengen drei Blöcke später. */}
-      <CropStructureProd domain={sdomain} scenarioId={scenarioId} yearIndex={i} yearLabel={yearLabel} />
+      <CropStructureProd domain={sdomain} scenarioId={scenarioId} yearIndex={0} yearLabel={annual.timeline.periods[0]?.label ?? ""} />
 
       {/* ENTFERNT 31.07.2026: P&L-Wasserfall, Covenant-Ampel, Saison-Kurve und Kulturmix.
           Wasserfall und Ampel zeigten nur das jüngste Jahr — die Ergebnistabelle oben zeigt

@@ -15,6 +15,14 @@ import { t } from "../../lib/i18n";
 const readonlyRequested = () =>
   typeof window !== "undefined" && /(^|[#&?])readonly\b/i.test(window.location.hash + window.location.search);
 
+/** OFFENE EINZELDATEI. Der ausgelieferte Ein-Datei-Build trägt das gesamte Modell im Quelltext —
+ *  wer die Datei hat, hat die Daten. Ein Login davor schützt nichts und steht nur im Weg (und in
+ *  der Chat-Vorschau lässt er sich gar nicht bedienen). Das Flag setzt AUSSCHLIESSLICH
+ *  `build-single.mjs` in die persönlich ausgelieferte Datei; die gehostete Fassung unter
+ *  `dist/index.html` behält den Login unverändert. */
+const offeneDatei = () =>
+  typeof window !== "undefined" && (window as unknown as { __NFX_NO_AUTH__?: boolean }).__NFX_NO_AUTH__ === true;
+
 // neoterra-Glyph (identisch zur Sidebar-Marke) im gelben Quadrat.
 const Glyph = ({ size }: { size: number }) => (
   <svg width={size * 0.56} height={size * 0.56} viewBox="0 0 30.88 30.86" fill="currentColor" aria-hidden>
@@ -244,7 +252,7 @@ function LoginScreen() {
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const configured = supabaseConfigured();
-  const bypass = React.useMemo(() => readonlyRequested() || !configured, [configured]);
+  const bypass = React.useMemo(() => offeneDatei() || readonlyRequested() || !configured, [configured]);
   const [status, setStatus] = React.useState<"loading" | "in" | "out">(bypass ? "in" : "loading");
 
   React.useEffect(() => {

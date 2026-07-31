@@ -7,6 +7,7 @@ import { AssumptionGroupCards } from "./AssumptionGroupCards";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
 import { deriveCropAreasMY, setCropPathHa, rampCropPath, START_YEAR, type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
+import { JahrWahl, JAHR_DEFAULT } from "./JahrWahl";
 import { Droplets, Sun, X } from "lucide-react";
 import { Segmented } from "../primitives/Segmented";
 
@@ -77,7 +78,10 @@ export function AnbauplanView() {
   //  Die Kopfzeile meldete deshalb "Gesamtbetrieb Sigma 300 ha" fuer einen Plan, dessen
   //  Jahresspalten direkt daneben bis 2.334 ha laufen, und die Spalte "Sigma EUR Jahr 1"
   //  stand fuer diese Kulturen auf null. Bezug ist jetzt das ZIELJAHR.
-  const zielJ = jahre.length - 1;
+  // BEZUGSJAHR fuer Kopfzeile und Sigma-Spalte. Default = erstes Planjahr (Regel 01.08.2026):
+  //  eine Summe ohne genanntes Jahr wird als "heute" gelesen, nicht als Endausbau.
+  const [bezugJ, setBezugJ] = React.useState(JAHR_DEFAULT);
+  const zielJ = Math.min(Math.max(0, bezugJ), jahre.length - 1);
   const haZiel = (cropId: string) => myAreas[cropId]?.[Math.min(zielJ, (myAreas[cropId]?.length ?? 1) - 1)] ?? 0;
   const agroOf = (e: { cropId: string; areaHa: number }) => {
     const entry = planDomain.catalog.find((c) => c.cropId === e.cropId);
@@ -110,7 +114,7 @@ export function AnbauplanView() {
           <h2 className="text-[14px] font-semibold">{t("Anbauplan — Kulturen & Flächen")}</h2>
           <div className="text-[10.5px] text-nx-text-muted">{showDry ? t("Beregnete Kulturen + unberegnete Trockenrotation in einer Tabelle. Jede Kultur mit eigener Bottom-up-Kalkulation.") : t("Agronomie-Kosten aus dem Katalog (Maschinen separat).")}</div>
         </div>
-        <span className="caption text-[10.5px] text-nx-text-muted">{t("Gesamtbetrieb im Endausbau · Σ")} {fmtNumber(totalHa, 0)} ha</span>
+        <span className="inline-flex items-center gap-3"><JahrWahl jahre={jahre.length} wert={zielJ} onChange={setBezugJ} /><span className="caption text-[10.5px] text-nx-text-muted">{t("Gesamtbetrieb · Σ")} {fmtNumber(totalHa, 0)} ha</span></span>
       </div>
       <div className="overflow-x-auto px-2 py-2">
         <table className="w-full text-[12.5px]">
@@ -122,7 +126,7 @@ export function AnbauplanView() {
               <th className="px-2 py-2 text-right">{t("Ernte (M)")}</th>
               {jahre.map((y) => <th key={y} className="px-1.5 py-2 text-right">{START_YEAR + y}</th>)}
               <th className="px-2 py-2 text-right">{t("€/ha")}</th>
-              <th className="px-2 py-2 text-right">{t("Σ € Endausbau")}</th>
+              <th className="px-2 py-2 text-right">{t("Σ €")} {START_YEAR + zielJ}</th>
               <th className="px-1 py-2 text-center" title={t("Linear vom Start- auf den Zielwert hochlaufen lassen")}>↗</th>
               <th className="px-2 py-2"></th>
             </tr>
@@ -255,7 +259,7 @@ function ProduktionsTabelle() {
   //  und standen hier mit 0 ha, 0 t und 0 % Anteil — die Tabelle zeigte den Betrieb von 2027
   //  und nannte ihn "Anbaustruktur & Produktion". Jahr waehlbar, Vorbelegung Endausbau.
   const my = React.useMemo(() => deriveCropAreasMY(domain), [domain]);
-  const [jahrIdx, setJahrIdx] = React.useState<number>(my.years - 1);
+  const [jahrIdx, setJahrIdx] = React.useState<number>(JAHR_DEFAULT);
   const yi = Math.min(Math.max(0, jahrIdx), my.years - 1);
   const allRows = domain.anbauplan.map((e) => {
     const ha = my.areas[e.cropId]?.[Math.min(yi, (my.areas[e.cropId]?.length ?? 1) - 1)] ?? e.areaHa;
@@ -279,15 +283,7 @@ function ProduktionsTabelle() {
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-[14px] font-semibold">{t("Anbaustruktur & Produktion")}</h2>
-          <div className="flex items-center gap-1">
-            {Array.from({ length: my.years }, (_, y) => (
-              <button key={y} onClick={() => setJahrIdx(y)}
-                className="rounded-control border px-2 text-[11px] font-semibold"
-                style={{ height: 24, borderColor: "var(--nx-border)",
-                  color: y === yi ? "var(--nx-app-bg)" : "var(--nx-text-secondary)",
-                  background: y === yi ? "var(--nx-brand-lift)" : "var(--nx-surface)" }}>{START_YEAR + y}</button>
-            ))}
-          </div>
+          <JahrWahl jahre={my.years} wert={yi} onChange={setJahrIdx} label="" />
         </div>
         <span className="caption text-[10.5px] text-nx-text-muted">{t("Fläche × Ertrag × (1 − Verlust) → Netto-Erntemenge ·")} {fmtNumber(grandT, 0)} t</span>
       </div>

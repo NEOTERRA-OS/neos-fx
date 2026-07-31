@@ -28,7 +28,7 @@ export function LagerKostenstelleView() {
   const lagerAktiv = !domain.assumptions["store.active"] || resolveScalar(domain, "store.active", sc) >= 0.5;
   const ppy = 12;
   const years = Math.max(1, Math.floor(st.balanceT.length / ppy));
-  const [year, setYear] = React.useState(() => Math.max(0, years - 1));
+  const [year, setYear] = React.useState(0);   // Regel 01.08.2026: jede Jahresauswahl startet im ersten Planjahr
   const y = Math.min(year, years - 1);
 
   const months = Math.round(resolveScalar(domain, "store.months", sc) || 0);

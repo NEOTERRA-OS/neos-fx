@@ -7,7 +7,7 @@ import {
   machineCapPerUnitHours, machineDemandHoursOfYear, deriveCropAreasMY, START_YEAR,
 } from "../../store/model";
 import { NumberInput } from "./NumberInput";
-import { AssumptionField } from "./AssumptionField";
+import { Feld, FeldRoh } from "./Feld";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
 import { RotateCcw } from "lucide-react";
@@ -139,32 +139,25 @@ export function PersonalView() {
                     <div className="text-[9.5px] text-nx-text-muted">{t(z.pos.treiberLabel)}</div>
                   </td>
                   <td className="px-1 py-1.5 text-right">
-                    <span className="inline-flex items-center gap-1">
-                      <NumberInput value={personalRatioOf(domain, z.pos.key)} width={58}
-                        onCommit={(v) => patch((d) => setPersonalRatio(d, z.pos.key, v))} />
-                      <span className="text-[9.5px] text-nx-text-muted" style={{ width: 46, textAlign: "left" }}>{z.pos.einheit}</span>
-                    </span>
+                    <FeldRoh wert={personalRatioOf(domain, z.pos.key)} unit={z.pos.einheitId} breite={64}
+                      onCommit={(v) => patch((d) => setPersonalRatio(d, z.pos.key, v))} titel={t(z.pos.treiberLabel)} />
                   </td>
-                  <td className="px-1 py-1.5 text-right"><AssumptionField akey={z.pos.grossKey} compact /></td>
+                  <td className="px-1 py-1.5 text-right"><Feld akey={z.pos.grossKey} breite={96} einheitZeigen={false} /></td>
                   {Y.map((y) => {
                     const hand = z.overrides[y];
                     const manuell = hand != null && isFinite(hand as number);
                     return (
                       <td key={y} className="px-1 py-1.5 text-right"
                           style={{ background: manuell ? "color-mix(in srgb, var(--nx-locate) 10%, transparent)" : undefined }}>
-                        <span className="inline-flex items-center gap-0.5">
-                          <NumberInput value={Number(z.fte[y].toFixed(1))} width={48}
-                            onCommit={(v) => patch((d) => setPersonalOverride(d, z.pos.key, y, v))} />
-                          <span style={{ width: 12, display: "inline-block" }}>
-                            {manuell && !readOnly && (
-                              <button className="text-[10px] text-nx-text-muted hover:text-nx-error"
-                                title={t("Handeingabe entfernen — wieder dem Treiber folgen")}
-                                onClick={() => patch((d) => setPersonalOverride(d, z.pos.key, y, null))}>
-                                <RotateCcw size={10} />
-                              </button>
-                            )}
-                          </span>
-                        </span>
+                        <FeldRoh wert={z.fte[y]} unit="fte" breite={62} einheitZeigen={false} hervor={manuell}
+                          onCommit={(v) => patch((d) => setPersonalOverride(d, z.pos.key, y, v))}
+                          marker={manuell && !readOnly ? (
+                            <button className="text-[10px] text-nx-text-muted hover:text-nx-error"
+                              title={t("Handeingabe entfernen — wieder dem Treiber folgen")}
+                              onClick={() => patch((d) => setPersonalOverride(d, z.pos.key, y, null))}>
+                              <RotateCcw size={10} />
+                            </button>
+                          ) : null} />
                       </td>
                     );
                   })}

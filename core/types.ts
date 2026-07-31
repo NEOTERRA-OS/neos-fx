@@ -82,17 +82,49 @@ export interface Scenario {
  * 3. Annahmen (Assumptions) — die einzige Tipp-Zone der Kernlogik
  * ------------------------------------------------------------------------ */
 
+/** EINHEIT einer Größe — zugleich Speicher- UND Anzeigevertrag.
+ *
+ *  Die Einheit sagt zwei Dinge: wie der Wert GESPEICHERT ist (Money in Minor-Units, Anteile
+ *  als Dezimalbruch) und wie er ANGEZEIGT wird (Kurzzeichen, Umrechnungsfaktor, Nachkomma-
+ *  stellen). Beides steht an genau einer Stelle: `design/units.ts`. Vorher entschied das
+ *  jede Maske für sich — derselbe Ernteverlust 0,08 erschien im Anbauplan als „0,08 ×" und
+ *  im Annahmen-Register als „8,00 %".
+ *
+ *  Die Liste ist bewusst fein. Vorher fielen 42 Treiber in den Sammelposten 'count' —
+ *  Stunden, Wochen, Planjahre, Liter, sogar Tonnen — und zeigten im Register alle „–".
+ *  Eine Zahl ohne Einheit ist nicht prüfbar. */
 export type Unit =
-  | 'money'          // Minor-Units
-  | 'rate'           // Dezimalbruch
-  | 'count'          // Stückzahl
+  // — Geld (gespeichert in Minor-Units/Cent) —
+  | 'money'          // €
+  | 'money_per_ha'   // €/ha
+  | 'money_per_tonne'// €/t
+  // — Verhältnisgrößen (gespeichert als Dezimalbruch) —
+  | 'rate'           // ALT-ALIAS auf 'percent'; gespeicherte Stände tragen ihn noch
+  | 'percent'        // Anteil, Anzeige ×100 mit %  (Verlust 0,08 → 8,00 %)
+  | 'factor'         // Multiplikator, Anzeige 1:1 mit ×  (Lohnfaktor 1,00 ×)
+  | 'ratio'          // Kennzahl-Schwelle, Anzeige 1:1 mit ×  (Mindest-DSCR 1,10 ×)
+  | 'flag'           // Schalter 0/1
+  // — Mengen —
+  | 'count'          // Stück
+  | 'fte'            // Vollzeitäquivalente
   | 'hectare'        // ha
   | 'tonne'          // t
   | 'tonne_per_ha'   // t/ha
-  | 'money_per_tonne'// €/t (als Money je t)
-  | 'money_per_ha'   // €/ha
-  | 'days'           // z. B. DSO/DPO
-  | 'months';
+  | 'ha_per_day'     // ha/Tag (Schlagkraft)
+  | 'litre'          // l
+  | 'litre_per_ha'   // l/ha
+  | 'metre'          // m
+  | 'km'             // km
+  | 'kmh'            // km/h
+  // — Zeit —
+  | 'minutes'        // min
+  | 'hours'          // h
+  | 'days'           // Tage
+  | 'weeks'          // Wochen
+  | 'months'         // Monate
+  | 'years'          // Jahre (Dauer)
+  | 'year'           // Planjahr (Zeitpunkt)
+  | 'month';         // Planmonat (Zeitpunkt)
 
 /** Wie sich ein Annahmewert über die Zeit entwickelt. */
 export type TimeProfile =

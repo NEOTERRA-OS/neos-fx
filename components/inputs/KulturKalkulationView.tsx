@@ -2,13 +2,14 @@
 import React from "react";
 import { DirektkostenSummary } from "./DirektkostenSummary";
 import { useModelStore } from "../../store/modelStore";
-import { deriveCropMassnahmen, deriveAgronomieWarnings, getProductCatalog, exportMassnahmenplan, MACHINE_LABELS, CROP_NAME, type CropCalc, type MassnahmeBM } from "../../store/model";
+import { START_YEAR, deriveCropMassnahmen, deriveAgronomieWarnings, getProductCatalog, exportMassnahmenplan, MACHINE_LABELS, CROP_NAME, type CropCalc, type MassnahmeBM } from "../../store/model";
 import { findProduct, categoriesForOp, type CatalogProduct } from "../../store/productCatalog";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { NumberInput, TextInput } from "./NumberInput";
 import { ProductPicker } from "./ProductPicker";
 import { cropColor } from "./cropCalc";
 import { t } from "../../lib/i18n";
+import { JahrWahl, JAHR_DEFAULT } from "./JahrWahl";
 import { Link, Search, Ban, TriangleAlert, Check, X } from "lucide-react";
 
 /** BBCH-Annotation aus dem Maßnahmen-Label entfernen (wird bereits in Spalte 1 „BBCH · Timing" gezeigt).
@@ -32,7 +33,12 @@ export function KulturKalkulationView() {
   const crops = domain.anbauplan.map((a) => a.cropId);
   const uniqueCrops = [...new Set(crops)];
   const [crop, setCrop] = React.useState(uniqueCrops[0] ?? "weizen");
-  const calc = deriveCropMassnahmen(domain, crop, sc);
+  // BEZUGSJAHR der absoluten Summen. Je-ha-Kosten sind flächenunabhängig, die Betriebssumme
+  //  ist es nicht: 2027 sind es 300 ha, 2034 sind es 2.334. Default = erstes Planjahr.
+  const jahre = Math.max(1, domain.growth?.years ?? 1);
+  const [jahr, setJahr] = React.useState(JAHR_DEFAULT);
+  const jy = Math.min(Math.max(0, jahr), jahre - 1);
+  const calc = deriveCropMassnahmen(domain, crop, sc, jy);
   const mById = (id: string) => domain.machineCatalog.find((m) => m.id === id);
 
   // Kostenkatalog INTEGRIERT: Mengen & Stücksätze werden direkt hier editiert.
@@ -166,7 +172,7 @@ export function KulturKalkulationView() {
   };
 
   // Roll-up über alle Kulturen (× Fläche)
-  const roll = uniqueCrops.map((c) => deriveCropMassnahmen(domain, c, sc));
+  const roll = uniqueCrops.map((c) => deriveCropMassnahmen(domain, c, sc, jy));
   const rollTot = roll.reduce((acc, c) => {
     const a = c.areaHa;
     acc.total += c.totals.totalCent * a; acc.masch += c.totals.maschineCent * a; acc.bm += c.totals.bmCent * a;
@@ -208,7 +214,7 @@ export function KulturKalkulationView() {
       {/* Maßnahmenblatt */}
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b" style={{ borderColor: "var(--nx-border)" }}>
-          <h3 className="text-[13px] font-semibold" style={{ color: cropColor(crop) }}>{calc.name} {t("· Maßnahmenkette")} ({fmtNumber(calc.areaHa, 0)} ha)</h3>
+          <h3 className="text-[13px] font-semibold" style={{ color: cropColor(crop) }}>{calc.name} {t("· Maßnahmenkette")} ({fmtNumber(calc.areaHa, 0)} ha {t("in")} {START_YEAR + jy})</h3>
           <div className="flex items-center gap-3">
             <label className="inline-flex items-center gap-1.5 text-[11px] text-nx-text-muted">{t("Aussaat/Pflanzung (S)")}
               <select className="rounded-control border px-2 text-[12px] font-semibold"
@@ -359,8 +365,9 @@ export function KulturKalkulationView() {
 
       {/* Roll-up Betrieb */}
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
-        <div className="px-4 py-2.5 border-b" style={{ borderColor: "var(--nx-border)" }}>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b" style={{ borderColor: "var(--nx-border)" }}>
           <h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Betriebssumme · alle Kulturen im Anbauplan")} ({fmtNumber(rollTot.ha, 0)} ha)</h3>
+          <JahrWahl jahre={jahre} wert={jy} onChange={setJahr} />
         </div>
         <div className="grid grid-cols-2 gap-px sm:grid-cols-3 lg:grid-cols-6" style={{ background: "var(--nx-border-divider)" }}>
           {([[t("Direktkosten gesamt"), fmtMoney(rollTot.total) + " €", "var(--nx-locate)"], ["Ø €/ha", fmtMoney(rollTot.ha > 0 ? rollTot.total / rollTot.ha : 0) + " €"], [t("Maschinen"), fmtMoney(rollTot.masch) + " €"], [t("Betriebsmittel"), fmtMoney(rollTot.bm) + " €"], ["Diesel", fmtNumber(rollTot.dieselL, 0) + " l"], [t("Fahrer-Feldstunden"), fmtNumber(rollTot.fahrerH, 0) + " h"]] as [string, string, string?][]).map(([k, v, c], i) => (
@@ -373,7 +380,7 @@ export function KulturKalkulationView() {
         <div className="overflow-x-auto px-2 py-2">
           <table className="w-full text-[12px]">
             <thead><tr>
-              <th className={th + " text-left"}>{t("Kultur")}</th><th className={th + " text-right"}>{t("Fläche ha (Endausbau)")}</th>
+              <th className={th + " text-left"}>{t("Kultur")}</th><th className={th + " text-right"}>{t("Fläche ha")}</th>
               <th className={th + " text-right"}>€/ha</th><th className={th + " text-right"}>{t("Maschinen €/ha")}</th>
               <th className={th + " text-right"}>{t("BM €/ha")}</th><th className={th + " text-right"}>Diesel l/ha</th>
               <th className={th + " text-right"}>{t("Fahrer Ak-h")}</th><th className={th + " text-right"}>{t("Σ Direktkosten")}</th>

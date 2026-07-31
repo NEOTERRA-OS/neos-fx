@@ -80,11 +80,38 @@ export function MaschinenparkView() {
     return 0;
   };
 
-  const capexJahr = Y.map((y) => park.reduce((s, m) => s + capexOf(m, y), 0));
+  const neuJahr = Y.map((y) => park.reduce((s, m) => s + capexOf(m, y), 0));
   const lohnJahr = Y.map((y) => park.reduce((s, m) => s + lohnOf(m, y), 0));
-  const investSum = park.reduce((s, m) => s + investOf(m), 0);
   const lohnSum = lohnJahr.reduce((s, v) => s + v, 0);
   const nMiete = park.filter((m) => m.gemietet).length;
+
+  /* MASCHINEN-CAPEX AUS DER ENGINE — nicht aus einer zweiten Rechnung in dieser Ansicht.
+     Die Ansicht zählte bisher nur ZUGÄNGE (Stückzahl gegen Vorjahr × Listenpreis) und kam auf
+     7,68 Mio, während die Engine 28,19 Mio Maschinen-CAPEX in die Bilanz bucht. Der Unterschied
+     sind die ERSATZINVESTITIONEN: jede Maschine wird nach ihrem Tauschzyklus (5–6 Jahre)
+     erneuert, und das passiert innerhalb des Acht-Jahres-Horizonts — bei kurzzyklischen
+     Anbaugeräten bis zu siebenmal so viel wie der Erstkauf. Dazu kommt die CAPEX-Inflation.
+     Ein Bildschirm, auf dem man kaufen gegen mieten entscheidet, darf 17 Mio Kapitalbindung
+     nicht unterschlagen. Gelesen wird deshalb dieselbe CAPEX-Liste, die auch die Bilanz füllt. */
+  const engineCapex = React.useMemo(() => {
+    const ms = buildModelState(domain, sc);
+    const jeJahr: number[] = new Array(years).fill(0);
+    const jeId: Record<string, number> = {};
+    for (const c of ms.capex) {
+      if (c.assetClass !== "machinery") continue;
+      const y = Math.max(0, Math.min(years - 1, Math.floor((c.purchasePeriod ?? 0) / 12)));
+      jeJahr[y] += c.amount;
+      const mid = String(c.id).replace(/^cx-/, "").replace(/-(c\d+|y\d+).*$/, "");
+      jeId[mid] = (jeId[mid] ?? 0) + c.amount;
+    }
+    return { jeJahr, jeId, summe: jeJahr.reduce((a, b) => a + b, 0) };
+  }, [domain, sc, years, tick]);
+
+  const capexJahr = engineCapex.jeJahr;
+  const investSum = engineCapex.summe;
+  const ersatzJahr = Y.map((y) => Math.max(0, capexJahr[y] - neuJahr[y]));
+  const ersatzSum = ersatzJahr.reduce((a, b) => a + b, 0);
+  const neuSum = neuJahr.reduce((a, b) => a + b, 0);
   const spitze = Math.max(0, ...capexJahr);
 
   const setSpec = (id: string, fn: (m: any) => void) => patch((d) => {
@@ -117,7 +144,7 @@ export function MaschinenparkView() {
         </div>
         <div className="grid grid-cols-2 gap-px sm:grid-cols-5" style={{ background: "var(--nx-border-divider)" }}>
           {[
-            [t("Park-Investition"), `${fmtMoney(investSum)} €`, "var(--nx-brand-lift)"],
+            [t("Park-Investition inkl. Ersatz"), `${fmtMoney(investSum)} €`, "var(--nx-brand-lift)"],
             [`CAPEX ${START_YEAR}`, `${fmtMoney(capexJahr[0] ?? 0)} €`, undefined],
             [t("Spitzen-CAPEX"), `${fmtMoney(spitze)} € · ${START_YEAR + capexJahr.indexOf(spitze)}`, "var(--nx-warning)"],
             [t("Lohn & Miete über den Horizont"), `${fmtMoney(lohnSum)} €`, "var(--nx-locate)"],
@@ -156,7 +183,7 @@ export function MaschinenparkView() {
                 <th className={th + " text-right"}>{t("mieten")}<Einheit>€/ha</Einheit></th>
                 <th className={th + " text-right"}>{t("Lohn")}<Einheit>€/ha</Einheit></th>
                 <th className={th + " text-right"}>{t("günstigster Weg")}<Einheit>€/ha</Einheit></th>
-                <th className={th + " text-right"}>{t("Investition")}<Einheit>€</Einheit></th>
+                <th className={th + " text-right"}>{t("CAPEX gesamt")}<Einheit>€</Einheit></th>
               </tr>
             </thead>
             <tbody>
@@ -288,7 +315,7 @@ export function MaschinenparkView() {
                         )}
                       </td>
                       <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: m.gemietet ? "var(--nx-text-muted)" : "var(--nx-brand-lift)" }}>
-                        {m.gemietet ? "—" : fmtMoney(investOf(m))}
+                        {m.gemietet ? "—" : fmtMoney(engineCapex.jeId[m.machineId] ?? investOf(m))}
                       </td>
                     </tr>
 
@@ -355,7 +382,21 @@ export function MaschinenparkView() {
             </tbody>
             <tfoot>
               <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
-                <td className="px-2 py-2 font-semibold" colSpan={8}>{t("CAPEX je Planjahr (gekaufte Klassen)")}</td>
+                <td className="px-2 py-2" colSpan={8}>{t("davon Neuanschaffung (Zugang gegenüber Vorjahr)")}</td>
+                {Y.map((y) => <td key={y} className="num px-2 py-2 text-right text-nx-text-secondary">{neuJahr[y] ? fmtMoney(neuJahr[y]) : "–"}</td>)}
+                <td colSpan={3} />
+                <td className="num px-2 py-2 text-right text-nx-text-secondary">{fmtMoney(neuSum)}</td>
+              </tr>
+              <tr>
+                <td className="px-2 py-2" colSpan={8}>
+                  {t("davon Ersatzinvestition (Tauschzyklus) und CAPEX-Inflation")}
+                </td>
+                {Y.map((y) => <td key={y} className="num px-2 py-2 text-right text-nx-text-secondary">{ersatzJahr[y] ? fmtMoney(ersatzJahr[y]) : "–"}</td>)}
+                <td colSpan={3} />
+                <td className="num px-2 py-2 text-right text-nx-text-secondary">{fmtMoney(ersatzSum)}</td>
+              </tr>
+              <tr style={{ borderTop: "1px solid var(--nx-border)" }}>
+                <td className="px-2 py-2 font-semibold" colSpan={8}>{t("Maschinen-CAPEX je Planjahr — wie in der Bilanz")}</td>
                 {Y.map((y) => <td key={y} className="num px-2 py-2 text-right font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{capexJahr[y] ? fmtMoney(capexJahr[y]) : "–"}</td>)}
                 <td colSpan={3} />
                 <td className="num px-2 py-2 text-right font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{fmtMoney(investSum)}</td>

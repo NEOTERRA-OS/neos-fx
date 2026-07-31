@@ -323,6 +323,10 @@ export type Domain = {
   scenarios: Scenario[];
   baseScenarioId: string;
   assumptions: Record<string, Assumption>;
+  /** Stand der STAMMDATEN, aus denen dieser Domänen-Stand gebaut wurde (siehe STAMMDATEN_VERSION).
+   *  Liegt er zurück, zieht `migrateDomain` Maschinenkatalog, Listenpreise, Gemeinkosten-Register
+   *  und neue Annahme-Keys aus dem Seed nach — Planentscheidungen bleiben unangetastet. */
+  stammdatenVersion?: number;
   catalog: CatalogEntry[];
   machineCatalog: MachineType[];
   anbauplan: AnbauEntry[];
@@ -1177,18 +1181,18 @@ export const MACHINE_LABELS: Record<string, string> = {
  * ------------------------------------------------------------------------ */
 const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // --- Makro / Steuer / Covenant / OpEx ---
-  A("macro.euribor", "macro.euribor", "EURIBOR 3M", "rate", 0.026, 0.02, 0.036),
-  A("tax.rate", "tax.rate", "Körperschaftsteuersatz (RO)", "rate", 0.16),
+  A("macro.euribor", "macro.euribor", "EURIBOR 3M", "percent", 0.026, 0.02, 0.036),
+  A("tax.rate", "tax.rate", "Körperschaftsteuersatz (RO)", "percent", 0.16),
   // Reinvestitions-Befreiung (RO): reinvestierter Gewinn in qual. Ausrüstung (Maschinen/Bewässerung/
   //  Verarbeitungstechnik) ist von der 16 %-KSt befreit. Jahres-Pooling: befreit = min(Gewinn, qual. CAPEX).
-  A("tax.reinvest_on", "tax.reinvest_on", "Reinvestitions-Befreiung aktiv (0/1)", "count", 0),
-  A("tax.reinvest_share", "tax.reinvest_share", "Qualifizierender Anteil der Ausrüstungs-CAPEX", "rate", 1.0),
+  A("tax.reinvest_on", "tax.reinvest_on", "Reinvestitions-Befreiung aktiv (0/1)", "flag", 0),
+  A("tax.reinvest_share", "tax.reinvest_share", "Qualifizierender Anteil der Ausrüstungs-CAPEX", "percent", 1.0),
   // Innenfinanzierung: Neuanschaffungen (Maschinen) aus Cash statt Kredit — der Revolver deckt nur echte
   //  Deckungslücken (= automatischer „genug Cash?"-Check). 1 = Cash-first, 0 = Kredit-/Leasingverträge.
-  A("finance.capex_selffund", "finance.capex_selffund", "Neuanschaffungen aus Cash (0/1)", "count", 0),
+  A("finance.capex_selffund", "finance.capex_selffund", "Neuanschaffungen aus Cash (0/1)", "flag", 0),
   // opex.admin: Legacy-Zentralverwaltung — jetzt 0, weil die Gemeinkosten strukturiert und
   // dynamisch über domain.overhead (SG&A) laufen; der Composer setzt deren Summe in opex.sga.
-  A("opex.admin", "opex.admin", "Zentralverwaltung (Legacy, in SG&A überführt) /Monat", "money", 0),
+  A("opex.admin", "opex.admin", "Zentralverwaltung /Monat", "money", 0),
   // opex.sga: Summe der strukturierten Corporate-Gemeinkosten (domain.overhead) — Composer setzt sie je Build.
   A("opex.sga", "opex.sga", "Gemeinkosten / SG&A (Summe) /Monat", "money", 0),
   // opex.machines: NUR Wartung/Service (separater Pfad, reale JD-€/h). Betrieb steckt in COGS,
@@ -1199,7 +1203,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // opex.machine_rent_income: Miet-ERTRAG des Verleihers (negativ in OpEx → hebt EBITDA). Composer-gesetzt.
   A("opex.machine_rent_income", "opex.machine_rent_income", "Maschinen-Miet-Ertrag (Intercompany) /Monat", "money", 0),
   // Aufschlag auf die Stundenkosten (AfA/h + Service/h) für die Intercompany-Miete (z. B. +15 % Isolde-Marge).
-  A("machine.rent_markup", "machine.rent_markup", "Miet-Aufschlag des Vermieters (auf die Stundenkosten)", "rate", 0.15),
+  A("machine.rent_markup", "machine.rent_markup", "Miet-Aufschlag des Vermieters", "percent", 0.15),
   // opex.fix: Pacht + Overhead je Kultur — wird im Composer je Build aus dem Anbauplan
   // deterministisch als Monatswert überschrieben.
   A("opex.fix", "opex.fix", "Fixkosten/Monat (Pacht + Overhead/Versich./Zins)", "money", 0),
@@ -1208,14 +1212,14 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("opex.transport", "opex.transport", "Transport zum Abnehmer /Monat (Make-or-Buy)", "money", 0),
   A("transport.spedition_rate", "transport.spedition_rate", "Spedition €/t (Transport zum Abnehmer)", "money", 900),
   // --- Globale TCO-Maschinenkosten (ALLE Feldmaschinen) ---
-  A("tco.discount", "tco.discount", "Einkaufsrabatt auf Listenpreis", "rate", 0.20),
-  A("tco.res_trail", "tco.res_trail", "Restwert-Quote gezogene Maschinen (nach Haltedauer)", "rate", 0.55),
-  A("tco.res_self", "tco.res_self", "Restwert-Quote Selbstfahrer (nach Haltedauer)", "rate", 0.45),
-  A("tco.hold_years", "tco.hold_years", "Haltedauer / Tauschzyklus (Jahre)", "months", 6),
+  A("tco.discount", "tco.discount", "Einkaufsrabatt auf Listenpreis", "percent", 0.20),
+  A("tco.res_trail", "tco.res_trail", "Restwert-Quote gezogene Maschinen (nach Haltedauer)", "percent", 0.55),
+  A("tco.res_self", "tco.res_self", "Restwert-Quote Selbstfahrer (nach Haltedauer)", "percent", 0.45),
+  A("tco.hold_years", "tco.hold_years", "Haltedauer / Tauschzyklus (Jahre)", "years", 6),
   // Ersatzinvestitionen: Tauschzyklus je Maschine = min(hold_years, replace_hours / Bh je Jahr).
-  A("capex.replace_hours", "capex.replace_hours", "Tauschzyklus — Betriebsstunden-Kappung (Bh)", "count", 6000),
+  A("capex.replace_hours", "capex.replace_hours", "Tauschzyklus — Betriebsstunden-Kappung (Bh)", "hours", 6000),
   // Bilanzielle AfA-Dauer der Maschinen (Standard). Länger als der Tauschzyklus ⇒ Buchverlust bei Tausch.
-  A("capex.afa_years", "capex.afa_years", "AfA-Dauer Maschinen (Jahre, bilanziell)", "count", 8),
+  A("capex.afa_years", "capex.afa_years", "AfA-Dauer Maschinen (Jahre, bilanziell)", "years", 8),
   // Wartung/Service €/h (CENT) — reale JD-Angebotswerte; SEPARAT vom CAPEX (Netto-Einkauf).
   // Fließt über den Service-Pfad in opex.machines (Monats-Overhead) und in deriveMachineTCO.
   A("tco.zug_8rx.service_h", "tco.zug_8rx.service_h", "Wartung/Service Zug JD 8RX €/h", "money", 291),
@@ -1242,20 +1246,20 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Kartoffellager voll ist). Die WACHSENDE Kultur steckt im Feldbestand (biologicalAssets),
   // nicht hier. Wirksam wird diese Stellschraube erst mit einem Lieferplan, der den Umsatz
   // aus dem Erntemonat in die Liefermonate verschiebt.
-  A("wc.inv", "wc.inv", "Lagertage Fertigerzeugnisse (erst mit Lieferplan wirksam)", "days", 0),
+  A("wc.inv", "wc.inv", "Lagertage Fertigerzeugnisse", "days", 0),
   // --- Anzahlungen der Off-taker (Paket B) ---
   // VERHANDLUNGSANNAHME, keine Vertragslage: keiner der drei geprüften Verträge sagt eine
   // Anzahlung zu (PepsiCo: Vorschüsse werden gegen die ersten Lieferungen verrechnet, KEIN
   // Vorschuss zugesagt). Bemessung am geplanten Erntewert, nicht am Einzelvertrag — damit
   // skaliert die Vorfinanzierung mit dem Anbauplan und mit Wachstumsszenarien.
   // Base 20 % konservativ · Best 30 % · Worst 0 (im Stressfall zahlt niemand vor).
-  A("advance.rate", "advance.rate", "Anzahlungsquote Off-taker (Anteil geplanter Erntewert)", "rate", 0.20, 0.30, 0),
+  A("advance.rate", "advance.rate", "Anzahlungsquote Off-taker", "percent", 0.20, 0.30, 0),
   // Preis des Gelds: Skonto/Zins p. a. auf den ausstehenden Anzahlungsbetrag → Finanzaufwand.
   // 0, solange keine Konditionen vorliegen. ACHTUNG: 0 stellt die Anzahlung als Gratisgeld dar —
   // Benchmark wäre der Revolver-Satz (EURIBOR 2,6 % + 3,2 % Spread ≈ 5,8 %).
-  A("advance.cost_rate", "advance.cost_rate", "Preis der Vorfinanzierung p. a. (Skonto/Zins)", "rate", 0),
+  A("advance.cost_rate", "advance.cost_rate", "Preis der Vorfinanzierung p. a. (Skonto/Zins)", "percent", 0),
   // Avalprovision p. a. auf die besicherte Summe → Betriebsaufwand (EBITDA-wirksam).
-  A("advance.aval_fee", "advance.aval_fee", "Avalprovision Anzahlung p. a.", "rate", 0),
+  A("advance.aval_fee", "advance.aval_fee", "Avalprovision Anzahlung p. a.", "percent", 0),
   // --- Förderung ---
   // Kappung der GAP-Flächenpauschalen je Betrieb und Jahr ab 2028. DEFAULT 0 = KEINE
   //  KAPPUNG, auf Entscheidung vom 31.07.2026: die laufende Periode wird fortgeschrieben.
@@ -1264,7 +1268,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Risikofall rechnen will, trägt hier 100.000 (also 10.000.000 CENT) ein; dann werden
   //  ab dem zweiten Planjahr die Flächenpauschalen anteilig gekürzt, die gekoppelte
   //  Stützung bleibt ausgenommen.
-  A("cap.per_farm_from_2028", "cap.per_farm_from_2028", "GAP-Kappung Flächenprämien je Betrieb ab 2028 (0 = keine)", "money", 0),
+  A("cap.per_farm_from_2028", "cap.per_farm_from_2028", "GAP-Kappung Flächenprämien je Betrieb ab 2028", "money", 0),
   // ERSETZT 31.07.2026: subsidy.per_ha (205 €/ha) und subsidy.coupled_freilandgemuese
   //  (1.612 €/ha). Beide Keys standen im Annahmen-Register und im Szenario-Studio, wurden
   //  aber von der Engine NIE gelesen — die zahlt aus dem Subventions-Register (BISS, Öko,
@@ -1272,20 +1276,20 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Förderung wirklich bewegt, steht jetzt hier und wirkt auf ALLE Registersätze.
   //  Das ist auch die Stellschraube für das dokumentierte VCP-Risiko: gilt die engere
   //  Lesart der Intervention PD-17, fehlen ab 2032 rund 1,07 Mio €/Jahr.
-  A("subsidy.factor", "subsidy.factor", "Förderung — Faktor auf alle Registersätze (1,00 = wie hinterlegt)", "rate", 1.0, 0.7, 1.15),
+  A("subsidy.factor", "subsidy.factor", "Förderung — Faktor auf alle Registersätze", "factor", 1.0, 0.7, 1.15),
   // ENTFERNT 31.07.2026: rev.gerste_zweitfrucht. Die Gerste-Zweitfrucht gehörte zum
   //  Ackerbau; der Erlösstrom läuft seit Paket A über secondCrop in der Engine.
-  A("covenant.dscr_min", "covenant.dscr_min", "DSCR min. (Agrar-Projektfin. 1,10)", "rate", 1.10),
-  A("covenant.leverage_max", "covenant.leverage_max", "Leverage max.", "rate", 3.5),
+  A("covenant.dscr_min", "covenant.dscr_min", "DSCR min. (Agrar-Projektfin. 1,10)", "ratio", 1.10),
+  A("covenant.leverage_max", "covenant.leverage_max", "Leverage max.", "ratio", 3.5),
 
   // --- Shared Stücksätze (CENT je Einheit) ---
   A("price.diesel_l", "price.diesel_l", "Diesel €/l", "money", 100),
   A("rate.labor_h", "rate.labor_h", "Lohn Saison/zilier €/h", "money", 520),
   // Phase 8 — Inflation p.a. (getrennt, real vs. nominal). Auf 0 = konstante Preise (real).
-  A("infl.output", "infl.output", "Inflation Output-Preise (Ernteerlöse) p.a.", "rate", 0.02),
-  A("infl.input", "infl.input", "Inflation Input-Kosten (Dünger/PSM/Saatgut/Diesel/OpEx) p.a.", "rate", 0.025),
-  A("infl.wage", "infl.wage", "Inflation Löhne/Gehälter p.a.", "rate", 0.03),
-  A("infl.capex", "infl.capex", "Inflation CAPEX (Maschinen/Anlagen) p.a.", "rate", 0.02),
+  A("infl.output", "infl.output", "Inflation Output-Preise (Ernteerlöse) p.a.", "percent", 0.02),
+  A("infl.input", "infl.input", "Inflation Input-Kosten p. a.", "percent", 0.025),
+  A("infl.wage", "infl.wage", "Inflation Löhne/Gehälter p.a.", "percent", 0.03),
+  A("infl.capex", "infl.capex", "Inflation CAPEX (Maschinen/Anlagen) p.a.", "percent", 0.02),
   A("price.per_euro", "price.per_euro", "Pauschal-Stücksatz (1 € = 100 ct)", "money", 100),
   // Phase 4 — Nährstoffpreise €/kg (CENT/kg), reale 2025er-Basis (Masterplan). Editierbar/quellenbelegt.
   // Streuer/Kopf: N via KAS 1,37 / Harnstoff 1,08 (Blend 1,30); P₂O₅ via DAP; K₂O via Kornkali.
@@ -1313,90 +1317,90 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("seed.zwiebel_moehre", "seed.zwiebel_moehre", "Saatgut Zwiebel/Möhre (Präzision) €/ha-Satz", "money", 55000),
   A("seed.suesskartoffel", "seed.suesskartoffel", "Süßkartoffel-Slips €/1.000 Stk (30 T/ha)", "money", 12000),
   A("seed.knoblauch", "seed.knoblauch", "Pflanzknoblauch €/kg (900 kg/ha)", "money", 300),
-  A("seed.knollensellerie", "seed.knollensellerie", "Sellerie-Jungpflanzen €/1.000 Stk (50 T/ha, Erdpressballen)", "money", 6500),
+  A("seed.knollensellerie", "seed.knollensellerie", "Sellerie-Jungpflanzen je 1.000 Stück", "money", 6500),
   // Phase 5 — Bewässerung Energie+Wasser €/mm·ha (CENT). Norm mm je Kultur × Preis (Center-Pivot Süd-Dolj).
   A("irrig.eur_mm", "irrig.eur_mm", "Bewässerung Energie+Wasser €/mm·ha", "money", 150),
 
   // --- Ertrag / Preis / Verlust je Kultur (Referenz A) ---
   A("yield.weizen", "yield.weizen", "Ertrag Winterweizen", "tonne_per_ha", 8.5, 9.4, 7.2),
   A("price.weizen", "price.weizen", "Preis Winterweizen", "money_per_tonne", 17000, 19000, 15000),
-  A("loss.weizen", "loss.weizen", "Verlust Winterweizen", "rate", 0.05),
+  A("loss.weizen", "loss.weizen", "Verlust Winterweizen", "percent", 0.05),
   A("yield.gerste_zw", "yield.gerste_zw", "Ertrag Wintergerste", "tonne_per_ha", 7.0, 7.7, 6.0),
   A("yield.soja_zw", "yield.soja_zw", "Ertrag Zweitfrucht-Soja (nach Gerste, beregnet)", "tonne_per_ha", 2.1, 2.5, 1.6),
   A("price.gerste_zw", "price.gerste_zw", "Preis Wintergerste", "money_per_tonne", 18000, 20000, 16000),
-  A("loss.gerste_zw", "loss.gerste_zw", "Verlust Wintergerste", "rate", 0.05),
+  A("loss.gerste_zw", "loss.gerste_zw", "Verlust Wintergerste", "percent", 0.05),
   A("yield.soja_luzerne", "yield.soja_luzerne", "Ertrag Soja/Luzerne", "tonne_per_ha", 4.0, 4.6, 3.4),
   A("price.soja_luzerne", "price.soja_luzerne", "Preis Soja/Luzerne", "money_per_tonne", 43000, 47000, 38000),
-  A("loss.soja_luzerne", "loss.soja_luzerne", "Verlust Soja/Luzerne", "rate", 0.05),
+  A("loss.soja_luzerne", "loss.soja_luzerne", "Verlust Soja/Luzerne", "percent", 0.05),
   A("yield.winterraps", "yield.winterraps", "Ertrag Winterraps", "tonne_per_ha", 4.0, 4.6, 3.2),
   A("price.winterraps", "price.winterraps", "Preis Winterraps", "money_per_tonne", 47000, 52000, 41000),
-  A("loss.winterraps", "loss.winterraps", "Verlust Winterraps", "rate", 0.05),
+  A("loss.winterraps", "loss.winterraps", "Verlust Winterraps", "percent", 0.05),
   A("yield.mais", "yield.mais", "Ertrag Körnermais (bewässert)", "tonne_per_ha", 14.0, 15.5, 11.5),
   A("price.mais", "price.mais", "Preis Körnermais", "money_per_tonne", 19000, 21000, 16500),
-  A("loss.mais", "loss.mais", "Verlust Körnermais", "rate", 0.10),
+  A("loss.mais", "loss.mais", "Verlust Körnermais", "percent", 0.10),
   A("yield.tomate", "yield.tomate", "Ertrag Industrietomate", "tonne_per_ha", 88, 95, 74),
   A("price.tomate", "price.tomate", "Preis Industrietomate", "money_per_tonne", 12000, 13800, 10200),
-  A("loss.tomate", "loss.tomate", "Verlust Industrietomate", "rate", 0.08),
+  A("loss.tomate", "loss.tomate", "Verlust Industrietomate", "percent", 0.08),
   A("yield.kartoffel_pommes", "yield.kartoffel_pommes", "Ertrag Kartoffel (Pommes)", "tonne_per_ha", 45, 50, 38),
   // Preisband aus den geprüften Abnahmeverträgen (PepsiCo Basis 220 €/t, max. 255,40;
   //  Pestova 240 €/t flat; VIA AGRO Leiter −0,15…+0,11 RON/kg). Spot/Rest-Menge.
   A("price.kartoffel_pommes", "price.kartoffel_pommes", "Preis Kartoffel (Pommes)", "money_per_tonne", 23500, 25500, 22000),
-  A("loss.kartoffel_pommes", "loss.kartoffel_pommes", "Verlust Kartoffel (Pommes)", "rate", 0.10),
+  A("loss.kartoffel_pommes", "loss.kartoffel_pommes", "Verlust Kartoffel (Pommes)", "percent", 0.10),
   A("yield.kartoffel_chips", "yield.kartoffel_chips", "Ertrag Kartoffel (Chips)", "tonne_per_ha", 42, 47, 35),
   A("price.kartoffel_chips", "price.kartoffel_chips", "Preis Kartoffel (Chips)", "money_per_tonne", 23500, 25500, 22000),
-  A("loss.kartoffel_chips", "loss.kartoffel_chips", "Verlust Kartoffel (Chips)", "rate", 0.10),
+  A("loss.kartoffel_chips", "loss.kartoffel_chips", "Verlust Kartoffel (Chips)", "percent", 0.10),
   A("yield.zwiebel_moehre", "yield.zwiebel_moehre", "Ertrag Zwiebel/Möhre", "tonne_per_ha", 60, 66, 51),
   A("price.zwiebel_moehre", "price.zwiebel_moehre", "Preis Zwiebel/Möhre", "money_per_tonne", 17500, 20125, 14875),
-  A("loss.zwiebel_moehre", "loss.zwiebel_moehre", "Verlust Zwiebel/Möhre", "rate", 0.08),
+  A("loss.zwiebel_moehre", "loss.zwiebel_moehre", "Verlust Zwiebel/Möhre", "percent", 0.08),
   // NEU (Marktanalyse 24.07.): Import-Substitutions-Kulturen — konservative Preise (Großhandel ab Hof).
-  A("yield.suesskartoffel", "yield.suesskartoffel", "Ertrag Süßkartoffel (bewässert, Dăbuleni-Versuche 23–53 t)", "tonne_per_ha", 25, 32, 18),
+  A("yield.suesskartoffel", "yield.suesskartoffel", "Ertrag Süßkartoffel", "tonne_per_ha", 25, 32, 18),
   A("price.suesskartoffel", "price.suesskartoffel", "Preis Süßkartoffel (Großhandel, Importparität)", "money_per_tonne", 70000, 85000, 55000),
-  A("loss.suesskartoffel", "loss.suesskartoffel", "Verlust Süßkartoffel (Curing/Sortierung)", "rate", 0.10),
+  A("loss.suesskartoffel", "loss.suesskartoffel", "Verlust Süßkartoffel (Curing/Sortierung)", "percent", 0.10),
   A("yield.knoblauch", "yield.knoblauch", "Ertrag Knoblauch (bewässert)", "tonne_per_ha", 9, 11, 7),
   A("price.knoblauch", "price.knoblauch", "Preis Knoblauch (Erzeuger RO)", "money_per_tonne", 250000, 287500, 212500),
-  A("loss.knoblauch", "loss.knoblauch", "Verlust Knoblauch (Trocknung/Putzen)", "rate", 0.08),
-  A("yield.knollensellerie", "yield.knollensellerie", "Ertrag Knollensellerie (bewässert; Upside 48–50 t Süd-Standort)", "tonne_per_ha", 38, 48, 31),
-  A("price.knollensellerie", "price.knollensellerie", "Preis Knollensellerie (Erzeuger; Importparität ~0,74 USD/kg)", "money_per_tonne", 48000, 55200, 40800),
-  A("loss.knollensellerie", "loss.knollensellerie", "Verlust Knollensellerie (Putzen/Lager)", "rate", 0.07),
+  A("loss.knoblauch", "loss.knoblauch", "Verlust Knoblauch (Trocknung/Putzen)", "percent", 0.08),
+  A("yield.knollensellerie", "yield.knollensellerie", "Ertrag Knollensellerie", "tonne_per_ha", 38, 48, 31),
+  A("price.knollensellerie", "price.knollensellerie", "Preis Knollensellerie", "money_per_tonne", 48000, 55200, 40800),
+  A("loss.knollensellerie", "loss.knollensellerie", "Verlust Knollensellerie (Putzen/Lager)", "percent", 0.07),
   // Rain-fed (Trockenrotation) — eigene, niedrigere Erträge; Preise = beregnet.
   A("yield.weizen_dry", "yield.weizen_dry", "Ertrag Winterweizen (trocken/rain-fed)", "tonne_per_ha", 5.5, 6.2, 4.2),
   A("price.weizen_dry", "price.weizen_dry", "Preis Winterweizen (trocken)", "money_per_tonne", 17000, 19000, 15000),
-  A("loss.weizen_dry", "loss.weizen_dry", "Verlust Winterweizen (trocken)", "rate", 0.05),
+  A("loss.weizen_dry", "loss.weizen_dry", "Verlust Winterweizen (trocken)", "percent", 0.05),
   A("yield.gerste_dry", "yield.gerste_dry", "Ertrag Wintergerste (trocken/rain-fed)", "tonne_per_ha", 4.8, 5.4, 3.8),
   A("price.gerste_dry", "price.gerste_dry", "Preis Wintergerste (trocken)", "money_per_tonne", 18000, 20000, 16000),
-  A("loss.gerste_dry", "loss.gerste_dry", "Verlust Wintergerste (trocken)", "rate", 0.05),
+  A("loss.gerste_dry", "loss.gerste_dry", "Verlust Wintergerste (trocken)", "percent", 0.05),
   A("yield.raps_dry", "yield.raps_dry", "Ertrag Winterraps (trocken/rain-fed)", "tonne_per_ha", 2.8, 3.3, 2.2),
   A("price.raps_dry", "price.raps_dry", "Preis Winterraps (trocken)", "money_per_tonne", 47000, 52000, 41000),
-  A("loss.raps_dry", "loss.raps_dry", "Verlust Winterraps (trocken)", "rate", 0.05),
-  A("qual.weizen_dry", "qual.weizen_dry", "Qualitätserfüllung Winterweizen (trocken)", "rate", 0.98, 1.00, 0.92),
-  A("qual.gerste_dry", "qual.gerste_dry", "Qualitätserfüllung Wintergerste (trocken)", "rate", 0.98, 1.00, 0.92),
-  A("qual.raps_dry", "qual.raps_dry", "Qualitätserfüllung Winterraps (trocken)", "rate", 0.98, 1.00, 0.92),
+  A("loss.raps_dry", "loss.raps_dry", "Verlust Winterraps (trocken)", "percent", 0.05),
+  A("qual.weizen_dry", "qual.weizen_dry", "Qualitätserfüllung Winterweizen (trocken)", "percent", 0.98, 1.00, 0.92),
+  A("qual.gerste_dry", "qual.gerste_dry", "Qualitätserfüllung Wintergerste (trocken)", "percent", 0.98, 1.00, 0.92),
+  A("qual.raps_dry", "qual.raps_dry", "Qualitätserfüllung Winterraps (trocken)", "percent", 0.98, 1.00, 0.92),
   // Sonnenblume (rain-fed Break Crop) — Ertrag Oltenien ~3,0 t/ha, Ölsaatpreis knapp unter Raps.
   A("yield.sonnenblume", "yield.sonnenblume", "Ertrag Sonnenblume (trocken/rain-fed)", "tonne_per_ha", 3.0, 3.5, 2.2),
   A("price.sonnenblume", "price.sonnenblume", "Preis Sonnenblume (Ölsaat)", "money_per_tonne", 46000, 52000, 40000),
-  A("loss.sonnenblume", "loss.sonnenblume", "Verlust Sonnenblume (Ernte/Trocknung)", "rate", 0.05),
-  A("qual.sonnenblume", "qual.sonnenblume", "Qualitätserfüllung Sonnenblume (Ölgehalt)", "rate", 0.98, 1.00, 0.92),
+  A("loss.sonnenblume", "loss.sonnenblume", "Verlust Sonnenblume (Ernte/Trocknung)", "percent", 0.05),
+  A("qual.sonnenblume", "qual.sonnenblume", "Qualitätserfüllung Sonnenblume (Ölgehalt)", "percent", 0.98, 1.00, 0.92),
 
   // --- Kontrakt-Qualitätserfüllung (0..1): realisierter Preis nach Qualitäts-Bonus/Malus ×
   //     akzeptierte Menge. 1 = 100 % Kontrakterfüllung. Best/Worst = Qualitäts-Upside/-Downside.
   //     Treiber je Kultur: Getreide Protein/Fallzahl, Raps Ölgehalt, Tomate Brix/Farbe,
   //     Kartoffel Stärke/Zucker/Fritierfarbe/Sortierung, Zwiebel/Möhre Kaliber/Sortierung.
-  A("qual.weizen", "qual.weizen", "Qualitätserfüllung Weizen (Protein/Fallzahl)", "rate", 0.99, 1.00, 0.94),
-  A("qual.gerste_zw", "qual.gerste_zw", "Qualitätserfüllung Gerste", "rate", 0.99, 1.00, 0.94),
-  A("qual.soja_luzerne", "qual.soja_luzerne", "Qualitätserfüllung Soja/Luzerne", "rate", 0.99, 1.00, 0.95),
-  A("qual.winterraps", "qual.winterraps", "Qualitätserfüllung Raps (Ölgehalt)", "rate", 0.99, 1.00, 0.94),
-  A("qual.mais", "qual.mais", "Qualitätserfüllung Mais (Feuchte/Bruch)", "rate", 0.99, 1.00, 0.95),
-  A("qual.tomate", "qual.tomate", "Qualitätserfüllung Tomate (Brix/Farbe)", "rate", 0.98, 1.00, 0.88),
-  A("qual.kartoffel_pommes", "qual.kartoffel_pommes", "Qualitätserfüllung Kartoffel Pommes (Länge/Zucker/Sortierung)", "rate", 0.97, 1.00, 0.86),
-  A("qual.kartoffel_chips", "qual.kartoffel_chips", "Qualitätserfüllung Kartoffel Chips (Fritierfarbe/Zucker)", "rate", 0.97, 1.00, 0.85),
-  A("qual.zwiebel_moehre", "qual.zwiebel_moehre", "Qualitätserfüllung Zwiebel/Möhre (Kaliber/Sortierung)", "rate", 0.97, 1.00, 0.87),
-  A("qual.suesskartoffel", "qual.suesskartoffel", "Qualitätserfüllung Süßkartoffel (Kaliber/Schale)", "rate", 0.95, 1.00, 0.85),
-  A("qual.knoblauch", "qual.knoblauch", "Qualitätserfüllung Knoblauch (Kaliber/Trocknung)", "rate", 0.97, 1.00, 0.88),
-  A("qual.knollensellerie", "qual.knollensellerie", "Qualitätserfüllung Knollensellerie (Kaliber/Putz)", "rate", 0.97, 1.00, 0.88),
+  A("qual.weizen", "qual.weizen", "Qualitätserfüllung Weizen (Protein/Fallzahl)", "percent", 0.99, 1.00, 0.94),
+  A("qual.gerste_zw", "qual.gerste_zw", "Qualitätserfüllung Gerste", "percent", 0.99, 1.00, 0.94),
+  A("qual.soja_luzerne", "qual.soja_luzerne", "Qualitätserfüllung Soja/Luzerne", "percent", 0.99, 1.00, 0.95),
+  A("qual.winterraps", "qual.winterraps", "Qualitätserfüllung Raps (Ölgehalt)", "percent", 0.99, 1.00, 0.94),
+  A("qual.mais", "qual.mais", "Qualitätserfüllung Mais (Feuchte/Bruch)", "percent", 0.99, 1.00, 0.95),
+  A("qual.tomate", "qual.tomate", "Qualitätserfüllung Tomate (Brix/Farbe)", "percent", 0.98, 1.00, 0.88),
+  A("qual.kartoffel_pommes", "qual.kartoffel_pommes", "Qualitätserfüllung Kartoffel Pommes", "percent", 0.97, 1.00, 0.86),
+  A("qual.kartoffel_chips", "qual.kartoffel_chips", "Qualitätserfüllung Kartoffel Chips", "percent", 0.97, 1.00, 0.85),
+  A("qual.zwiebel_moehre", "qual.zwiebel_moehre", "Qualitätserfüllung Zwiebel/Möhre", "percent", 0.97, 1.00, 0.87),
+  A("qual.suesskartoffel", "qual.suesskartoffel", "Qualitätserfüllung Süßkartoffel (Kaliber/Schale)", "percent", 0.95, 1.00, 0.85),
+  A("qual.knoblauch", "qual.knoblauch", "Qualitätserfüllung Knoblauch (Kaliber/Trocknung)", "percent", 0.97, 1.00, 0.88),
+  A("qual.knollensellerie", "qual.knollensellerie", "Qualitätserfüllung Knollensellerie (Kaliber/Putz)", "percent", 0.97, 1.00, 0.88),
 
   // --- Maschinen-Neupreise (CENT) — Referenz B ---
   // Anbaugeräte-Preise = NUR das Gerät (ohne Schlepper — Traktoren sind eigene Positionen zug_9r/8rx/6r).
-  A("mprice.pflug", "mprice.pflug", "Universalgrubber HORSCH Fortis 6.4 LT (6,20 m, bis 30 cm; Liste ~71,2 T€)", "money", 7200000),
+  A("mprice.pflug", "mprice.pflug", "Universalgrubber HORSCH Fortis 6.4 LT", "money", 7200000),
   A("mprice.saatbett", "mprice.saatbett", "Saatbettkombi 12 m", "money", 7000000),
   A("mprice.drille", "mprice.drille", "Getreidedrille 9–12 m (HORSCH Pronto)", "money", 13000000),
   A("mprice.einzelkorn", "mprice.einzelkorn", "Einzelkornsämaschine HORSCH Maestro 12 TX", "money", 24000000),
@@ -1408,7 +1412,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  was bei 60–70 % Restwert auf 64–75 T€ neu deutet. Beide Richtungen treffen sich bei
   //  50–60 T€. Spanne 45–68 T€. Preistreiber ist der Elementtyp, nicht die Beetzahl:
   //  dieselben 8 Reihen kosten als SN (Einzelreihe) 18.000 €, als SNT (Bandsaat) 36.500 €.
-  A("mprice.gem_saat", "mprice.gem_saat", "Beetsämaschine Feingemüse (3 Beete, Agricola-Klasse)", "money", 5500000),
+  A("mprice.gem_saat", "mprice.gem_saat", "Beetsämaschine Feingemüse", "money", 5500000),
   // Knoblauch wird gesteckt, nicht gesät. ANKER: JJ Broch PLNA-6 (6-reihig, pneumatisch),
   //  Neupreis 21.850 € netto bei Topmaquinaria/ES (Abruf 31.07.2026); Reihenkosten in dieser
   //  Klasse rd. 2.500–3.500 €/Reihe, 6 → 8 Reihen also +4.000–8.000 €. Spanne 22–34 T€.
@@ -1419,33 +1423,33 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  offener Punkt in der Agronomie, keine Frage des Maschinenpreises.
   A("mprice.knobl_lege", "mprice.knobl_lege", "Knoblauch-Legemaschine pneumatisch (8-reihig)", "money", 2800000),
   A("mprice.streuer", "mprice.streuer", "Düngerstreuer RAUCH AERO GT 36 m", "money", 8500000),
-  A("mprice.streuer_xeric", "mprice.streuer_xeric", "Düngerstreuer HORSCH Leeb Xeric 14 FS (48 m, 14.000 l)", "money", 16500000),
-  A("mprice.boom48_pkg", "mprice.boom48_pkg", "48-m-Paket: Gestänge-Umrüstung PT/TD + Fahrgassen-Terminal", "money", 17000000),
+  A("mprice.streuer_xeric", "mprice.streuer_xeric", "Düngerstreuer HORSCH Leeb Xeric 14 FS", "money", 16500000),
+  A("mprice.boom48_pkg", "mprice.boom48_pkg", "48-m-Paket", "money", 17000000),
   A("mprice.spritze14", "mprice.spritze14", "Spritzen-Kostenprofil 36 m (Mischpark, €/Einheit)", "money", 38000000),
   A("mprice.krautschl", "mprice.krautschl", "Krautschläger ROPA KS 475 (4-reihig, 75–80 cm)", "money", 4500000),
   // Kartoffel One-Pass-Kette (Delta 21.07.) — ersetzt Legemaschine/Dammformer/Vollernter SF.
   A("mprice.onepass", "mprice.onepass", "Dewulf CP 42 Smart Float Becherlegemaschine", "money", 8000000),
   A("mprice.sc360", "mprice.sc360", "Dewulf SC-Front Frontfräse", "money", 6000000),
-  A("mprice.roder_ropa", "mprice.roder_ropa", "Roder ROPA Keiler II (Liste netto o. MwSt, mit WD-Triebachse)", "money", 22500000),
+  A("mprice.roder_ropa", "mprice.roder_ropa", "Roder ROPA Keiler II", "money", 22500000),
   // Reale John-Deere-Angebotswerte (Liste) — Overrides für Rabatt/Restwert an der MachineType.
   A("mprice.zug_8rx", "mprice.zug_8rx", "Zugschlepper JD 8RX 410 (Liste, JD-Angebot)", "money", 68644700),
   // 9R 590 -> 8R 410 (Entscheidung 31.07.2026). Fuer 300 ha Startflaeche ist die 590-PS-Klasse
   //  ueberdimensioniert. Anker: dasselbe JD-Angebot vom 23.07.2026 wie fuer 8RX und 9R —
   //  Liste 523.813 EUR gegen 700.336 EUR, also -25,2 %. Der 8R 410 zieht den 6,2-m-Grubber
   //  (HORSCH gibt max. 435 PS an) mit Reserve.
-  A("mprice.zug_9r", "mprice.zug_9r", "Zugschlepper JD 8R 410 (Liste, JD-Angebot 23.07.2026)", "money", 52381300),
-  A("mprice.ops_6r", "mprice.ops_6r", "Pflege/Ernte-Schlepper JD 6R 260 (Liste = 6R 250 +3 %)", "money", 32509400),
-  A("mprice.lkw_sattel", "mprice.lkw_sattel", "LKW mit Sattelauflieger (Straßentransport/Auslieferung)", "money", 13000000),
+  A("mprice.zug_9r", "mprice.zug_9r", "Zugschlepper JD 8R 410", "money", 52381300),
+  A("mprice.ops_6r", "mprice.ops_6r", "Pflege-/Ernteschlepper JD 6R 260", "money", 32509400),
+  A("mprice.lkw_sattel", "mprice.lkw_sattel", "LKW mit Sattelauflieger", "money", 13000000),
   A("mprice.radlader", "mprice.radlader", "JCB Radlader (Lager/Verladung)", "money", 10000000),
   A("mprice.shuttle", "mprice.shuttle", "Field-Shuttle 8×8 (Überladewagen)", "money", 5000000),
-  A("mprice.fieldloader", "mprice.fieldloader", "DEMA Fieldloader OL-COMBI (Feldrand-Überladetrichter, 9-m-Elevator, elektr.)", "money", 20000000),
-  A("log.fieldloader_tph", "log.fieldloader_tph", "Fieldloader-Überladeleistung (t/h) — treibt den Bedarf", "tonne_per_ha", 150),
+  A("mprice.fieldloader", "mprice.fieldloader", "DEMA Fieldloader OL-COMBI", "money", 20000000),
+  A("log.fieldloader_tph", "log.fieldloader_tph", "Fieldloader-Überladeleistung", "tonne_per_ha", 150),
   A("mprice.tompflanz", "mprice.tompflanz", "Tomaten-Pflanzmaschine Checchi & Magli", "money", 14000000),
   A("mprice.tomernte", "mprice.tomernte", "Tomaten-Vollernter SF", "money", 45000000),
   A("mprice.gem_schwad", "mprice.gem_schwad", "Zwiebel-Schwadleger ASA-LIFT WR-180", "money", 9500000),
   A("mprice.gem_lader", "mprice.gem_lader", "Zwiebel-Ladeeroder ASA-LIFT SP-400", "money", 26500000),
   A("mprice.gem_moehre", "mprice.gem_moehre", "Möhren-Klemmbandroder ASA-LIFT T-300 DF (2-reihig)", "money", 34000000),
-  A("mprice.maehdr", "mprice.maehdr", "Mähdrescher JD S7 900 + Bandschneidwerk HD40X 12,19 m (Liste; JD-Angebot)", "money", 85877800),
+  A("mprice.maehdr", "mprice.maehdr", "Mähdrescher JD S7 900", "money", 85877800),
   A("mprice.transport", "mprice.transport", "Kipper/Anhänger (Transport)", "money", 4000000),
   // 3.000 €/ha statt 2.000: derselbe Ausbau (Pivot + Verrohrung + Pumpe) stand hier und in
   //  growth.irrigEurPerHaCent mit zwei verschiedenen Preisen. Je nachdem, welcher Block rechnete,
@@ -1458,10 +1462,10 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Beregnung investiert, zahlt die Pivots zweimal: 3,63 Mio € CAPEX neben 500 €/ha
   //  Pachtaufschlag, der bis 2034 auf rund 1,17 Mio € im Jahr läuft. Der Regler bleibt: wer
   //  unberegnete Fläche pachtet und selbst erschließt, setzt hier das Startjahr.
-  A("irrig.capex_from_year", "irrig.capex_from_year", "Beregnungs-CAPEX ab Planjahr (≥ Horizont = nie, Pivots sind in der Pacht)", "count", 99),
+  A("irrig.capex_from_year", "irrig.capex_from_year", "Beregnungs-CAPEX ab Planjahr", "year", 99),
   // Globaler Regler auf ALLE Lohnarbeits-Sätze. Basis 1,0 = deutsche Erfahrungssätze (LWK NRW).
   //  Süd-Dolj liegt beim Lohnanteil darunter — hier kalibrieren, sobald Angebote vorliegen.
-  A("lohn.factor", "lohn.factor", "Lohnarbeit — Satz-Faktor (1,0 = LWK-Erfahrungssätze)", "rate", 1.0, 0.85, 1.15),
+  A("lohn.factor", "lohn.factor", "Lohnarbeit — Satz-Faktor", "factor", 1.0, 0.85, 1.15),
   // Lager €/t GETRENNT: Hülle/Bau und Technik. Summe bleibt bei 120 €/t wie zuvor — die
   //  Aufteilung folgt der CAPEX-Taxonomie (Bau: Schüttlager + Hülle rund 11,2 Mio €,
   //  Technik: Kühl-/CA-Lager + Curing + Packlinien rund 12,4 Mio €), also etwa hälftig.
@@ -1472,7 +1476,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("mprice.store_tech_pert", "mprice.store_tech_pert", "Cold Storage Technik €/t Kapazität", "money_per_tonne", 20000),
   // Absatz-/Kapazitätsgrenzen: Verarbeitungskapazität des kontrahierten Tomatenwerks (t/Kampagne).
   //  Mittelgroßes EU-Werk ≈ 100–250 kt/Kampagne (2.000–4.000 t/Tag × 60–80 Tage). Advisor warnt darüber.
-  A("market.tomate_cap_t", "market.tomate_cap_t", "Tomatenwerk-Kapazität (t/Kampagne)", "count", 150000),
+  A("market.tomate_cap_t", "market.tomate_cap_t", "Tomatenwerk-Kapazität (t/Kampagne)", "tonne", 150000),
   // Einlagerungsquote je lagerpflichtiger Kultur (0..1): Anteil der Ernte, der eingelagert wird.
   //  Rest geht direkt Feld → Verarbeiter (keine Lager-CAPEX). Treibt die Lager-Bemessung (store).
   // Szenarioband nach Vorgabe Benedikt: Base 50/50 · Best 25 % frisch / 75 % Lager ·
@@ -1480,15 +1484,15 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Szenario-Studio). Sie treibt gleichzeitig Preis, Umsatzzeitpunkt, Kapitalbindung und
   //  die Lager-CAPEX-Bemessung — im Worst Case ohne Einlagerung entfällt konsequenterweise
   //  auch die Lagerinvestition.
-  A("store.share.kartoffel_pommes", "store.share.kartoffel_pommes", "Einlagerungsquote Kartoffel Pommes", "rate", 0.50, 0.75, 0),
-  A("store.share.kartoffel_chips", "store.share.kartoffel_chips", "Einlagerungsquote Kartoffel Chips", "rate", 0.50, 0.75, 0),
-  A("store.share.zwiebel_moehre", "store.share.zwiebel_moehre", "Einlagerungsquote Zwiebel/Möhre", "rate", 0.50, 0.75, 0),
+  A("store.share.kartoffel_pommes", "store.share.kartoffel_pommes", "Einlagerungsquote Kartoffel Pommes", "percent", 0.50, 0.75, 0),
+  A("store.share.kartoffel_chips", "store.share.kartoffel_chips", "Einlagerungsquote Kartoffel Chips", "percent", 0.50, 0.75, 0),
+  A("store.share.zwiebel_moehre", "store.share.zwiebel_moehre", "Einlagerungsquote Zwiebel/Möhre", "percent", 0.50, 0.75, 0),
   // Die übrigen lagerpflichtigen Kulturen brauchen dieselbe Quote — sonst klaffen die
   //  Vorgaben auseinander: die CAPEX-Bemessung nimmt bei fehlendem Schlüssel 100 % an,
   //  der Erlöskanal in der Engine dagegen 0 %. Dann wird Lager gebaut, das nie genutzt wird.
-  A("store.share.suesskartoffel", "store.share.suesskartoffel", "Einlagerungsquote Süßkartoffel", "rate", 0.50, 0.75, 0),
-  A("store.share.knoblauch", "store.share.knoblauch", "Einlagerungsquote Knoblauch", "rate", 0.50, 0.75, 0),
-  A("store.share.knollensellerie", "store.share.knollensellerie", "Einlagerungsquote Knollensellerie", "rate", 0.50, 0.75, 0),
+  A("store.share.suesskartoffel", "store.share.suesskartoffel", "Einlagerungsquote Süßkartoffel", "percent", 0.50, 0.75, 0),
+  A("store.share.knoblauch", "store.share.knoblauch", "Einlagerungsquote Knoblauch", "percent", 0.50, 0.75, 0),
+  A("store.share.knollensellerie", "store.share.knollensellerie", "Einlagerungsquote Knollensellerie", "percent", 0.50, 0.75, 0),
 
   /* --- Lagerkanal: Planungsannahmen statt Einzelverträge -------------------
    * Die Planung ist bewusst von den Bestandsverträgen gelöst (die galten für 2025 und sind
@@ -1506,15 +1510,15 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Entscheidung 31.07.2026 (Benedikt): erst einmal komplett raus — der Lagerbau ist im
   //  Detail zu analysieren. Die vollständige Lagermechanik (Dienstleistungsmodell,
   //  Spitzenbelegung, Break-even-Gebühr) bleibt im Modell und ist mit einer 1 wieder scharf.
-  A("store.active", "store.active", "Lager/Packhaus aktiv (1) oder komplett aus (0)", "count", 0),
+  A("store.active", "store.active", "Lager/Packhaus aktiv (1) oder komplett aus (0)", "flag", 0),
   // Die beiden Bauteile werden EINZELN entschieden (Beschluss 31.07.2026): Hülle und Technik
   //  sind getrennte Investitionen mit getrennter Nutzungsdauer, getrennter Steuerwirkung
   //  (Art. 22 Reinvestitionsbefreiung greift auf Technik, nicht auf Gebäude) und getrennter
   //  Make-or-Buy-Frage — eine Halle lässt sich mieten, eine Packlinie kaum.
   //  Wirken erst, wenn store.active = 1 steht.
-  A("store.capex_shell", "store.capex_shell", "Lager: Hülle & Bau selbst investieren (1/0)", "count", 1),
-  A("store.capex_tech", "store.capex_tech", "Lager: Technik selbst investieren (1/0)", "count", 1),
-  A("store.from_month", "store.from_month", "Lager verfügbar ab Planmonat", "count", 12),
+  A("store.capex_shell", "store.capex_shell", "Lager: Hülle & Bau selbst investieren (1/0)", "flag", 1),
+  A("store.capex_tech", "store.capex_tech", "Lager: Technik selbst investieren (1/0)", "flag", 1),
+  A("store.from_month", "store.from_month", "Lager verfügbar ab Planmonat", "month", 12),
   // DER Verhandlungswert: Aufschlag, den der Abnehmer für Lagerware zahlt, je Tonne und Monat.
   // VERHANDLUNGSANNAHME — kein vorliegender Vertrag sagt ihn zu; PepsiCo verlangt Lagerung
   // heute ausdrücklich auf Kosten NEOTERRAs. Kalibrierung: die reine Kapitalbindung kostet bei
@@ -1525,7 +1529,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  unserem Lager. Die Einlagerung wird als separate Dienstleistung berechnet.
   //  0 = EIGENLAGER: Die Ware bleibt unser Eigentum und wird erst bei der Auslagerung verkauft.
   //  Der Unterschied ist erheblich — siehe Kommentar in computeOperating.
-  A("store.service_mode", "store.service_mode", "Lager als Dienstleistung (1) statt Eigenlager (0)", "count", 1),
+  A("store.service_mode", "store.service_mode", "Lager als Dienstleistung (1) statt Eigenlager (0)", "flag", 1),
   /* Lagergebühr je Tonne und Monat — Kalibrierung Benedikt nach der Cold-Storage-Rechnung:
    *   Base  20,00   Best  22,00   Worst  11,70 = GENAU DER BREAK-EVEN
    *
@@ -1549,24 +1553,24 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Kalibrierung Benedikt: Base 3 %. Best 2 %, Worst 8 % als Band. Der Schwund ist der
   //  wirksamste Hebel auf den Break-even — die Senkung von 5 auf 3 % drückte ihn im Base
   //  Case um 2,71 €/t·Monat (16,15 → 13,44).
-  A("store.loss_rate", "store.loss_rate", "Lagerverlust (Anteil der eingelagerten Menge)", "rate", 0.03, 0.02, 0.08),
+  A("store.loss_rate", "store.loss_rate", "Lagerverlust (Anteil der eingelagerten Menge)", "percent", 0.03, 0.02, 0.08),
 
 
   // --- Personal (headcount / Bruttomonatsgehalt CENT) — Referenz D, Stufe 1 ---
   // Kopfzahlen skaliert der Composer mit stageFactor.
-  A("pers.leitung.n", "pers.leitung.n", "Betriebsleitung & Agronomie (FTE)", "count", 3),
+  A("pers.leitung.n", "pers.leitung.n", "Betriebsleitung & Agronomie (FTE)", "fte", 3),
   A("pers.leitung.gross", "pers.leitung.gross", "Leitung/Agronomie Brutto/Monat", "money", 250000),
-  A("pers.stamm.n", "pers.stamm.n", "Stamm-Maschinenführer (FTE)", "count", 12),
+  A("pers.stamm.n", "pers.stamm.n", "Stamm-Maschinenführer (FTE)", "fte", 12),
   A("pers.stamm.gross", "pers.stamm.gross", "Maschinenführer Brutto/Monat (7 €/h)", "money", 100333),
-  A("pers.bewaesserung.n", "pers.bewaesserung.n", "Bewässerung / Pivot-Steuerung (FTE)", "count", 4),
+  A("pers.bewaesserung.n", "pers.bewaesserung.n", "Bewässerung / Pivot-Steuerung (FTE)", "fte", 4),
   A("pers.bewaesserung.gross", "pers.bewaesserung.gross", "Bewässerung Brutto/Monat", "money", 90000),
-  A("pers.lager.n", "pers.lager.n", "Lager & Aufbereitung (FTE)", "count", 4),
+  A("pers.lager.n", "pers.lager.n", "Lager & Aufbereitung (FTE)", "fte", 4),
   A("pers.lager.gross", "pers.lager.gross", "Lager Brutto/Monat", "money", 88000),
-  A("pers.service.n", "pers.service.n", "Werkstatt & Service/Technik (FTE)", "count", 3),
+  A("pers.service.n", "pers.service.n", "Werkstatt & Service/Technik (FTE)", "fte", 3),
   A("pers.service.gross", "pers.service.gross", "Werkstatt/Service Brutto/Monat", "money", 115000),
-  A("pers.saison.n", "pers.saison.n", "Saisonkräfte (Kampagne, FTE-Äq.)", "count", 11.72),
+  A("pers.saison.n", "pers.saison.n", "Saisonkräfte (Kampagne, FTE-Äq.)", "fte", 11.72),
   A("pers.saison.gross", "pers.saison.gross", "Saisonkraft Brutto/Monat (5,20 €/h)", "money", 74550),
-  A("pers.prakt.n", "pers.prakt.n", "Praktikanten / Trainees (FTE)", "count", 4),
+  A("pers.prakt.n", "pers.prakt.n", "Praktikanten / Trainees (FTE)", "fte", 4),
   A("pers.prakt.gross", "pers.prakt.gross", "Praktikant Brutto/Monat", "money", 45000),
 
   // --- Holding (CENT je Periode / Raten) ---
@@ -1583,50 +1587,50 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Schachtelprivileg (§ 8b KStG): 95 % steuerfrei, 5 % gelten als nicht abziehbare
   //  Betriebsausgabe — die Beteiligungserträge sind daher fast unbelastet; der Satz hier
   //  trifft die eigenen Erträge der Holding (v. a. die Management-Fee).
-  A("hold.taxrate", "hold.taxrate", "Holding-Steuersatz (DE: KSt + SolZ + GewSt)", "rate", 0.298),
+  A("hold.taxrate", "hold.taxrate", "Holding-Steuersatz (DE: KSt + SolZ + GewSt)", "percent", 0.298),
   // Ausschüttung DE-GmbH an Gesellschafter: 25 % Kapitalertragsteuer + SolZ = 26,375 %.
   //  Auf 0 lassen, solange thesauriert wird; für die Ausschüttungsrechnung hier setzbar.
-  A("hold.wht", "hold.wht", "Kapitalertragsteuer Ausschüttung (DE, inkl. SolZ)", "rate", 0),
+  A("hold.wht", "hold.wht", "Kapitalertragsteuer Ausschüttung (DE, inkl. SolZ)", "percent", 0),
 
   // --- Delta 21.07. (2): Spritzstrategie (fenstergetriebene Flotte, Mischpark) ---
   // Die Spritzenzahl ist der Mehrkultur-Sommerpeak (max. gleichzeitiger PSM-Bedarf ALLER
   // Kulturen), nicht mehr pauschal. Fließt über spray_gz/spray_sf in CAPEX/TCO/Bilanz.
-  A("spray.appl_lha", "spray.appl_lha", "Wasseraufwand l/ha (Kartoffel-Blight 200–400)", "count", 200),
+  A("spray.appl_lha", "spray.appl_lha", "Wasseraufwand l/ha (Kartoffel-Blight 200–400)", "litre_per_ha", 200),
   A("spray.window_days", "spray.window_days", "PSM-Fenster je Runde (Tage)", "days", 5),
-  A("spray.boom_m", "spray.boom_m", "Gestängebreite m (36 = Bestand · 48 = 48-m-Paket → weniger Spritzen + −25 % Spritz-€/ha)", "count", 36),
+  A("spray.boom_m", "spray.boom_m", "Gestängebreite", "metre", 36),
   // 48-m-Paket-Schalter: aktiviert kohärent 48-m-Spritzenbreite + Streuer-Swap AERO GT→Leeb Xeric 14 FS
   // + 48-m-Umrüst-CAPEX (Gestänge PT/TD + Fahrgassen-Terminal). Boden/Saat/Drusch (12 m) bereits kompatibel.
-  A("farm.boom48", "farm.boom48", "48-m-Paket aktiv (0 = 36 m Bestand · 1 = 48 m Paket)", "count", 0),
-  A("spray.speed_kmh", "spray.speed_kmh", "Fahrtempo km/h", "count", 12),
-  A("spray.refill_min", "spray.refill_min", "Befüllzeit min", "count", 20),
-  A("spray.field_eff", "spray.field_eff", "Feldeffizienz", "rate", 0.80),
-  A("spray.hours_day", "spray.hours_day", "Einsatzstunden/Tag", "count", 11),
-  A("spray.reserve", "spray.reserve", "Spritzen — Redundanz-Reserve (Stück über dem Rechenbedarf)", "count", 1),
-  A("spray.sf_share", "spray.sf_share", "Selbstfahrer-Anteil der Spritzenflotte", "rate", 0.25),
-  A("spray.tank_gz_l", "spray.tank_gz_l", "Tank gezogen (Dammann) l", "count", 14000),
-  A("spray.tank_sf_l", "spray.tank_sf_l", "Tank Selbstfahrer l", "count", 12000),
-  A("spray.pivot_ha", "spray.pivot_ha", "Pivot-Fläche ha (1 Kreis)", "count", 70),
-  A("spray.boom48_prem", "spray.boom48_prem", "48-m-Preisaufschlag", "rate", 0.15),
-  A("spray.res48_hair", "spray.res48_hair", "48-m-Restwert-Abschlag (pp)", "rate", 0.08),
+  A("farm.boom48", "farm.boom48", "48-m-Paket aktiv (0 = 36 m Bestand · 1 = 48 m Paket)", "flag", 0),
+  A("spray.speed_kmh", "spray.speed_kmh", "Fahrtempo km/h", "kmh", 12),
+  A("spray.refill_min", "spray.refill_min", "Befüllzeit min", "minutes", 20),
+  A("spray.field_eff", "spray.field_eff", "Feldeffizienz", "percent", 0.80),
+  A("spray.hours_day", "spray.hours_day", "Einsatzstunden/Tag", "hours", 11),
+  A("spray.reserve", "spray.reserve", "Spritzen — Redundanz-Reserve", "count", 1),
+  A("spray.sf_share", "spray.sf_share", "Selbstfahrer-Anteil der Spritzenflotte", "percent", 0.25),
+  A("spray.tank_gz_l", "spray.tank_gz_l", "Tank gezogen (Dammann) l", "litre", 14000),
+  A("spray.tank_sf_l", "spray.tank_sf_l", "Tank Selbstfahrer l", "litre", 12000),
+  A("spray.pivot_ha", "spray.pivot_ha", "Pivot-Fläche ha (1 Kreis)", "hectare", 70),
+  A("spray.boom48_prem", "spray.boom48_prem", "48-m-Preisaufschlag", "percent", 0.15),
+  A("spray.res48_hair", "spray.res48_hair", "48-m-Restwert-Abschlag (pp)", "percent", 0.08),
   A("mprice.spray_gz", "mprice.spray_gz", "Spritze gezogen (Dammann 14.000 l)", "money", 25000000),
   A("mprice.spray_sf", "mprice.spray_sf", "Spritze Selbstfahrer (12.000 l)", "money", 56000000),
 
   // --- Delta 21.07. (2): Wertkultur-Maschinen bottom-up (Einsatzplanung) ---
   A("mprice.transplant", "mprice.transplant", "Tom/Gem-Pflanzmaschine (bottom-up)", "money", 9000000),
   A("mprice.tomharv", "mprice.tomharv", "Tom/Gem-Ernter (bottom-up)", "money", 45000000),
-  A("val.trans_rate", "val.trans_rate", "Setzleistung ha/Tag je Pflanzmaschine", "count", 8),
-  A("val.trans_win", "val.trans_win", "Setzfenster Wochen", "count", 5),
-  A("val.tomh_rate", "val.tomh_rate", "Ernteleistung ha/Tag je Ernter", "count", 15),
-  A("val.tomh_win", "val.tomh_win", "Erntefenster Wochen", "count", 8),
+  A("val.trans_rate", "val.trans_rate", "Setzleistung ha/Tag je Pflanzmaschine", "ha_per_day", 8),
+  A("val.trans_win", "val.trans_win", "Setzfenster Wochen", "weeks", 5),
+  A("val.tomh_rate", "val.tomh_rate", "Ernteleistung ha/Tag je Ernter", "ha_per_day", 15),
+  A("val.tomh_win", "val.tomh_win", "Erntefenster Wochen", "weeks", 8),
   A("val.seas_labor_ha", "val.seas_labor_ha", "Saisonarbeit €/ha (Default 0 — erst reconcilen)", "money_per_ha", 0),
 
   // --- Delta 21.07. (2): Einsatzplanung (Schichten, Staffelung, Stammpersonal) ---
   A("en.shifts", "en.shifts", "Schichten (1 oder 2)", "count", 2),
-  A("en.shift_eff", "en.shift_eff", "Schicht-Effekt (0–1, Zweitschicht-Durchsatz)", "rate", 0.70),
-  A("en.hours_day", "en.hours_day", "Feldstunden je Tag (1 Schicht)", "count", 10),
-  A("en.harvest_staffel", "en.harvest_staffel", "Ernte-Staffelung (Wochen, Reifegruppen)", "count", 3),
-  A("en.saat_staffel", "en.saat_staffel", "Aussaat-Staffelung (Wochen)", "count", 2),
-  A("en.avail_h_year", "en.avail_h_year", "Verfügbare Feld-Betriebsstunden je Maschine & Jahr (1-Schicht)", "count", 2000),
+  A("en.shift_eff", "en.shift_eff", "Schicht-Effekt (0–1, Zweitschicht-Durchsatz)", "percent", 0.70),
+  A("en.hours_day", "en.hours_day", "Feldstunden je Tag (1 Schicht)", "hours", 10),
+  A("en.harvest_staffel", "en.harvest_staffel", "Ernte-Staffelung (Wochen, Reifegruppen)", "weeks", 3),
+  A("en.saat_staffel", "en.saat_staffel", "Aussaat-Staffelung (Wochen)", "weeks", 2),
+  A("en.avail_h_year", "en.avail_h_year", "Verfügbare Feld-Betriebsstunden je Maschine und Jahr", "hours", 2000),
   // ENTFERNT 31.07.2026: en.staff (45 Personen) — die Personalkapazität kommt aus der
   //  Personalplanung (personalFteOfYear), nicht mehr aus einer Konstante des Gruppenmodells.
   // ENTFERNT 31.07.2026: en.drill / en.fert / en.combine / en.transp. Vier Klassen der
@@ -1644,25 +1648,25 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // Klima- & Infrastrukturrisiko — Beregnungsausfall (ANIF-Netzpumpwerk) in der Hitzespitze.
   //  Ertragsverlust = Ausfalltage × Verlust/Tag, gekappt bei 85 %. Direktentnahme Donau
   //  (eigene Pumpstation + Druckleitung) puffert den Netzausfall zu `intake_mitigation`.
-  A("risk.irrig_outage_d", "risk.irrig_outage_d", "Beregnungsausfall in der Hitzespitze (Tage)", "count", 0, 0, 10),
-  A("risk.yield_per_outage_d", "risk.yield_per_outage_d", "Ertragsverlust je Ausfalltag (Wertkultur)", "rate", 0.030),
-  A("risk.outage_break_share", "risk.outage_break_share", "Ausfall-Wirkung auf Break Crops (Anteil)", "rate", 0.40),
-  A("farm.intake_direct", "farm.intake_direct", "Direktentnahme Donau aktiv (0/1)", "count", 0),
-  A("risk.intake_mitigation", "risk.intake_mitigation", "Redundanz-Wirkung Direktentnahme (0..1)", "rate", 0.85),
-  A("irrig.norm_scale", "irrig.norm_scale", "Wassernorm-Skalierung (1,0 = Plan-mm)", "rate", 1.0),
+  A("risk.irrig_outage_d", "risk.irrig_outage_d", "Beregnungsausfall in der Hitzespitze (Tage)", "days", 0, 0, 10),
+  A("risk.yield_per_outage_d", "risk.yield_per_outage_d", "Ertragsverlust je Ausfalltag (Wertkultur)", "percent", 0.030),
+  A("risk.outage_break_share", "risk.outage_break_share", "Ausfall-Wirkung auf Break Crops (Anteil)", "percent", 0.40),
+  A("farm.intake_direct", "farm.intake_direct", "Direktentnahme Donau aktiv (0/1)", "flag", 0),
+  A("risk.intake_mitigation", "risk.intake_mitigation", "Redundanz-Wirkung Direktentnahme (0..1)", "percent", 0.85),
+  A("irrig.norm_scale", "irrig.norm_scale", "Wassernorm-Skalierung (1,0 = Plan-mm)", "factor", 1.0),
   // Markt & Qualität — Kontrakt vs. Spot. Kontrahierte Menge ist preisfest; nur der
   //  Spot-Anteil (1 − contract_share) trägt die Spot-Delta. Break Crops sind voll spot-exponiert.
-  A("market.contract_share", "market.contract_share", "Kontraktanteil Wertkulturen (0..1)", "rate", 0.80),
-  A("market.spot_delta", "market.spot_delta", "Spotpreis-Delta (±)", "rate", 0),
-  A("market.brix_premium", "market.brix_premium", "Brix-Prämie/-Abzug Industrietomate (±)", "rate", 0),
-  A("market.potato_grade", "market.potato_grade", "Sortier-/Qualitätsprämie Kartoffel (±)", "rate", 0),
+  A("market.contract_share", "market.contract_share", "Kontraktanteil Wertkulturen (0..1)", "percent", 0.80),
+  A("market.spot_delta", "market.spot_delta", "Spotpreis-Delta (±)", "percent", 0),
+  A("market.brix_premium", "market.brix_premium", "Brix-Prämie/-Abzug Industrietomate (±)", "percent", 0),
+  A("market.potato_grade", "market.potato_grade", "Sortier-/Qualitätsprämie Kartoffel (±)", "percent", 0),
   // Logistik — Entfernung zum Abnehmer. Der €/t-Speditionssatz ist auf `dist_ref_km`
   //  kalibriert und skaliert linear mit der tatsächlichen Entfernung.
-  A("transport.distance_km", "transport.distance_km", "Entfernung zum Abnehmer (km)", "count", 120),
-  A("transport.dist_ref_km", "transport.dist_ref_km", "Referenz-Entfernung des €/t-Satzes (km)", "count", 120),
+  A("transport.distance_km", "transport.distance_km", "Entfernung zum Abnehmer (km)", "km", 120),
+  A("transport.dist_ref_km", "transport.dist_ref_km", "Referenz-Entfernung des €/t-Satzes (km)", "km", 120),
   // Zinsschock ADDITIV in Basispunkten-Dezimal (0,02 = +200 bps) — multiplikativ auf den
   //  EURIBOR wäre als Regler unbrauchbar (Vorzeichenwechsel bei Negativzins).
-  A("macro.rate_shock", "macro.rate_shock", "Zinsschock auf EURIBOR (additiv, 0,02 = +200 bp)", "rate", 0),
+  A("macro.rate_shock", "macro.rate_shock", "Zinsschock auf EURIBOR (additiv, 0,02 = +200 bp)", "percent", 0),
   // Pflanzenschutz-Stücksatz — bis hierher teilte sich PSM den Pauschalsatz mit Material und
   //  Handarbeit, ein PSM-Regler hätte zwei fremde Kostenblöcke mitgezogen. Jetzt eigener Satz.
   A("psm.per_euro", "psm.per_euro", "Pflanzenschutz-Stücksatz (1 € = 100 ct)", "money", 100),
@@ -1676,7 +1680,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Mindesttemperatur 8 °C). Der Erzeuger verzichtet auf Ansprüche für zurückgewiesene Ware
   //  (6.2) und trägt den Rücktransport (6.7) — Letzterer ist hier NOCH NICHT bewertet.
   //  Wirkt als Erlösabschlag; die COGS bleiben unberührt, denn die Ware ist gewachsen.
-  A("quality.reject", "quality.reject", "Zurückweisungsquote am Werkstor", "rate", 0.03, 0.01, 0.05),
+  A("quality.reject", "quality.reject", "Zurückweisungsquote am Werkstor", "percent", 0.03, 0.01, 0.05),
   // Deckungskauf: Marktaufschlag je Tonne Fehlmenge, den der Abnehmer NEOTERRA in Rechnung
   //  stellt (VIA AGRO 3.6 / 5.10, PepsiCo ohne Deckelung). Negativ korreliert: er entsteht
   //  genau dann, wenn die Ernte schlecht ausfällt und die Marktpreise hoch stehen.
@@ -2746,8 +2750,113 @@ export function migrateDomain(dIn: Domain): Domain {
         : e))
     : d.entities;
 
-  return { ...d, anbauplan, cropPolicy, catalog, growth, timeline, holding, entities, scope: "full", stage: 1, entityView: undefined };
+  /* ---- STAMMDATEN NACHZIEHEN (Versionssprung) --------------------------------------
+     Alles, was dem MODELL gehört, kommt aus dem Seed; alles, was der NUTZER entschieden hat,
+     bleibt stehen. Ohne diesen Block überschreibt jeder gespeicherte Stand die Stammdaten
+     beim Laden mit seinem eigenen, eingefrorenen Katalog — Korrekturen am Modell erreichen
+     den Nutzer nie. */
+  const stammAlt = d.stammdatenVersion ?? 0;
+  const stammNeu = stammAlt < STAMMDATEN_VERSION;
+
+  // MASCHINENKATALOG: Stammdaten (Bezeichnung, Hersteller, Preis-Key, Leistungsparameter,
+  //  AfA-Dauer, Kategorie) folgen dem Seed. Übernommen werden nur die Nutzerfelder — Bestand,
+  //  gemietete Einheiten, Alter. Klassen, die es im Modell nicht mehr gibt (Einzelkorn-
+  //  Sämaschine, Mähdrescher, Krautschläger), verschwinden; neue kommen dazu.
+  const machineCatalog = (() => {
+    if (!stammNeu || !Array.isArray(d.machineCatalog)) return d.machineCatalog;
+    const alt = new Map(d.machineCatalog.map((m) => [m.id, m as Record<string, unknown>]));
+    return SEED.machineCatalog.map((sm) => {
+      const a = alt.get(sm.id);
+      if (!a) return { ...sm };
+      const zusammen: Record<string, unknown> = { ...sm };
+      for (const f of MASCHINE_NUTZERFELDER) if (a[f] != null) zusammen[f] = a[f];
+      return zusammen as MachineType;
+    });
+  })();
+
+  // LISTENPREISE (`mprice.*`) sind Stammdaten, keine Planentscheidung: sie kommen aus Angeboten
+  //  und Recherche. Beim Versionssprung folgen sie dem Seed — sonst bliebe der Schlepper zu
+  //  700.336 € stehen, obwohl im Modell ein anderes Gerät zu 523.813 € steht.
+  const stammKeys = (k: string) => k.startsWith("mprice.");
+
+  // NEUE ANNAHME-KEYS NACHSPIELEN. Gespeicherte Stände kennen nur die Keys, die es beim
+  //  Speichern gab. Fehlt ein Key, den die Engine referenziert, löst sie ihn still auf 0 auf —
+  //  der Check „Fehlende Assumption-Keys" meldete genau das für `quality.reject` und
+  //  `market.cover_premium`. Das trifft jeden neuen Treiber, deshalb generisch: alles, was der
+  //  Seed kennt und der Stand nicht, wird ergänzt. VORHANDENE Werte bleiben unangetastet —
+  //  hier wird nur aufgefüllt, nie überschrieben.
+  const assumptions = { ...(d.assumptions ?? {}) };
+  for (const [k, a] of Object.entries(SEED.assumptions)) {
+    // Fehlender Key → ergänzen. Listenpreis bei Versionssprung → nachziehen.
+    if (!assumptions[k] || (stammNeu && stammKeys(k))) assumptions[k] = JSON.parse(JSON.stringify(a));
+    else if (assumptions[k]) {
+      // Beschriftung und EINHEIT sind Stammdaten (die Einheit steuert Umrechnung und
+      //  Nachkommastellen der Anzeige). Der WERT bleibt in jedem Fall unangetastet.
+      assumptions[k] = { ...assumptions[k], label: a.label, unit: a.unit };
+    }
+  }
+
+  // GEMEINKOSTEN-POSITIONEN nachspielen, die im Seed neu hinzugekommen sind — dieselbe Logik.
+  //  Konkret die Gegenbuchung zur Management-Fee der Holding: ohne sie meldet der
+  //  IC-Abgleich in gespeicherten Ständen eine Differenz, die es im Modell nicht gibt.
+  const overhead = Array.isArray(d.overhead) ? d.overhead.slice() : d.overhead;
+  if (Array.isArray(overhead)) {
+    const vorhanden = new Set(overhead.map((o) => o.id));
+    for (const o of SEED.overhead ?? []) if (!vorhanden.has(o.id)) overhead.push({ ...o });
+  }
+
+  // SUBVENTIONSREGISTER: Sätze und Kulturzuordnung sind Recht, keine Planentscheidung —
+  //  beim Versionssprung folgen sie dem Seed. Der Aktiv-Schalter je Zeile bleibt beim Nutzer.
+  const subsidies = stammNeu && Array.isArray(d.subsidies)
+    ? SEED.subsidies.map((ss) => {
+        const a = (d.subsidies ?? []).find((x) => x.id === ss.id);
+        return a ? { ...ss, active: a.active } : { ...ss };
+      })
+    : d.subsidies;
+
+  return { ...d, anbauplan, cropPolicy, catalog, growth, timeline, holding, entities,
+    assumptions, overhead, subsidies, machineCatalog, stammdatenVersion: STAMMDATEN_VERSION,
+    scope: "full", stage: 1, entityView: undefined };
 }
+
+
+/** BELEG ZUM TREIBER — der Satz, der früher in Klammern im NAMEN stand.
+ *  Ein Treibername soll den Treiber benennen, nicht seine Herleitung tragen: „Preis
+ *  Knollensellerie (Erzeuger; Importparität ~0,74 USD/kg)" war 60 Zeichen lang und wurde in
+ *  jeder Tabelle abgeschnitten. Die Herleitung steht jetzt hier und erscheint als Notiz im
+ *  Annahmen-Register sowie als Tooltip am Feld. */
+export const ASSUMPTION_NOTE: Record<string, string> = {
+  "spray.boom_m": "36 = Bestand · 48 = 48-m-Paket → weniger Spritzen und rund −25 % Spritzkosten je Hektar",
+  "mprice.fieldloader": "Feldrand-Überladetrichter, 9-m-Elevator, elektrisch",
+  "mprice.pflug": "6,20 m, bis 30 cm Arbeitstiefe; Liste rund 71,2 T€",
+  "mprice.maehdr": "mit Bandschneidwerk HD40X 12,19 m; Liste laut JD-Angebot",
+  "irrig.capex_from_year": "Wert ≥ Planhorizont = nie; die Pacht enthält die Pivots bereits (750 €/ha)",
+  "subsidy.factor": "1,00 = Sätze wie im Subventions-Register hinterlegt",
+  "yield.knollensellerie": "bewässert; Upside 48–50 t am Süd-Standort",
+  "en.avail_h_year": "bezogen auf eine Schicht",
+  "qual.kartoffel_pommes": "Länge, Zuckergehalt, Sortierung",
+  "qual.kartoffel_chips": "Fritierfarbe, Zuckergehalt",
+  "qual.zwiebel_moehre": "Kaliber, Sortierung",
+  "mprice.roder_ropa": "Listenpreis netto ohne MwSt, mit WD-Triebachse",
+  "infl.input": "Dünger, PSM, Saatgut, Diesel, OpEx",
+  "price.knollensellerie": "Erzeugerpreis; Importparität rund 0,74 USD/kg",
+  "seed.knollensellerie": "50.000 Pflanzen/ha, Erdpressballen",
+  "yield.suesskartoffel": "bewässert; Dăbuleni-Versuche 23–53 t",
+  "mprice.boom48_pkg": "Gestänge-Umrüstung PT/TD plus Fahrgassen-Terminal",
+  "spray.reserve": "Stück über dem reinen Rechenbedarf; Pflanzenschutz ist terminkritisch",
+  "wc.inv": "wirkt erst mit einem Lieferplan je Vertrag",
+  "cap.per_farm_from_2028": "0 = keine Kappung",
+  "mprice.lkw_sattel": "Straßentransport zum Abnehmer",
+  "advance.rate": "Anteil des geplanten Erntewerts",
+  "mprice.streuer_xeric": "48 m, 14.000 l",
+  "mprice.ops_6r": "Liste = 6R 250 plus 3 %",
+  "log.fieldloader_tph": "treibt den Stückzahlbedarf",
+  "machine.rent_markup": "auf die Stundenkosten",
+  "mprice.zug_9r": "Liste laut JD-Angebot vom 23.07.2026",
+  "mprice.gem_saat": "3 Beete, Agricola-Klasse — Klassenanker, kein Angebot",
+  "lohn.factor": "1,00 = LWK-Erfahrungssätze",
+  "opex.admin": "Legacy-Zeile, in die SG&A überführt",
+};
 
 /* --------------------------------------------------------------------------
  * FINANZIERUNG / REVOLVER / WC / STEUER / SUBVENTION.
@@ -3267,7 +3376,27 @@ function valueCropMachineCatalog(catalog: MachineType[]): MachineType[] {
   });
 }
 
+/** STAMMDATEN-VERSION. Bei JEDER Änderung an Maschinenkatalog, Listenpreisen (`mprice.*`),
+ *  Gemeinkosten-Register oder Subventionsregister um eins erhöhen.
+ *
+ *  WARUM DAS NÖTIG IST: Ein gespeicherter Stand (Cloud-Autosave, lokaler Browser-Stand,
+ *  JSON-Import) trägt seinen EIGENEN Maschinenkatalog und überschreibt beim Laden den Seed.
+ *  Am 01.08.2026 hieß der Schlepper im Modell längst „JD 8R 410" zu 523.813 €, auf dem
+ *  Bildschirm stand weiter „JD 9R 590" zu 700.336 €; Einzelkorn-Sämaschine, Krautschläger und
+ *  Mähdrescher waren im Modell gelöscht und in der Ansicht vorhanden. Jede Korrektur an den
+ *  Stammdaten verpuffte still — man sah sie nur in einem frisch zurückgesetzten Stand.
+ *
+ *  Die Version trennt sauber: STAMMDATEN (Katalog, Listenpreise, Registerzeilen) gehören dem
+ *  Modell und werden bei einem Versionssprung nachgezogen. PLANENTSCHEIDUNGEN (Flächen,
+ *  Kulturpfade, Beschaffung je Klasse, Bestand, Handeingaben, Verträge, Szenariowerte) gehören
+ *  dem Nutzer und bleiben unberührt. */
+export const STAMMDATEN_VERSION = 3;
+
+/** Felder des Maschinenkatalogs, die dem NUTZER gehören und einen Versionssprung überleben. */
+const MASCHINE_NUTZERFELDER = ["ownedUnits", "rentedUnits", "rentedFrom", "ownedAgeYears", "ownedHoursTotal"] as const;
+
 export const SEED: Domain = {
+  stammdatenVersion: STAMMDATEN_VERSION,
   meta: { id: "neos-fx", name: "NEOTERRA SRL · Wertkulturen (Skalierungspfad ab 2027)", reportingCurrency: "EUR" },
   stage: 1,
   scope: "full",
@@ -3522,21 +3651,22 @@ export type CropCalc = {
   totals: { maschineCent: number; bmCent: number; dieselLHa: number; dieselCent: number; fahrerHHa: number; totalCent: number;
     seedCent: number; fertCent: number; psmCent: number; waterCent: number; materialCent: number; handCent: number };
 };
-export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId: string): CropCalc {
+export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId: string, jahrIdx = 0): CropCalc {
   const entry = domain.catalog.find((c) => c.cropId === cropId);
   const dieselPrice = resolveScalar(domain, "price.diesel_l", scenarioId);
   const bf = sprayBoomFactor(domain, scenarioId);
   const byId = new Map(domain.machineCatalog.map((m) => [m.id, m]));
   const gaenge = domain.arbeitsgaenge[cropId] ?? [];
-  // NULLBASIS-FALLE. domain.anbauplan trägt die Flächen des STARTJAHRES; Tomate,
-  //  Zwiebel/Möhre, Sellerie, Süßkartoffel und Knoblauch stehen dort mit 0 ha, weil sie erst
-  //  2028 beginnen. Die Kalkulation zeigte für fünf von sieben Kulturen „0 ha" in der
-  //  Überschrift und 0 € in der Summenspalte — die Je-ha-Kosten stimmten, die absoluten nicht.
-  //  Bemessen wird auf dem ZIELJAHR: die Maßnahmenkette beschreibt den ausgebauten Betrieb.
+  // FLÄCHE DES GEWÄHLTEN PLANJAHRES. `domain.anbauplan` trägt nur die Flächen des Startjahres;
+  //  fünf der sieben Kulturen beginnen erst 2028 und standen dort mit 0 ha — die Je-ha-Kosten
+  //  stimmten, die absoluten Summen waren null. Der Bezugspunkt ist jetzt ein Parameter, damit
+  //  jede Ansicht ihn sichtbar wählen kann; Default ist das ERSTE Planjahr (2027), nicht der
+  //  Endausbau: eine Summe ohne genanntes Jahr wird sonst als „heute" gelesen.
   const areaHa = (() => {
     const kurve = cropAreasMemo(domain).areas[cropId];
-    const ziel = Math.max(0, (domain.growth?.years ?? 1) - 1);
-    if (kurve && kurve.length) return kurve[Math.min(ziel, kurve.length - 1)] ?? 0;
+    const jahre = Math.max(1, domain.growth?.years ?? 1);
+    const jy = Math.min(Math.max(0, Math.round(jahrIdx)), jahre - 1);
+    if (kurve && kurve.length) return kurve[Math.min(jy, kurve.length - 1)] ?? 0;
     return domain.anbauplan.filter((a) => a.cropId === cropId).reduce((s, a) => s + a.areaHa, 0);
   })();
   // Timing-Anker: editierbarer Aussaat-/Pflanzmonat (Katalog) → alles hängt relativ an S/E.
@@ -5035,7 +5165,9 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
 export type PersonalTreiberArt = "flaeche" | "stunden" | "maschinen" | "gedaempft";
 export type PersonalPosition = {
   key: string; label: string; grossKey: string;
-  art: PersonalTreiberArt; treiberLabel: string; einheit: string;
+  art: PersonalTreiberArt; treiberLabel: string;
+  /** Anzeige-Einheit des Verhältnisses (Kurzzeichen kommt aus dem Einheiten-Register). */
+  einheit: string; einheitId: Unit;
   standard: number;
   /** Position existiert nur mit eigenem Lager/Packhaus (`store.active` = 1). Ohne Anlage
    *  gibt es niemanden ein- und auszulagern — die Ware geht ab Feld an den Verarbeiter. */
@@ -5043,19 +5175,19 @@ export type PersonalPosition = {
 };
 export const PERSONAL_POSITIONEN: PersonalPosition[] = [
   { key: "pers.leitung.n", label: "Betriebsleitung & Agronomie", grossKey: "pers.leitung.gross",
-    art: "gedaempft", treiberLabel: "Ziel-FTE im Endausbau (gedämpft: Sockel + Fläche)", einheit: "FTE", standard: 3 },
+    art: "gedaempft", treiberLabel: "Ziel-FTE im Endausbau (gedämpft: Sockel + Fläche)", einheit: "FTE", einheitId: "fte", standard: 3 },
   { key: "pers.stamm.n", label: "Stamm-Maschinenführer", grossKey: "pers.stamm.gross",
-    art: "stunden", treiberLabel: "selbst gefahrene Feldstunden je Fahrer und Jahr", einheit: "h/FTE", standard: 1240 },
+    art: "stunden", treiberLabel: "selbst gefahrene Feldstunden je Fahrer und Jahr", einheit: "h/FTE", einheitId: "hours", standard: 1240 },
   { key: "pers.bewaesserung.n", label: "Bewässerung / Pivot-Steuerung", grossKey: "pers.bewaesserung.gross",
-    art: "flaeche", treiberLabel: "betreute Fläche je Kraft", einheit: "ha/FTE", standard: 584 },
+    art: "flaeche", treiberLabel: "betreute Fläche je Kraft", einheit: "ha/FTE", einheitId: "hectare", standard: 584 },
   { key: "pers.lager.n", label: "Lager & Aufbereitung", grossKey: "pers.lager.gross",
-    art: "flaeche", treiberLabel: "Fläche je Kraft (nur mit eigenem Lager)", einheit: "ha/FTE", standard: 584, nurMitLager: true },
+    art: "flaeche", treiberLabel: "Fläche je Kraft (nur mit eigenem Lager)", einheit: "ha/FTE", einheitId: "hectare", standard: 584, nurMitLager: true },
   { key: "pers.service.n", label: "Werkstatt & Service/Technik", grossKey: "pers.service.gross",
-    art: "maschinen", treiberLabel: "betreute Maschinen je Techniker", einheit: "Stk/FTE", standard: 14 },
+    art: "maschinen", treiberLabel: "betreute Maschinen je Techniker", einheit: "Stk/FTE", einheitId: "count", standard: 14 },
   { key: "pers.saison.n", label: "Saisonkräfte (Kampagne)", grossKey: "pers.saison.gross",
-    art: "flaeche", treiberLabel: "Fläche je Saison-FTE", einheit: "ha/FTE", standard: 199 },
+    art: "flaeche", treiberLabel: "Fläche je Saison-FTE", einheit: "ha/FTE", einheitId: "hectare", standard: 199 },
   { key: "pers.prakt.n", label: "Praktikanten / Trainees", grossKey: "pers.prakt.gross",
-    art: "flaeche", treiberLabel: "Fläche je Trainee", einheit: "ha/FTE", standard: 584 },
+    art: "flaeche", treiberLabel: "Fläche je Trainee", einheit: "ha/FTE", einheitId: "hectare", standard: 584 },
 ];
 
 export function personalRatioOf(domain: Domain, key: string): number {

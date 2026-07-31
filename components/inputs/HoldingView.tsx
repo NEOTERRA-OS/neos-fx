@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
-import { AssumptionField } from "./AssumptionField";
+import { Feld } from "./Feld";
 import { TextInput, NumberInput } from "./NumberInput";
 import { fmtMoney } from "../../design/format";
 import { t } from "../../lib/i18n";
@@ -49,7 +49,7 @@ export function HoldingView() {
         {meta.map(([k, label]) => k ? (
           <div key={k} className="flex items-center gap-2">
             <span className="text-[12px] text-nx-text-secondary">{label}</span>
-            <AssumptionField akey={k} compact />
+            <Feld akey={k} breite={96} />
           </div>
         ) : null)}
       </div>

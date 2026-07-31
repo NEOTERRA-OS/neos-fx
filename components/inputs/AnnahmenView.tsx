@@ -7,6 +7,7 @@ import {
 } from "../../store/model";
 import type { AssumptionConfidence, AssumptionStatus } from "../../core/types";
 import { fmtNumber } from "../../design/format";
+import { einheit } from "../../design/units";
 import { NumberInput, TextInput } from "./NumberInput";
 import { CommentsPanel, threadOf } from "./CommentsPanel";
 import { t, getLang } from "../../lib/i18n";
@@ -83,20 +84,10 @@ const CAT_TO_BEREICH = new Map<string, string>();
 for (const b of BEREICHE) for (const c of b.cats) CAT_TO_BEREICH.set(c, b.id);
 const bereichOf = (cat: string) => CAT_TO_BEREICH.get(cat) ?? "betrieb";
 
-/** Anzeige-Faktor je Einheit: Raten als %, Geld in €. */
-function scale(unit: string): { f: number; suffix: string; dec: number } {
-  if (unit === "rate") return { f: 100, suffix: "%", dec: 2 };
-  if (unit === "money" || unit === "money_per_ha" || unit === "money_per_tonne") return { f: 0.01, suffix: "€", dec: 2 };
-  return { f: 1, suffix: "", dec: 2 };
-}
-
-/** Sprechende Einheit je Zeile. Ohne sie steht bei „Ertrag Kartoffel 45" nirgends, ob das
- *  t/ha, dt/ha oder kg sind — die Zahl allein ist nicht prüfbar. Die Einheit gilt für alle
- *  drei Szenario-Spalten, deshalb steht sie einmal in einer eigenen Spalte. */
-const EINHEIT: Record<string, string> = {
-  rate: "%", money: "€", money_per_ha: "€/ha", money_per_tonne: "€/t",
-  tonne_per_ha: "t/ha", days: "Tage", months: "Monate",
-};
+/* Umrechnung, Kurzzeichen und Nachkommastellen kommen aus dem EINHEITEN-REGISTER
+   (design/units.ts) — nicht mehr aus einer zweiten, hier gepflegten Tabelle. Die kannte nur
+   sieben Einheiten und ließ 42 Treiber („count") ohne jede Angabe stehen; gleichzeitig sagte
+   sie `rate → %`, während das Annahme-Feld der übrigen Ansichten `rate → ×` sagte. */
 
 /** Ist der Treiber noch zu klären? Offen, strittig oder mit niedriger Konfidenz. */
 const zuKlaeren = (r: AssumptionRow) => {
@@ -128,7 +119,7 @@ function BandZelle({ keyName, scenarioId, scLabel, unit, editor }: {
   const eigen = readScenarioConst(domain, keyName, scenarioId);
   const basis = readScenarioConst(domain, keyName, domain.baseScenarioId);
   const istBase = scenarioId === domain.baseScenarioId;
-  const s = scale(unit);
+  const s = { f: einheit(unit).faktor, dec: einheit(unit).dez };
   const wert = eigen ?? basis;
   const erbt = !istBase && eigen === null;
   const zeig = (v: number | null) => (v === null ? "—" : fmtNumber(v * s.f, s.dec));
@@ -144,6 +135,7 @@ function BandZelle({ keyName, scenarioId, scLabel, unit, editor }: {
       <NumberInput
         value={Number((wert * s.f).toFixed(s.dec))}
         width={74}
+        decimals={s.dec}
         onCommit={(v) => patch((d) => {
           const alt = readScenarioConst(d, keyName, scenarioId);
           setScenarioConst(d, keyName, scenarioId, v / s.f);
@@ -200,7 +192,7 @@ function Zeile({ r, editor, aktiv, onSelect }: {
           )}
         </button>
       </td>
-      <td className="num px-2 py-1.5 text-left text-[11px] text-nx-text-muted whitespace-nowrap">{EINHEIT[r.unit] ?? "–"}</td>
+      <td className="num px-2 py-1.5 text-left text-[11px] text-nx-text-muted whitespace-nowrap">{einheit(r.unit).kurz || "–"}</td>
       {SC.map((s) => (
         <td key={s.id} className="px-2 py-1.5 text-right">
           <BandZelle keyName={r.key} scenarioId={s.id} scLabel={s.label} unit={r.unit} editor={editor} />
