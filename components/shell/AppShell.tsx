@@ -27,6 +27,7 @@ import { HoldingView } from "../inputs/HoldingView";
 import { GesellschaftenView } from "../inputs/GesellschaftenView";
 import { BewertungView } from "../inputs/BewertungView";
 import { ShareholderView } from "../inputs/ShareholderView";
+import { LohnarbeitView } from "../inputs/LohnarbeitView";
 import { PachtView } from "../inputs/PachtView";
 import { AnbaustrategieView } from "../inputs/AnbaustrategieView";
 import { AbnahmevertraegeView } from "../inputs/AbnahmevertraegeView";
@@ -175,6 +176,7 @@ export function AppShell() {
                 : view === "mehrjahr" ? <MehrjahresplanView />
                 : view === "ersatz" ? <ErsatzView />
                 : view === "liquiditaet" ? <LiquiditaetView />
+                : view === "lohnarbeit" ? <LohnarbeitView />
                 : view === "holding" ? <HoldingView />
                 : view === "gesellschaften" ? <GesellschaftenView />
                 : view === "eroeffnung" ? <EroeffnungsbilanzView />

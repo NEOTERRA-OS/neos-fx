@@ -18,7 +18,7 @@ export type ViewId =
   | "personal" | "arbeitszeit" | "finanzierung" | "subventionen" | "holding" | "eroeffnung" | "kulturkalk" | "investitionen"
   | "einsatz" | "bewertung" | "contribution" | "overhead" | "verwaltung"
   | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht" | "anbaustrategie"
-  | "gesellschaften" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
+  | "gesellschaften" | "lohnarbeit" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
   | "studio" | "abnahme" | "lagerkst";
 
 type Item = { id: string; label: string; view?: ViewId };
@@ -43,6 +43,7 @@ const IA: Group[] = [
     { id: "capexScenarien", label: "CAPEX Szenarien", view: "capexScenarien" },
     { id: "einsatz", label: "Einsatzplanung", view: "einsatz" },
     { id: "ersatz", label: "Ersatzinvestitionen", view: "ersatz" },
+    { id: "lohnarbeit", label: "Lohnarbeit (Dienstleistungen)", view: "lohnarbeit" },
   ]},
   { title: "Wachstum", items: [
     { id: "mehrjahr", label: "Wachstum & Mehrjahresplan", view: "mehrjahr" },
@@ -85,7 +86,7 @@ const ICON: Record<string, LucideIcon> = {
   maschinen: Tractor, investitionen: Coins, leistung: Gauge, einsatz: CalendarRange,
   capexScenarien: GitCompare,
   ersatz: RefreshCw, mehrjahr: TrendingUp, personal: Users, overhead: Briefcase, arbeitszeit: Clock,
-  finanzierung: Landmark, subventionen: BadgeEuro, gesellschaften: Network, holding: Building2, eroeffnung: BookOpen,
+  lohnarbeit: Handshake, finanzierung: Landmark, subventionen: BadgeEuro, gesellschaften: Network, holding: Building2, eroeffnung: BookOpen,
   pacht: ScrollText, preise: SlidersHorizontal, pnl: LineChart, balance: Scale, cashflow: Activity,
   liquiditaet: Wallet, contribution: PieChart, studio: SlidersHorizontal, val: Calculator,
   shareholder: CircleDollarSign, verwaltung: Save, annahmen: ClipboardCheck, kommentare: MessageSquare, team: UserCog,

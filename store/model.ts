@@ -280,6 +280,34 @@ export type TCOBreakdown = {
 };
 /** Arbeitsgang: Maschine (machineCatalog-id) × Überfahrten (Referenz C). */
 export type Arbeitsgang = { m: string; passes: number; mid?: string };
+
+/** LOHNARBEIT (Dienstleistungs-Einkauf): ein Arbeitsgang EINER Kultur wird fremdvergeben.
+ *  Satz je Hektar und ÜBERFAHRT, EXKLUSIVE Diesel — der Kraftstoff bleibt bei uns (so rechnen
+ *  die Erfahrungssätze der Landwirtschaftskammer und so wird in der Praxis abgerechnet).
+ *  Wirkung, wenn aktiv:
+ *   · Lohnkosten als eigene COGS-Operation (Satz × Überfahrten × ha) — zahlungswirksam,
+ *     wird wie jede Feldmaßnahme im Feldbestand aktiviert und bei der Ernte aufgelöst,
+ *   · Maschinen-Betriebskosten des Gangs entfallen (Versicherung, Reparatur, Schmierstoff) —
+ *     der DIESEL bleibt, weil der Satz ihn nicht enthält,
+ *   · kalkulatorische Maschinenkosten (AfA + Zins) des Gangs entfallen,
+ *   · die Maschine wird für diese Kultur nicht mehr bemessen; wird sie von KEINER Kultur mehr
+ *     selbst gefahren, entfällt sie aus der Flotte (kein CAPEX). Ist Lohnarbeit nur befristet,
+ *     verschiebt sich die Anschaffung auf das erste Jahr in Eigenmechanisierung. */
+export type LohnarbeitEntry = {
+  id: string;
+  cropId: string;
+  machineId: string;          // ersetzter Arbeitsgang (Maschine aus arbeitsgaenge)
+  label: string;
+  gruppe: "boden" | "pflanzung" | "psm_duenger" | "ernte";
+  /** Satz in CENT je ha und ÜBERFAHRT, ohne Kraftstoff, mit Fahrer. */
+  ratePerHaCent: number;
+  /** true → Diesel steckt im Satz und entfällt bei uns. Default false (Satz exkl. Diesel). */
+  dieselIncluded?: boolean;
+  fromYear?: number;          // erstes Planjahr mit Lohnarbeit (Default 0)
+  toYear?: number;            // letztes Planjahr mit Lohnarbeit (Default: bis Horizontende)
+  active: boolean;
+  quelle?: string;            // Herkunft des Satzes
+};
 /** Modell-Entscheidungen (Make-or-Buy etc.). */
 export type Decisions = { transportToBuyer: "own" | "spedition" };
 export type Domain = {
@@ -359,6 +387,9 @@ export type Domain = {
   /** Anzahlungen der Off-taker — Quote auf den GEPLANTEN ERNTEWERT (Fläche × Ertrag × Preis),
    *  nicht je Vertrag. Fehlt/inaktiv → keine Anzahlungswirkung. */
   harvestAdvance?: HarvestAdvancePolicy;
+  /** Lohnarbeit / Dienstleistungs-Einkauf je Kultur und Arbeitsgang. Fehlt → alles in
+   *  Eigenmechanisierung. Einträge sind einzeln scharfschaltbar (active). */
+  lohnarbeit?: LohnarbeitEntry[];
 };
 
 /** Kommentar-Thread an einem Ziel (z. B. Annahme, Maßnahme). Nachrichten chronologisch. */
@@ -1338,6 +1369,9 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  weder für den Bestand noch für den Flächenzuwachs. Die Investitionshöhe bleibt über
   //  mprice.irrig_perha bzw. growth.irrigEurPerHaCent voll variabel; nur der Start verschiebt sich.
   A("irrig.capex_from_year", "irrig.capex_from_year", "Beregnungs-CAPEX ab Planjahr (0 = sofort)", "count", 3),
+  // Globaler Regler auf ALLE Lohnarbeits-Sätze. Basis 1,0 = deutsche Erfahrungssätze (LWK NRW).
+  //  Süd-Dolj liegt beim Lohnanteil darunter — hier kalibrieren, sobald Angebote vorliegen.
+  A("lohn.factor", "lohn.factor", "Lohnarbeit — Satz-Faktor (1,0 = LWK-Erfahrungssätze)", "rate", 1.0, 0.85, 1.15),
   // Lager €/t GETRENNT: Hülle/Bau und Technik. Summe bleibt bei 120 €/t wie zuvor — die
   //  Aufteilung folgt der CAPEX-Taxonomie (Bau: Schüttlager + Hülle rund 11,2 Mio €,
   //  Technik: Kühl-/CA-Lager + Curing + Packlinien rund 12,4 Mio €), also etwa hälftig.
@@ -2133,6 +2167,118 @@ const MACHINE_CATALOG: MachineType[] = [
 ];
 
 /* --------------------------------------------------------------------------
+ * LOHNARBEIT — Dienstleistungs-Einkauf je Kultur und Arbeitsgang.
+ *  Sätze in €/ha und ÜBERFAHRT, OHNE Kraftstoff, MIT Fahrer.
+ *  Anker: Landwirtschaftskammer NRW, „Erfahrungssätze für Maschinenring-Arbeiten" (2024) —
+ *  dort steht jede Position getrennt „ohne" und „mit Kraftstoff"; übernommen ist die
+ *  Spalte OHNE, weil der Diesel bei uns bleibt. Positionen ohne öffentlichen Anker
+ *  (Tomaten-Vollernter, Zwiebel-/Möhrentechnik, Setzling-Pflanzung, Feldrand-Logistik)
+ *  sind als Schätzung markiert und ausdrücklich zu kalibrieren.
+ *  Rumänien liegt beim Lohnanteil unter Deutschland — dafür gibt es den globalen
+ *  Regler `lohn.factor` (Basis 1,0 = deutsche Erfahrungssätze).
+ *  ALLE Einträge stehen auf active: false. Nichts wirkt, bis es im Register
+ *  scharfgeschaltet wird.
+ * ------------------------------------------------------------------------ */
+type LohnSatz = { m: string; gruppe: LohnarbeitEntry["gruppe"]; label: string; eurHa: number; quelle: string };
+const LWK = "LWK NRW Erfahrungssätze 2024 · ohne Kraftstoff, mit Fahrer";
+const SCHAETZ = "Schätzung — kein öffentlicher Anker, zu kalibrieren";
+const LOHN_SAETZE: LohnSatz[] = [
+  { m: "pflug",       gruppe: "boden",       label: "Grundbodenbearbeitung (Grubber)", eurHa: 45,  quelle: LWK + " (Grubber 3 m flach 29 €, auf 6,2 m/tief hochgerechnet)" },
+  { m: "saatbett",    gruppe: "boden",       label: "Saatbettbereitung",               eurHa: 28,  quelle: LWK + " (Saatbettkombination 4 m 33 €, auf 12 m gerechnet)" },
+  { m: "onepass",     gruppe: "pflanzung",   label: "Kartoffeln legen",                eurHa: 90,  quelle: LWK + " (Kartoffellegemaschine 4-reihig)" },
+  { m: "einzelkorn",  gruppe: "pflanzung",   label: "Einzelkornsaat",                  eurHa: 40,  quelle: LWK + " (Einzelkornsägerät 12-reihig 55,50 €, auf 24 R gerechnet)" },
+  { m: "tompflanz",   gruppe: "pflanzung",   label: "Setzling-Pflanzung",              eurHa: 220, quelle: SCHAETZ },
+  { m: "streuer",     gruppe: "psm_duenger", label: "Düngerstreuen",                   eurHa: 13,  quelle: LWK + " (Schleuderstreuer 1000 l)" },
+  { m: "spritze14",   gruppe: "psm_duenger", label: "Pflanzenschutz",                  eurHa: 14,  quelle: LWK + " (Feldspritze 1000 l 17,50 €, auf 36 m gerechnet)" },
+  { m: "roder_ropa",  gruppe: "ernte",       label: "Rodung (Bunkerroder)",            eurHa: 435, quelle: LWK + " (Kartoffelbunkerroder 2-reihig)" },
+  { m: "tomernte",    gruppe: "ernte",       label: "Tomaten-Vollernte",               eurHa: 600, quelle: SCHAETZ },
+  { m: "gem_schwad",  gruppe: "ernte",       label: "Zwiebel schwaden",                eurHa: 120, quelle: SCHAETZ },
+  { m: "gem_lader",   gruppe: "ernte",       label: "Zwiebel laden/roden",             eurHa: 260, quelle: SCHAETZ },
+  { m: "gem_moehre",  gruppe: "ernte",       label: "Möhren-/Sellerierodung",          eurHa: 320, quelle: SCHAETZ },
+  { m: "transport",   gruppe: "ernte",       label: "Feldrand-Logistik",               eurHa: 60,  quelle: SCHAETZ },
+];
+
+/** Erzeugt für jede (Kultur × Arbeitsgang)-Kombination eine Lohnarbeits-Zeile, alle inaktiv. */
+function buildLohnarbeit(): LohnarbeitEntry[] {
+  const byM = new Map(LOHN_SAETZE.map((x) => [x.m, x]));
+  const out: LohnarbeitEntry[] = [];
+  for (const cid of Object.keys(SKALIERUNG_HA)) {
+    for (const g of ARBEITSGAENGE[cid as CropId] ?? []) {
+      const sz = byM.get(g.m);
+      if (!sz) continue;
+      out.push({
+        id: `lohn-${cid}-${g.m}`, cropId: cid, machineId: g.m,
+        label: sz.label, gruppe: sz.gruppe,
+        ratePerHaCent: Math.round(sz.eurHa * 100),
+        dieselIncluded: false, active: false, quelle: sz.quelle,
+      });
+    }
+  }
+  return out;
+}
+
+/** Ist der Eintrag im Planjahr y wirksam? */
+export function lohnAktivIn(e: LohnarbeitEntry, y: number): boolean {
+  if (!e.active) return false;
+  if (y < (e.fromYear ?? 0)) return false;
+  if (e.toYear != null && y > e.toYear) return false;
+  return true;
+}
+
+/** Fremdvergebene Arbeitsgänge (machineId) einer Kultur im Planjahr y. */
+export function lohnGaengeOf(domain: Domain, cropId: string, y: number): Set<string> {
+  const out = new Set<string>();
+  for (const e of domain.lohnarbeit ?? []) if (e.cropId === cropId && lohnAktivIn(e, y)) out.add(e.machineId);
+  return out;
+}
+
+/** Lohnarbeitskosten je ha (CENT) einer Kultur im Planjahr y: Σ Satz × Überfahrten × Regler. */
+export function lohnarbeitPerHaCent(domain: Domain, cropId: string, scenarioId: string, y = 0): number {
+  const list = (domain.lohnarbeit ?? []).filter((e) => e.cropId === cropId && lohnAktivIn(e, y));
+  if (!list.length) return 0;
+  const f = domain.assumptions["lohn.factor"] ? resolveScalar(domain, "lohn.factor", scenarioId) : 1;
+  const gaenge = domain.arbeitsgaenge[cropId] ?? [];
+  let cent = 0;
+  for (const e of list) {
+    const passes = gaenge.filter((g) => g.m === e.machineId).reduce((s, g) => s + g.passes, 0);
+    cent += e.ratePerHaCent * passes * f;
+  }
+  return cent;
+}
+
+/** Memo für deriveCropAreasMY je Domänen-Objekt — machineHoursPerYear ruft es sehr oft. */
+const _areasMemo = new WeakMap<object, ReturnType<typeof deriveCropAreasMY>>();
+export function cropAreasMemo(domain: Domain): ReturnType<typeof deriveCropAreasMY> {
+  let v = _areasMemo.get(domain as object);
+  if (!v) { v = deriveCropAreasMY(domain); _areasMemo.set(domain as object, v); }
+  return v;
+}
+
+/** BEMESSUNGSJAHR einer Maschine: das erste Planjahr, in dem sie überhaupt gebraucht wird —
+ *  also eine Nutzer-Kultur Fläche hat UND den Gang nicht fremdvergibt.
+ *
+ *  Warum nicht einfach Jahr 0: seit dem Skalierungspfad starten Tomate, Zwiebel/Möhre,
+ *  Sellerie, Süßkartoffel und Knoblauch mit 0 ha. Ihre Technik (Tomaten-Vollernter,
+ *  Zwiebel-/Möhrenkette, Pflanzmaschine) hätte damit im Startjahr 0 Bedarfsstunden — und weil
+ *  die Vintage-Logik Basis × Faktor rechnet, wäre sie über den GANZEN Horizont nie beschafft
+ *  worden. Das Modell hat für diese Kulturen faktisch keine Erntetechnik gekauft.
+ *
+ *  -1 = über den ganzen Horizont nicht gebraucht (keine Fläche oder dauerhaft fremdvergeben)
+ *       ⇒ die Maschine entfällt aus der Flotte. */
+export function bedarfsJahrOf(domain: Domain, machineId: string, years: number): number {
+  const users = [...new Set(domain.anbauplan
+    .filter((a) => (domain.arbeitsgaenge[a.cropId] ?? []).some((g) => g.m === machineId))
+    .map((a) => a.cropId))];
+  if (!users.length) return 0;
+  const areas = cropAreasMemo(domain).areas;
+  const haOf = (cid: string, y: number) => areas[cid]?.[Math.min(y, (areas[cid]?.length ?? 1) - 1)] ?? 0;
+  for (let y = 0; y < years; y++) {
+    if (users.some((cid) => haOf(cid, y) > 0 && !lohnGaengeOf(domain, cid, y).has(machineId))) return y;
+  }
+  return -1;
+}
+
+/* --------------------------------------------------------------------------
  * ANBAUPLAN — NEOTERRA-SOLO (Entscheidung 30.07.2026, Benedikt).
  *  Das Modell rechnet NUR die Wertkulturen der NEOTERRA SRL. Der Ackerbau-Block
  *  (Weizen/Gerste/Mais/Raps/Soja) und die unberegnete Trockenrotation von Isolde Farms
@@ -2797,6 +2943,9 @@ export const SEED: Domain = {
   machineCatalog: valueCropMachineCatalog(MACHINE_CATALOG),
   anbauplan: buildAnbauplan(1),
   arbeitsgaenge: ARBEITSGAENGE,
+  // Lohnarbeit: Register je Kultur × Arbeitsgang, ALLE Zeilen inaktiv. Erst das Scharfschalten
+  //  im Screen nimmt den Gang aus der Eigenmechanisierung und bucht den Satz je ha.
+  lohnarbeit: buildLohnarbeit(),
   decisions: { transportToBuyer: "own" },
   debt: DEBT,
   financingContracts: FINANCING_CONTRACTS,
@@ -2927,22 +3076,26 @@ export function resolveScalar(domain: Domain, key: string, scenarioId: string): 
  *  Quelle der Arbeitsgänge: domain.arbeitsgaenge (editierbar).
  * ------------------------------------------------------------------------ */
 /** Maschinen-Betriebskosten je ha in CENT (Σ passes/C_eff × operating€/h). */
-export function machineOpCostPerHaCent(domain: Domain, cropId: string, scenarioId: string): number {
+export function machineOpCostPerHaCent(domain: Domain, cropId: string, scenarioId: string, y = 0): number {
   const dieselPriceCent = resolveScalar(domain, "price.diesel_l", scenarioId);
   const bf = sprayBoomFactor(domain, scenarioId); // 48-m-Paket: breiteres Gestänge → weniger Spritz-Std/ha
   const byId = new Map(domain.machineCatalog.map((m) => [m.id, m]));
   const gaenge = domain.arbeitsgaenge[cropId] ?? [];
+  // Fremdvergebene Gänge: Versicherung, Reparatur und Schmierstoff entfallen — der DIESEL nicht,
+  //  denn die Lohnsätze sind ohne Kraftstoff kalkuliert (dieselIncluded kehrt das um).
+  const lohn = lohnGaengeOf(domain, cropId, y);
+  const dieselAuchWeg = new Set((domain.lohnarbeit ?? [])
+    .filter((e) => e.cropId === cropId && e.dieselIncluded && lohnAktivIn(e, y)).map((e) => e.machineId));
   let cent = 0;
   for (const g of gaenge) {
     const m = byId.get(g.m);
     if (!m || !m.cEff) continue;
     // Spritze: effektive C_eff skaliert mit der Gestängebreite (36 m → 48 m = +33 % ha/h).
     const cEff = m.id === "spritze14" ? m.cEff * bf : m.cEff;
+    const fremd = lohn.has(g.m);
     const opPerHourCent =
-      (m.insurancePerHourCent ?? 0) +
-      (m.repairPerHourCent ?? 0) +
-      (m.lubePerHourCent ?? 0) +
-      (m.dieselLPerHour ?? 0) * dieselPriceCent;
+      (fremd ? 0 : (m.insurancePerHourCent ?? 0) + (m.repairPerHourCent ?? 0) + (m.lubePerHourCent ?? 0)) +
+      (fremd && dieselAuchWeg.has(g.m) ? 0 : (m.dieselLPerHour ?? 0) * dieselPriceCent);
     cent += (g.passes / cEff) * opPerHourCent;
   }
   return cent; // CENT/ha
@@ -2950,13 +3103,14 @@ export function machineOpCostPerHaCent(domain: Domain, cropId: string, scenarioI
 
 /** Maschinen-Fixkosten (AfA + kalk. Zins) je ha in CENT aus den Arbeitsgängen:
  *  Σ passes / C_eff × (AfA+Zins)€/h. Entspricht machineFull − machineOp (§3-Reconciliation). */
-export function machineAfaZinsPerHaCent(domain: Domain, cropId: string, scenarioId: string): number {
+export function machineAfaZinsPerHaCent(domain: Domain, cropId: string, scenarioId: string, y = 0): number {
   const byId = new Map(domain.machineCatalog.map((m) => [m.id, m]));
   const gaenge = domain.arbeitsgaenge[cropId] ?? [];
+  const lohn = lohnGaengeOf(domain, cropId, y);   // fremdvergeben ⇒ kein eigenes Kapital gebunden
   let cent = 0;
   for (const g of gaenge) {
     const m = byId.get(g.m);
-    if (!m || !m.cEff) continue;
+    if (!m || !m.cEff || lohn.has(g.m)) continue;
     const afaZinsPerHourCent = (m.afaPerHourCent ?? 0) + (m.interestPerHourCent ?? 0);
     cent += (g.passes / m.cEff) * afaZinsPerHourCent;
   }
@@ -3369,10 +3523,21 @@ export function exportMassnahmenplan(domain: Domain, scenarioId: string) {
 function machineHoursPerYear(domain: Domain, machineId: string): number {
   const m = domain.machineCatalog.find((x) => x.id === machineId);
   if (!m || !m.cEff) return 0;
+  // Bemessen wird auf das BEDARFSJAHR (erstes Jahr mit Fläche und ohne Fremdvergabe) und mit den
+  //  FLÄCHEN DIESES JAHRES — nicht mit denen des Startjahrs. Sonst bekommen Kulturen, die erst
+  //  später anlaufen, nie Technik, und befristete Lohnarbeit kippt eine Maschine dauerhaft raus.
+  const years = Math.max(1, domain.growth?.years ?? 1);
+  const yStar = bedarfsJahrOf(domain, machineId, years);
+  if (yStar < 0) return 0;
+  const areas = cropAreasMemo(domain).areas;
   let h = 0;
   for (const a of domain.anbauplan) {
+    if (lohnGaengeOf(domain, a.cropId, yStar).has(machineId)) continue;
     const g = (domain.arbeitsgaenge[a.cropId] ?? []).find((x) => x.m === machineId);
-    if (g) h += (g.passes * a.areaHa) / m.cEff;
+    if (!g) continue;
+    const curve = areas[a.cropId];
+    const haY = curve ? (curve[Math.min(yStar, curve.length - 1)] ?? 0) : a.areaHa;
+    h += (g.passes * haY) / m.cEff;
   }
   return h;
 }
@@ -4653,6 +4818,23 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       }],
     });
 
+    // Lohnarbeit (Dienstleistungs-Einkauf) als eigene COGS-Operation — Satz × Überfahrten × ha,
+    //  exkl. Diesel. Wird wie jede Feldmaßnahme im Feldbestand aktiviert und bei Ernte aufgelöst.
+    //  Der Betrag ist JAHRESABHÄNGIG (ab/bis Planjahr) und wird in cropPlansMY je Jahr neu gesetzt.
+    const lohnEur0 = lohnarbeitPerHaCent(domain, a.cropId, scenarioId, 0) / 100;
+    operations.push({
+      id: `${a.id}-OP-LOHN`,
+      label: "Lohnarbeit (Dienstleistung, exkl. Diesel)",
+      costPeriods: [clampP(a.plantingPeriod)],
+      lines: [{
+        id: `${a.id}-OP-LOHN-0`,
+        label: "Fremdvergebene Arbeitsgänge",
+        costType: "machine",
+        quantityPerHa: lohnEur0,
+        unitCostKey: "price.per_euro",
+      }],
+    });
+
     return {
       id: `cp-${a.id}`,
       parcelId: `parcel-${a.id}`,
@@ -4877,7 +5059,24 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     const b = at(0);
     if (b <= 0) return dMachScale;
     const curve = Array.from({ length: years }, (_, y) => (at(y) / b) * adjAsset[y]);
-    return curve.map((s, y) => s - (y > 0 ? curve[y - 1] : 0));
+    const d = curve.map((s, y) => s - (y > 0 ? curve[y - 1] : 0));
+    // BEDARFSJAHR: vor dem ersten Jahr, in dem die Maschine gebraucht wird (Fläche vorhanden und
+    //  nicht fremdvergeben), wird nichts angeschafft. Die Basis ist auf dieses Jahr bemessen
+    //  (machineHoursPerYear), also wird die Kurve auch darauf normiert — sonst kauft das Modell
+    //  im Bedarfsjahr ein Vielfaches oder ein Bruchteil dessen, was es braucht.
+    const yStar = bedarfsJahrOf(domain, machineId, years);
+    if (yStar < 0) return d.map(() => 0);          // nie gebraucht → kein CAPEX
+    if (yStar > 0) {
+      const bStar = at(yStar);
+      if (bStar <= 0) return d.map(() => 0);
+      const cStar = Array.from({ length: years }, (_, y) => (at(y) / bStar) * adjAsset[y]);
+      const dStar = cStar.map((v, y) => v - (y > 0 ? cStar[y - 1] : 0));
+      let acc = 0;
+      for (let y = 0; y < yStar && y < years; y++) { acc += dStar[y]; dStar[y] = 0; }
+      dStar[yStar] += acc;
+      return dStar;
+    }
+    return d;
   };
   const yearOf = (p: number) => Math.floor(p / 12);
   const nPer = years * 12;
@@ -5108,10 +5307,21 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       plantingPeriod: cp.plantingPeriod + y * 12,
       harvestPeriods: cp.harvestPeriods.map((h) => h + y * 12),
       secondCrop: cp.secondCrop ? { ...cp.secondCrop, harvestPeriod: cp.secondCrop.harvestPeriod + y * 12 } : undefined,
-      operations: (cp.operations ?? []).map((op) => ({
-        ...op, id: `${op.id}-y${y}`, costPeriods: op.costPeriods.map((c) => c + y * 12),
-        lines: op.lines.map((ln) => ({ ...ln, id: `${ln.id}-y${y}` })),
-      })),
+      // Maschinen-Betriebskosten und Lohnarbeit hängen am Planjahr (Lohnarbeit kann befristet
+      //  sein; fällt ein Gang weg, entfallen Versicherung/Reparatur/Schmierstoff der Maschine).
+      //  Beide werden deshalb je Jahrgang NEU bewertet statt nur kopiert.
+      operations: (cp.operations ?? []).map((op) => {
+        const isMasch = op.id.endsWith("-OP-MASCH"), isLohn = op.id.endsWith("-OP-LOHN");
+        const perHaEur = isMasch ? machineOpCostPerHaCent(domain, cp.cropId, scenarioId, y) / 100
+          : isLohn ? lohnarbeitPerHaCent(domain, cp.cropId, scenarioId, y) / 100 : null;
+        return {
+          ...op, id: `${op.id}-y${y}`, costPeriods: op.costPeriods.map((c) => c + y * 12),
+          lines: op.lines.map((ln) => ({
+            ...ln, id: `${ln.id}-y${y}`,
+            ...(perHaEur != null ? { quantityPerHa: perHaEur } : {}),
+          })),
+        };
+      }),
     })),
   );
 
