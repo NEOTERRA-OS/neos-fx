@@ -351,18 +351,21 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
     label: string; hint?: string; kind: "geld" | "quote" | "ratio" | "trenner";
     val?: (y: number) => number; fmt?: (v: number) => string;
     stark?: boolean; grenze?: (v: number) => boolean;
+    /** Marge/Quote, die zur GELDGRÖSSE derselben Zeile gehört. Sie stand vorher als eigene
+     *  Zeile darunter — dabei ist sie kein eigener Sachverhalt, sondern dieselbe Zahl in
+     *  anderer Einheit. Nebeneinander liest man „9,58 Mio · 42,5 % · ▲ 1 %" in einem Blick. */
+    quote?: (y: number) => number; quoteLabel?: string;
   };
   const rows: Zeile[] = [
     { label: t("Umsatz inkl. Subventionen"), kind: "geld", val: umsatz, fmt: M, stark: true },
     { label: t("davon Subventionen"), kind: "geld", val: (y) => V(p.subsidies, y), fmt: M },
     { label: "—", kind: "trenner" },
-    { label: "EBITDA", kind: "geld", val: (y) => V(p.ebitda, y), fmt: M, stark: true },
-    { label: t("EBITDA-Marge"), hint: t("EBITDA / Umsatz"), kind: "quote",
-      val: (y) => (umsatz(y) ? V(p.ebitda, y) / umsatz(y) : 0), fmt: P1 },
-    { label: "EBIT", kind: "geld", val: (y) => V(p.ebit, y), fmt: M },
-    { label: t("Jahresergebnis"), kind: "geld", val: (y) => V(p.netIncome, y), fmt: M, stark: true },
-    { label: t("Umsatzrendite"), hint: t("Jahresergebnis / Umsatz"), kind: "quote",
-      val: (y) => (umsatz(y) ? V(p.netIncome, y) / umsatz(y) : 0), fmt: P1 },
+    { label: "EBITDA", hint: t("mit EBITDA-Marge"), kind: "geld", val: (y) => V(p.ebitda, y), fmt: M, stark: true,
+      quote: (y) => (umsatz(y) ? V(p.ebitda, y) / umsatz(y) : 0) },
+    { label: "EBIT", kind: "geld", val: (y) => V(p.ebit, y), fmt: M,
+      quote: (y) => (umsatz(y) ? V(p.ebit, y) / umsatz(y) : 0) },
+    { label: t("Jahresergebnis"), hint: t("mit Umsatzrendite"), kind: "geld", val: (y) => V(p.netIncome, y), fmt: M, stark: true,
+      quote: (y) => (umsatz(y) ? V(p.netIncome, y) / umsatz(y) : 0) },
     { label: "—", kind: "trenner" },
     { label: t("Free Cash Flow"), hint: "NI + AfA − CapEx", kind: "geld", val: (y) => V(k.fcf, y), fmt: M },
     { label: "DSCR", hint: t("Covenant ≥ 1,10"), kind: "ratio", val: (y) => V(k.dscr, y), fmt: X,
@@ -391,7 +394,7 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
       <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
         <h3 className="text-[13px] font-semibold">{t("Ergebnis je Planjahr")}</h3>
         <p className="mt-0.5 text-[11px] text-nx-text-muted">
-          {t("Aktives Szenario, Geldgrößen in Mio €. Neben jedem Wert die Veränderung zum Vorjahr. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,50.")}
+          {t("Aktives Szenario, Geldgrößen in Mio €. Neben jedem Wert die Marge (grün) und die Veränderung zum Vorjahr. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,50.")}
         </p>
       </div>
       <div className="overflow-x-auto px-2 py-2">
@@ -440,6 +443,12 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
                           <span className={"num " + (r.stark ? "font-semibold text-[13px]" : "")}
                                 style={{ color: farbe, textAlign: "right" }}>
                             {r.fmt ? r.fmt(v) : v}
+                          </span>
+                          {/* Marge in eigener, farblich abgesetzter Spalte — dieselbe Zeile,
+                              aber klar als andere Einheit erkennbar. Reihenfolge: erst die
+                              Prozentzahl, dann der Vorjahresvergleich. */}
+                          <span className="num text-[10px]" style={{ width: 50, textAlign: "right", flex: "0 0 50px", color: "var(--nx-brand-lift)" }}>
+                            {r.quote ? P1(r.quote(y)) : ""}
                           </span>
                           <span className="num text-[9.5px]" style={{ width: 52, textAlign: "right", flex: "0 0 52px" }}>
                             {r.kind === "geld" && (d === null ? <span className="text-nx-text-muted">·</span> : d !== null ? <Pfeil d={d} /> : null)}

@@ -2813,10 +2813,14 @@ const FINANCING_CONTRACTS: LeasingContract[] = [
 ];
 
 const REVOLVER: RevolverFacility = {
-  // Funding-Linie deckt Saison-WC + CAPEX-/Avans-/USt-Timing über den Ramp; großzügig
-  // dimensioniert, damit der Peak-Bedarf sichtbar wird (Dashboard „Peak Revolver-Bedarf"),
-  // ohne die Kasse ins Negative zu treiben.
-  limit: 24500000000, rateBasis: "floating", floatingSpread: 0.032,
+  // Funding-Linie deckt Saison-WC + CAPEX-/Avans-/USt-Timing über den Ramp.
+  //  KORRIGIERT 31.07.2026: die Linie stand auf 245 Mio € — eine Größenordnung aus dem alten
+  //  Gruppenmodell. Bei einem Betrieb mit 28 Mio € Umsatz und einem tatsächlichen
+  //  Spitzenbedarf von rund 30 Mio € las sich die Liquiditätsplanung dadurch so, als stünden
+  //  dauerhaft 246 Mio € zur Verfügung. Das ist keine Planung, das ist ein Rechenartefakt.
+  //  Jetzt 40 Mio €: deckt die Augustspitze (~30 Mio in 2031) mit Reserve, bleibt aber eine
+  //  Zahl, über die man mit einer Bank sprechen kann.
+  limit: 4000000000, rateBasis: "floating", floatingSpread: 0.032,
   referenceRateKey: "macro.euribor", minCashTarget: 0,
 };
 
