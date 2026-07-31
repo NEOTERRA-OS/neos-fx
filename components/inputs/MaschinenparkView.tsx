@@ -185,18 +185,30 @@ export function MaschinenparkView() {
                           ))}
                         </span>
                       </td>
-                      <td className="px-1 py-1.5 text-right">
-                        <NumberInput value={m.widthM} width={46} onCommit={(v) => setSpec(m.machineId, (x) => { x.widthM = v; })} />
-                      </td>
-                      <td className="px-1 py-1.5 text-right">
-                        <NumberInput value={m.speedKmh} width={46} onCommit={(v) => setSpec(m.machineId, (x) => { x.speedKmh = v; })} />
-                      </td>
-                      <td className="px-1 py-1.5 text-right">
-                        <NumberInput value={Math.round(m.fieldEff * 100)} width={42} onCommit={(v) => setSpec(m.machineId, (x) => { x.fieldEff = v / 100; })} />
-                      </td>
-                      <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{fmtNumber(m.cEff, 2)}</td>
+                      {m.istZug ? (
+                        // Gepoolte Zugklasse: keine eigene Flächenleistung. Breite, Geschwindigkeit
+                        // und C_eff sind hier keine Eingabe, sondern eine Kategorienverwechslung —
+                        // der Bedarf kommt aus den Stunden der Anbaugeräte.
+                        <td colSpan={4} className="px-2 py-1.5 text-right text-[10.5px] text-nx-text-muted">
+                          {t("gepoolt — Bedarf aus den Anbaugeräten")}
+                        </td>
+                      ) : (
+                        <>
+                          <td className="px-1 py-1.5 text-right">
+                            <NumberInput value={m.widthM} width={46} onCommit={(v) => setSpec(m.machineId, (x) => { x.widthM = v; })} />
+                          </td>
+                          <td className="px-1 py-1.5 text-right">
+                            <NumberInput value={m.speedKmh} width={46} onCommit={(v) => setSpec(m.machineId, (x) => { x.speedKmh = v; })} />
+                          </td>
+                          <td className="px-1 py-1.5 text-right">
+                            <NumberInput value={Math.round(m.fieldEff * 100)} width={42} onCommit={(v) => setSpec(m.machineId, (x) => { x.fieldEff = v / 100; })} />
+                          </td>
+                          <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{fmtNumber(m.cEff, 2)}</td>
+                        </>
+                      )}
                       <td className="num px-2 py-1.5 text-right text-nx-text-muted">{m.feldTage}</td>
                       <td className="px-2 py-1.5">
+                        {m.istZug ? <span className="text-[10.5px] text-nx-text-muted">{t("folgt den Geräten")}</span> : (
                         <span className="inline-flex overflow-hidden rounded-control border" style={{ borderColor: "var(--nx-border)" }}>
                           {([[false, t("kaufen")], [true, t("zumieten")]] as const).map(([mieten, label]) => (
                             <button key={label} disabled={readOnly}
@@ -210,7 +222,7 @@ export function MaschinenparkView() {
                               {label}
                             </button>
                           ))}
-                        </span>
+                        </span>)}
                       </td>
                       {Y.map((y) => {
                         const n = m.units[y] ?? 0;

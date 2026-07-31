@@ -1373,11 +1373,22 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("mprice.einzelkorn", "mprice.einzelkorn", "Einzelkornsämaschine HORSCH Maestro 12 TX", "money", 24000000),
   // Feingemüse-Sätechnik: Zwiebel und Möhre werden auf BEETEN gesät (Reihenabstand 5–7 cm,
   //  Beetbreite 1,50–1,80 m), nicht mit 50-cm-Einzelkorntechnik. Klasse Agricola Italiana
-  //  SNT/SN2D, 3 Beete → rd. 5,4 m Arbeitsbreite. Preis als Klassenanker, zu bestätigen.
+  //  SNT, 3 Beete → rd. 5,4 m, hydraulisch klappbar, 12–15 Elemente.
+  //  ANKER: SNT-2-320 mit 8 Reihen auf 3,00 m neu 36.500 € (traktorpool, HU, 2025); ein
+  //  5,50-m-/12-Element-Rahmen von 2021 liegt gebraucht bei 45.000 € netto (agriaffaires/FR),
+  //  was bei 60–70 % Restwert auf 64–75 T€ neu deutet. Beide Richtungen treffen sich bei
+  //  50–60 T€. Spanne 45–68 T€. Preistreiber ist der Elementtyp, nicht die Beetzahl:
+  //  dieselben 8 Reihen kosten als SN (Einzelreihe) 18.000 €, als SNT (Bandsaat) 36.500 €.
   A("mprice.gem_saat", "mprice.gem_saat", "Beetsämaschine Feingemüse (3 Beete, Agricola-Klasse)", "money", 5500000),
-  // Knoblauch wird gesteckt, nicht gesät: Legemaschine mit Zehenausrichtung, Beetbauweise.
-  //  Klasse Garmach/Checchi & Magli, professionelle 2-Beet-Ausführung. Preis Klassenanker.
-  A("mprice.knobl_lege", "mprice.knobl_lege", "Knoblauch-Legemaschine (Beet, 8-reihig)", "money", 6000000),
+  // Knoblauch wird gesteckt, nicht gesät. ANKER: JJ Broch PLNA-6 (6-reihig, pneumatisch),
+  //  Neupreis 21.850 € netto bei Topmaquinaria/ES (Abruf 31.07.2026); Reihenkosten in dieser
+  //  Klasse rd. 2.500–3.500 €/Reihe, 6 → 8 Reihen also +4.000–8.000 €. Spanne 22–34 T€.
+  //  BEWUSSTE ABWEICHUNG von der ersten Fassung (60 T€): dort war eine Maschine mit
+  //  ZEHENAUSRICHTUNG unterstellt. Die gibt es kommerziell nur handbeschickt (Garmach MGP,
+  //  ERME PLMS) mit ~0,7 ha/TAG — für 50 ha bräuchte es vier bis fünf davon. Bei dieser
+  //  Fläche legt man pneumatisch und ohne Ausrichtung; der Ertragsabschlag daraus ist ein
+  //  offener Punkt in der Agronomie, keine Frage des Maschinenpreises.
+  A("mprice.knobl_lege", "mprice.knobl_lege", "Knoblauch-Legemaschine pneumatisch (8-reihig)", "money", 2800000),
   A("mprice.streuer", "mprice.streuer", "Düngerstreuer RAUCH AERO GT 36 m", "money", 8500000),
   A("mprice.streuer_xeric", "mprice.streuer_xeric", "Düngerstreuer HORSCH Leeb Xeric 14 FS (48 m, 14.000 l)", "money", 16500000),
   A("mprice.boom48_pkg", "mprice.boom48_pkg", "48-m-Paket: Gestänge-Umrüstung PT/TD + Fahrgassen-Terminal", "money", 17000000),
@@ -1972,10 +1983,10 @@ const SPEC: Spec[] = [
   //  in Mehrfachreihen (5–7 cm) gesät. cEff = 5,4 m × 4,5 km/h × 0,65 ÷ 10 = 1,58 ha/h;
   //  Präzisionssaat fährt langsam, das ist der Preis für die Standgenauigkeit.
   { id: "gem_saat",   label: "Beetsämaschine Feingemüse · 3 Beete (5,40 m)", priceKey: "mprice.gem_saat", cat: "gezogen", neupreis: 5500000, nutzung: 12, hJ: 200, restw: 0.25, dieselLh: 8, afa: 1719, zins: 516, vers: 430, rep: 1289, schmier: 120, cEff: 1.58, fleet: 1, tractorId: "ops_6r" },
-  // KNOBLAUCH-LEGETECHNIK. Zehen müssen mit der Spitze nach oben gesteckt werden — das kann
-  //  keine Sämaschine. cEff = 1,8 m × 2,2 km/h × 0,60 ÷ 10 = 0,24 ha/h: die langsamste
-  //  Maschine im Park, deshalb bei 50 ha trotzdem nur eine Einheit (Herbstfenster ~25 Tage).
-  { id: "knobl_lege", label: "Knoblauch-Legemaschine · Beet, 8-reihig (1,80 m)", priceKey: "mprice.knobl_lege", cat: "gezogen", neupreis: 6000000, nutzung: 12, hJ: 150, restw: 0.20, dieselLh: 8, afa: 2667, zins: 800, vers: 667, rep: 2000, schmier: 120, cEff: 0.24, fleet: 1, tractorId: "ops_6r" },
+  // KNOBLAUCH-LEGETECHNIK. Zehen werden gesteckt, nicht gesät — das kann keine Sämaschine.
+  //  Pneumatische Legemaschine der Klasse JJ Broch PLNA / Seca SC1: 0,4–0,5 ha/h laut
+  //  Herstellerangabe (PLNA-5, 845 l, ab 90 PS). cEff = 1,8 m × 4,6 km/h × 0,60 ÷ 10 = 0,50.
+  { id: "knobl_lege", label: "Knoblauch-Legemaschine pneumatisch · 8-reihig (1,80 m)", priceKey: "mprice.knobl_lege", cat: "gezogen", neupreis: 2800000, nutzung: 12, hJ: 150, restw: 0.20, dieselLh: 8, afa: 1244, zins: 373, vers: 311, rep: 933, schmier: 120, cEff: 0.50, fleet: 1, tractorId: "ops_6r" },
   // BESTAND 2× RAUCH AERO GT 36 m (pneum. Balkenstreuer) — decken die Düngung @ Stufe 1.
   { id: "streuer",    label: "Düngerstreuer Bredal K135 gezogen · 36,0 m",  priceKey: "mprice.streuer",    cat: "gezogen", neupreis: 8500000, nutzung: 10, hJ: 400, restw: 0.20, dieselLh: 10, afa: 2800, zins: 840, vers: 700, rep: 1750, schmier: 150, cEff: 18.62, fleet: 1, owned: 0, activeWhen: "base", tractorId: "ops_6r" },
   // spritze14: bleibt der COGS-/Betriebskosten-Träger (Diesel/Rep/Vers/Schmier je ha aus den
@@ -2058,7 +2069,7 @@ const MACHINE_META: Record<string, { category: string; manufacturer: string; pro
   drille:      { category: "Aussaat & Pflanzung", manufacturer: "HORSCH", product: "Getreidedrille Pronto 9 DC · 9,0 m" },
   einzelkorn:  { category: "Aussaat & Pflanzung", manufacturer: "HORSCH", product: "Maestro 24.50 SX · 24-reihig 50 cm (12,0 m)" },
   gem_saat:    { category: "Aussaat & Pflanzung", manufacturer: "Agricola-Klasse", product: "Beetsämaschine Feingemüse · 3 Beete (5,40 m) — Zwiebel/Möhre" },
-  knobl_lege:  { category: "Aussaat & Pflanzung", manufacturer: "Garmach-/C&M-Klasse", product: "Knoblauch-Legemaschine · Beet, 8-reihig (1,80 m)" },
+  knobl_lege:  { category: "Aussaat & Pflanzung", manufacturer: "JJ-Broch-/Seca-Klasse", product: "Knoblauch-Legemaschine pneumatisch · 8-reihig (1,80 m), 0,4–0,5 ha/h" },
   onepass:     { category: "Aussaat & Pflanzung", manufacturer: "Dewulf", product: "CP 42 Becherlegemaschine · 4-reihig (3,0 m)" },
   tompflanz:   { category: "Aussaat & Pflanzung", manufacturer: "Checchi & Magli", product: "Pflanzmaschine DUAL 12 GOLD · 6-reihig (3,0 m)" },
   streuer:     { category: "Düngung", manufacturer: "Bredal", product: "Düngerstreuer K135 · gezogen 36 m (Bestand 2×)" },
@@ -4736,6 +4747,8 @@ export type MaschinenPfad = {
   fixPerYear: number; varPerHour: number;
   /** Ist die Klasse aktuell vollständig fremdvergeben? */
   gemietet: boolean;
+  /** Gepoolte Zugklasse — keine eigene Flächenleistung, Bedarf aus den Anbaugeräten. */
+  istZug: boolean;
 };
 
 /** Der ganze Maschinenpark als Pfad über die Planjahre — die Datengrundlage des
@@ -4747,16 +4760,36 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
   const out: MaschinenPfad[] = [];
 
   for (const spec of domain.machineCatalog) {
-    if (!SIZED_MACHINE_IDS.has(spec.id)) continue;
-    if (!spec.cEff) continue;
-    const crops = [...new Set(domain.anbauplan
-      .filter((a) => (domain.arbeitsgaenge[a.cropId] ?? []).some((g) => g.m === spec.id))
-      .map((a) => a.cropId))];
+    const istZug = SIZED_TRACTOR_IDS.has(spec.id);
+    if (!SIZED_MACHINE_IDS.has(spec.id) && !istZug) continue;
+    if (!istZug && !spec.cEff) continue;
+
+    // ZUGMASCHINEN haben keine eigene Flächenleistung — sie ziehen. Ihr Bedarf ist die Summe
+    //  der Stunden ihrer Anbaugeräte, ihre bediente Fläche die Vereinigung von deren Kulturen.
+    //  Wird ein Gerät fremdvergeben, bringt der Lohnunternehmer seinen eigenen Schlepper mit:
+    //  machineDemandHoursOfYear lässt diese Stunden weg, also sinkt auch der Zugbedarf.
+    const geraete = istZug ? domain.machineCatalog.filter((im) => im.tractorId === spec.id && im.cEff) : [];
+    const crops = istZug
+      ? [...new Set(geraete.flatMap((im) => domain.anbauplan
+          .filter((a) => (domain.arbeitsgaenge[a.cropId] ?? []).some((g) => g.m === im.id))
+          .map((a) => a.cropId)))]
+      : [...new Set(domain.anbauplan
+          .filter((a) => (domain.arbeitsgaenge[a.cropId] ?? []).some((g) => g.m === spec.id))
+          .map((a) => a.cropId))];
     if (!crops.length) continue;                       // keine Wertkultur nutzt sie → nicht im Park
 
     const cap = machineCapPerUnitHours(domain, spec.id, scenarioId);
-    const hours = Array.from({ length: years }, (_, y) => machineDemandHoursOfYear(domain, spec.id, y));
-    const servedHa = Array.from({ length: years }, (_, y) => machineServedHaOfYear(domain, spec.id, y));
+    const hours = Array.from({ length: years }, (_, y) => istZug
+      ? geraete.reduce((h, im) => h + machineDemandHoursOfYear(domain, im.id, y), 0)
+      : machineDemandHoursOfYear(domain, spec.id, y));
+    const servedHa = Array.from({ length: years }, (_, y) => {
+      if (!istZug) return machineServedHaOfYear(domain, spec.id, y);
+      const areas = cropAreasMemo(domain).areas;
+      return crops.reduce((ha, cid) => {
+        const c = areas[cid];
+        return ha + (c ? (c[Math.min(y, c.length - 1)] ?? 0) : 0);
+      }, 0);
+    });
     const units = hours.map((h) => (cap > 0 ? Math.ceil(h / cap) : 0));
     const utilPct = units.map((n, y) => (n > 0 && spec.refHoursPerYear ? Math.min(100, (hours[y] / (n * spec.refHoursPerYear)) * 100) : 0));
 
@@ -4765,28 +4798,53 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
     // eine Maschine im Anlaufjahr auf wenig Fläche unwirtschaftlich ist und später nicht mehr.
     const refH = spec.refHoursPerYear ?? 0;
     const fixPerYear = (((spec.afaPerHourCent ?? 0) + (spec.interestPerHourCent ?? 0) + (spec.insurancePerHourCent ?? 0)) / 100) * refH;
-    const varPerHour = ((spec.repairPerHourCent ?? 0) + (spec.lubePerHourCent ?? 0)) / 100 + (spec.dieselLPerHour ?? 0) * dieselEur;
+    // FAHRER GEHÖRT DAZU. Der Lohnunternehmer stellt Maschine UND Fahrer — die Eigenkosten
+    // enthielten bisher nur die Maschine. Ohne diese Zeile sieht Selbstmechanisierung
+    // systematisch zu billig aus, und zwar genau um den Posten, den man bei Fremdvergabe
+    // tatsächlich einspart. Stundenlohn aus dem Bruttomonatsgehalt des Maschinenführers
+    // bei 143,3 Monatsstunden (die Kalibrierung, aus der auch das „7 €/h" im Label stammt).
+    const fahrerEurH = (domain.assumptions["pers.stamm.gross"]
+      ? resolveScalar(domain, "pers.stamm.gross", scenarioId) / 100 : 0) / 143.3;
+    const varPerHour = ((spec.repairPerHourCent ?? 0) + (spec.lubePerHourCent ?? 0)) / 100
+      + (spec.dieselLPerHour ?? 0) * dieselEur + fahrerEurH;
     const ownPerHa = units.map((n, y) => (n > 0 && servedHa[y] > 0 ? (n * fixPerYear + hours[y] * varPerHour) / servedHa[y] : null));
 
     // Lohnsatz der Klasse: höchster hinterlegter Satz über die Kulturen (die Sätze sind je
     // Arbeitsgang identisch). PLUS Diesel — die Sätze sind ausdrücklich exklusive Diesel, und
     // wer sie roh gegen die Eigenkosten stellt, rechnet die Lohnarbeit systematisch zu billig.
     const eintrag = (domain.lohnarbeit ?? []).find((e) => e.machineId === spec.id);
-    const dieselProHa = spec.cEff > 0 ? ((spec.dieselLPerHour ?? 0) * dieselEur) / spec.cEff : 0;
+    const dieselProHa = (spec.cEff ?? 0) > 0 ? ((spec.dieselLPerHour ?? 0) * dieselEur) / (spec.cEff as number) : 0;
     const rentPerHa = eintrag ? (eintrag.ratePerHaCent / 100) * lohnFaktor + (eintrag.dieselIncluded ? 0 : dieselProHa) : null;
 
     const relevant = (domain.lohnarbeit ?? []).filter((e) => e.machineId === spec.id && crops.includes(e.cropId));
-    const gemietet = relevant.length > 0 && relevant.every((e) => e.active);
+    const gemietet = !istZug && relevant.length > 0 && relevant.every((e) => e.active);
 
     out.push({
       machineId: spec.id, label: spec.label, manufacturer: spec.manufacturer, category: spec.category,
-      crops, cEff: spec.cEff, widthM: spec.widthM ?? 0, speedKmh: spec.speedKmh ?? 0, fieldEff: spec.fieldEff ?? 0,
+      crops, cEff: spec.cEff ?? 0, widthM: spec.widthM ?? 0, speedKmh: spec.speedKmh ?? 0, fieldEff: spec.fieldEff ?? 0,
+      istZug,
       feldTage: feldTageOf(domain, spec.id), capPerUnitHours: cap,
       preisCent: machineUnitPriceCent(domain, spec, scenarioId),
       units, hours, servedHa, utilPct, ownPerHa, rentPerHa, fixPerYear, varPerHour, gemietet,
     });
   }
-  return out.sort((a, b) => (a.category ?? "").localeCompare(b.category ?? "") || a.label.localeCompare(b.label));
+  // Zugmaschinen zuerst: sie tragen alles andere.
+  return out.sort((a, b) => Number(b.istZug) - Number(a.istZug)
+    || (a.category ?? "").localeCompare(b.category ?? "") || a.label.localeCompare(b.label));
+}
+
+/** Feldstunden, die der Betrieb im Planjahr y SELBST fährt — fremdvergebene Arbeitsgänge
+ *  sind ausgenommen, denn dort stellt der Lohnunternehmer den Fahrer mit. Das ist die
+ *  Bemessungsgrundlage der Stamm-Maschinenführer: Personal folgt der Arbeit, nicht der
+ *  Fläche. Vorher skalierte die Kopfzahl allein mit dem Flächenwachstum — wer eine ganze
+ *  Klasse fremdvergab, sparte die Maschine, behielt aber ihren Fahrer in der Lohnliste. */
+export function selfOperatedFieldHoursOfYear(domain: Domain, y: number): number {
+  let h = 0;
+  for (const m of domain.machineCatalog) {
+    if (!m.cEff || m.mode !== "fixedFleet") continue;
+    h += machineDemandHoursOfYear(domain, m.id, y);
+  }
+  return h;
 }
 
 /** Eine ganze Maschinenklasse fremdvergeben oder zurückholen: schaltet alle Lohnarbeits-Zeilen
@@ -5561,11 +5619,24 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     // Kopfzahlen sind — wie der Overhead — auf den ZIELZUSTAND kalibriert, nicht auf das Startjahr.
     //  Sonst trüge 2027 mit 300 ha die Mannschaft des Endausbaus und 2034 das 7,8-fache davon.
     const persScaleY = (y: number) => DAMPED_PERS.has(key) ? persDamp(y) : relToTarget(y);
+    // STAMM-MASCHINENFÜHRER folgen den selbst gefahrenen Feldstunden, nicht der Fläche.
+    //  Peak-Deckung 0,62: durch die Saisonballung ist nur rund ein Drittel bis zwei Drittel
+    //  der Jahresstunden eines Fahrers überhaupt für Feldarbeit im Fenster nutzbar
+    //  (dieselbe Kalibrierung wie in derivePersonnelProposal).
+    const stammKurve = key === "pers.stamm.n" ? (() => {
+      const availH = resolveScalar(domain, "en.avail_h_year", scenarioId) || 2000;
+      return Array.from({ length: years }, (_, y) =>
+        Math.max(1, Math.ceil(selfOperatedFieldHoursOfYear(domain, y) / (availH * 0.62))));
+    })() : null;
     if (years <= 1) {
       if (personnelScale !== 1) assumptions[key] = { id: b?.id ?? key, key, label: b?.label ?? key, unit: (b?.unit ?? "count") as any,
         scenarioProfiles: { [domain.baseScenarioId]: { kind: "constant", value: baseVal } }, meta: b?.meta };
     } else {
-      const values = Array.from({ length: nPer }, (_, p) => baseVal * persScaleY(yearOf(p)));
+      const values = Array.from({ length: nPer }, (_, p) => {
+        const y = yearOf(p);
+        return stammKurve ? stammKurve[Math.min(y, stammKurve.length - 1)] * personnelScale
+                          : baseVal * persScaleY(y);
+      });
       assumptions[key] = { id: b?.id ?? key, key, label: b?.label ?? key, unit: (b?.unit ?? "count") as any,
         scenarioProfiles: { [domain.baseScenarioId]: { kind: "curve", values } }, meta: b?.meta };
     }
