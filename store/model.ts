@@ -3520,14 +3520,18 @@ export function exportMassnahmenplan(domain: Domain, scenarioId: string) {
 }
 
 /** Maschinen-Ist-Stunden/Jahr über alle Kulturen, die die Maschine nutzen (Referenz C). */
-function machineHoursPerYear(domain: Domain, machineId: string): number {
+function machineHoursPerYear(domain: Domain, machineId: string, atYear?: number): number {
   const m = domain.machineCatalog.find((x) => x.id === machineId);
   if (!m || !m.cEff) return 0;
-  // Bemessen wird auf das BEDARFSJAHR (erstes Jahr mit Fläche und ohne Fremdvergabe) und mit den
-  //  FLÄCHEN DIESES JAHRES — nicht mit denen des Startjahrs. Sonst bekommen Kulturen, die erst
-  //  später anlaufen, nie Technik, und befristete Lohnarbeit kippt eine Maschine dauerhaft raus.
+  // Bemessen wird auf ein BEZUGSJAHR mit den FLÄCHEN DIESES JAHRES — nicht mit denen des
+  //  Startjahrs. Sonst bekommen Kulturen, die erst später anlaufen, nie Technik (0 ha in 2027
+  //  ⇒ 0 Bedarfsstunden ⇒ Basis × Faktor bleibt für immer 0), und befristete Lohnarbeit kippt
+  //  eine Maschine dauerhaft aus der Flotte.
+  //  atYear MUSS von außen gesetzt werden, wenn mehrere Maschinen in EINE Bemessung eingehen
+  //  (Zugmaschinen bündeln die Stunden ihrer Anbaugeräte): sonst mischen sich Bezugsjahre und
+  //  der Schlepperbedarf wird auf Flächen gerechnet, die es im selben Jahr gar nicht gibt.
   const years = Math.max(1, domain.growth?.years ?? 1);
-  const yStar = bedarfsJahrOf(domain, machineId, years);
+  const yStar = atYear ?? bedarfsJahrOf(domain, machineId, years);
   if (yStar < 0) return 0;
   const areas = cropAreasMemo(domain).areas;
   let h = 0;
@@ -4376,8 +4380,17 @@ export function feldTageOf(domain: Domain, id: string): number {
  *  Σ Stunden aller gezogenen Anbaugeräte (Pooling). */
 function fleetDemandHours(domain: Domain, id: string): number {
   if (SIZED_TRACTOR_IDS.has(id)) {
+    // Zugmaschine: EIN gemeinsames Bezugsjahr für alle angehängten Geräte — das früheste Jahr,
+    //  in dem irgendeines von ihnen gebraucht wird. Ohne diese Klammer würde jedes Anbaugerät
+    //  mit den Flächen SEINES eigenen Bedarfsjahrs zählen und der Schlepperbedarf wäre die
+    //  Summe von Flächen, die nie gleichzeitig bestehen (z. B. Kartoffel 2027 + Tomate 2031).
+    const years = Math.max(1, domain.growth?.years ?? 1);
+    const impl = domain.machineCatalog.filter((im) => im.tractorId === id && im.cEff);
+    const ys = impl.map((im) => bedarfsJahrOf(domain, im.id, years)).filter((y) => y >= 0);
+    if (!ys.length) return 0;
+    const yStar = Math.min(...ys);
     let h = 0;
-    for (const im of domain.machineCatalog) if (im.tractorId === id && im.cEff) h += machineHoursPerYear(domain, im.id);
+    for (const im of impl) h += machineHoursPerYear(domain, im.id, yStar);
     return h;
   }
   return machineHoursPerYear(domain, id);
@@ -5064,7 +5077,13 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     //  nicht fremdvergeben), wird nichts angeschafft. Die Basis ist auf dieses Jahr bemessen
     //  (machineHoursPerYear), also wird die Kurve auch darauf normiert — sonst kauft das Modell
     //  im Bedarfsjahr ein Vielfaches oder ein Bruchteil dessen, was es braucht.
-    const yStar = bedarfsJahrOf(domain, machineId, years);
+    const yStar = SIZED_TRACTOR_IDS.has(machineId)
+      ? (() => {
+          const ys = domain.machineCatalog.filter((im) => im.tractorId === machineId && im.cEff)
+            .map((im) => bedarfsJahrOf(domain, im.id, years)).filter((v) => v >= 0);
+          return ys.length ? Math.min(...ys) : -1;
+        })()
+      : bedarfsJahrOf(domain, machineId, years);
     if (yStar < 0) return d.map(() => 0);          // nie gebraucht → kein CAPEX
     if (yStar > 0) {
       const bStar = at(yStar);
