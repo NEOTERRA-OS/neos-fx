@@ -394,7 +394,7 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
       <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
         <h3 className="text-[13px] font-semibold">{t("Ergebnis je Planjahr")}</h3>
         <p className="mt-0.5 text-[11px] text-nx-text-muted">
-          {t("Aktives Szenario, Geldgrößen in Mio €. Neben jedem Wert die Marge (grün) und die Veränderung zum Vorjahr. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,50.")}
+          {t("Aktives Szenario, Geldgrößen in Mio €. Unter jedem Wert die Marge (grün), rechts daneben die Veränderung zum Vorjahr. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,50.")}
         </p>
       </div>
       <div className="overflow-x-auto px-2 py-2">
@@ -439,18 +439,23 @@ function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
                             Rand, Zeilen mit Vergleich davor. Die Zahlenkolonne war versetzt.
                             Jetzt hat der Wert einen eigenen rechtsbündigen Block und der
                             Vergleich einen Slot fester Breite — auch dort, wo keiner steht. */}
-                        <span className="flex items-baseline justify-end">
-                          <span className={"num " + (r.stark ? "font-semibold text-[13px]" : "")}
-                                style={{ color: farbe, textAlign: "right" }}>
-                            {r.fmt ? r.fmt(v) : v}
+                        {/* Marge UNTER die Zahl, Vorjahresvergleich rechts daneben. Der Wert
+                            und seine Marge sind dieselbe Groesse in zwei Einheiten — sie
+                            gehoeren uebereinander. Die Veraenderung ist etwas anderes und
+                            steht deshalb daneben, in eigenem Slot fester Breite, damit die
+                            Zahlenkolonne ueber alle Zeilen auf einer Achse bleibt. */}
+                        <span className="flex items-start justify-end">
+                          <span style={{ textAlign: "right" }}>
+                            <span className={"num block " + (r.stark ? "font-semibold text-[13px]" : "")} style={{ color: farbe }}>
+                              {r.fmt ? r.fmt(v) : v}
+                            </span>
+                            {r.quote && (
+                              <span className="num block text-[10px] leading-tight" style={{ color: "var(--nx-brand-lift)" }}>
+                                {P1(r.quote(y))}
+                              </span>
+                            )}
                           </span>
-                          {/* Marge in eigener, farblich abgesetzter Spalte — dieselbe Zeile,
-                              aber klar als andere Einheit erkennbar. Reihenfolge: erst die
-                              Prozentzahl, dann der Vorjahresvergleich. */}
-                          <span className="num text-[10px]" style={{ width: 50, textAlign: "right", flex: "0 0 50px", color: "var(--nx-brand-lift)" }}>
-                            {r.quote ? P1(r.quote(y)) : ""}
-                          </span>
-                          <span className="num text-[9.5px]" style={{ width: 52, textAlign: "right", flex: "0 0 52px" }}>
+                          <span className="num text-[9.5px]" style={{ width: 52, textAlign: "right", flex: "0 0 52px", paddingTop: 2 }}>
                             {r.kind === "geld" && (d === null ? <span className="text-nx-text-muted">·</span> : d !== null ? <Pfeil d={d} /> : null)}
                           </span>
                         </span>
