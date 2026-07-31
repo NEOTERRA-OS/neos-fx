@@ -2,14 +2,14 @@
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import {
-  deriveMaschinenpark, setMachineOutsourced, START_YEAR,
-  type MaschinenPfad,
+  deriveMaschinenpark, setMachineOutsourced, setMachineRented, START_YEAR,
+  type MaschinenPfad, type CapexPlanItem,
 } from "../../store/model";
-import { NumberInput } from "./NumberInput";
+import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { cropColor } from "./cropCalc";
 import { t } from "../../lib/i18n";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 
 /** MASCHINENPARK — ein Screen für den ganzen Weg.
  *
@@ -70,8 +70,13 @@ export function MaschinenparkView() {
     const vor = y ? m.units[y - 1] : 0;
     return Math.max(0, m.units[y] - vor) * m.preisCent;
   };
-  const lohnOf = (m: MaschinenPfad, y: number) =>
-    m.gemietet && m.rentPerHa != null ? m.rentPerHa * 100 * m.servedHa[y] : 0;
+  /** Laufender Aufwand der Fremdlösung im Jahr y: Lohnarbeit rechnet je Hektar (Fahrer
+   *  inklusive), Maschinenmiete je Betriebsstunde (nur das Gerät). */
+  const lohnOf = (m: MaschinenPfad, y: number) => {
+    if (m.beschaffung === "miete") return m.rentPerHour != null ? m.rentPerHour * 100 * m.hours[y] : 0;
+    if (m.beschaffung === "lohn") return m.rentPerHa != null ? m.rentPerHa * 100 * m.servedHa[y] : 0;
+    return 0;
+  };
 
   const capexJahr = Y.map((y) => park.reduce((s, m) => s + capexOf(m, y), 0));
   const lohnJahr = Y.map((y) => park.reduce((s, m) => s + lohnOf(m, y), 0));
@@ -105,7 +110,7 @@ export function MaschinenparkView() {
             {t("Bedarf aus Kulturen × Leistung → Stückzahl je Planjahr → kaufen oder zumieten → Investition.")}
           </span>
           <span className="caption ml-auto text-[10px] text-nx-text-muted">
-            {park.length} {t("Klassen")} · {park.length - nMiete} {t("kaufen")} · {nMiete} {t("zumieten")}
+            {park.length} {t("Klassen")} · {park.length - nMiete} {t("kaufen")} · {nMiete} {t("fremd")}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-px sm:grid-cols-5" style={{ background: "var(--nx-border-divider)" }}>
@@ -113,7 +118,7 @@ export function MaschinenparkView() {
             [t("Park-Investition"), `${fmtMoney(investSum)} €`, "var(--nx-brand-lift)"],
             [`CAPEX ${START_YEAR}`, `${fmtMoney(capexJahr[0] ?? 0)} €`, undefined],
             [t("Spitzen-CAPEX"), `${fmtMoney(spitze)} € · ${START_YEAR + capexJahr.indexOf(spitze)}`, "var(--nx-warning)"],
-            [t("Lohnarbeit über den Horizont"), `${fmtMoney(lohnSum)} €`, "var(--nx-locate)"],
+            [t("Lohn & Miete über den Horizont"), `${fmtMoney(lohnSum)} €`, "var(--nx-locate)"],
             [t("Einheiten im Endausbau"), `${park.reduce((s, m) => s + (m.gemietet ? 0 : m.units[years - 1] ?? 0), 0)} Stk`, undefined],
           ].map(([l, v, c], i) => (
             <div key={i} className="px-4 py-2.5" style={{ background: "var(--nx-surface)" }}>
@@ -146,8 +151,9 @@ export function MaschinenparkView() {
                   <th key={y} className={th + " text-right"}>{START_YEAR + y}<Einheit>{fmtNumber(flaeche(y), 0)} ha</Einheit></th>
                 ))}
                 <th className={th + " text-right"}>{t("eigen")}<Einheit>€/ha</Einheit></th>
+                <th className={th + " text-right"}>{t("mieten")}<Einheit>€/ha</Einheit></th>
                 <th className={th + " text-right"}>{t("Lohn")}<Einheit>€/ha</Einheit></th>
-                <th className={th + " text-right"}>Δ<Einheit>€/ha</Einheit></th>
+                <th className={th + " text-right"}>{t("günstigster Weg")}<Einheit>€/ha</Einheit></th>
                 <th className={th + " text-right"}>{t("Investition")}<Einheit>€</Einheit></th>
               </tr>
             </thead>
@@ -155,11 +161,20 @@ export function MaschinenparkView() {
               {park.map((m) => {
                 const offen = auf === m.machineId;
                 const eigen = m.ownPerHa[years - 1] ?? m.ownPerHa.find((v) => v != null) ?? 0;
-                const miete = m.rentPerHa;
-                const delta = miete == null ? null : miete - (eigen ?? 0);
-                const rel = eigen ? Math.abs((delta ?? 0)) / eigen : 0;
-                const empf = delta == null ? null : rel < 0.15 ? "knapp" : delta > 0 ? "kaufen" : "zumieten";
-                const empfFarbe = empf === "kaufen" ? "var(--nx-success)" : empf === "zumieten" ? "var(--nx-locate)" : "var(--nx-warning)";
+                const miete = m.mietePerHa;
+                const lohn = m.rentPerHa;
+                // Der günstigste Weg ist die eigentliche Aussage der Zeile — nicht die Differenz
+                // zu EINER Alternative. Bei drei Wegen sagt ein Delta gegen nur einen nichts.
+                const kandidaten: [string, number | null][] = [["kaufen", eigen], ["mieten", miete], ["Lohn", lohn]];
+                const gueltig = kandidaten.filter(([, v]) => v != null && v > 0) as [string, number][];
+                const best = gueltig.length ? gueltig.reduce((a, b) => (b[1] < a[1] ? b : a)) : null;
+                const zweit = gueltig.length > 1
+                  ? gueltig.filter((k) => k !== best).reduce((a, b) => (b[1] < a[1] ? b : a)) : null;
+                const knapp = best && zweit ? (zweit[1] - best[1]) / best[1] < 0.12 : false;
+                const empfFarbe = !best ? "var(--nx-text-muted)"
+                  : knapp ? "var(--nx-warning)"
+                  : best[0] === "kaufen" ? "var(--nx-success)"
+                  : best[0] === "mieten" ? "var(--nx-warning)" : "var(--nx-locate)";
                 return (
                   <React.Fragment key={m.machineId}>
                     <tr style={{ borderTop: "1px solid var(--nx-border-divider)", background: offen ? "var(--nx-surface-sunken)" : undefined }}>
@@ -207,39 +222,68 @@ export function MaschinenparkView() {
                         </>
                       )}
                       <td className="num px-2 py-1.5 text-right text-nx-text-muted">{m.feldTage}</td>
+                      {/* DREI WEGE, drei Wörter — der Unterschied liegt darin, wer den Fahrer
+                          stellt und wie abgerechnet wird:
+                            kaufen  eigene Maschine, eigener Fahrer, Investition und AfA
+                            mieten  Maschinenmiete OHNE Fahrer, je Betriebsstunde; Fahrer und
+                                    Diesel stellt der Betrieb — gilt auch für einen Roder
+                            Lohn    Lohnunternehmer MIT Fahrer, je Hektar, exklusive Diesel
+                          Eine Zugmaschine kennt kein „Lohn": einen Schlepper vergibt man nicht
+                          als Arbeitsgang, man mietet ihn. */}
                       <td className="px-2 py-1.5">
-                        {m.istZug ? <span className="text-[10.5px] text-nx-text-muted">{t("folgt den Geräten")}</span> : (
                         <span className="inline-flex overflow-hidden rounded-control border" style={{ borderColor: "var(--nx-border)" }}>
-                          {([[false, t("kaufen")], [true, t("zumieten")]] as const).map(([mieten, label]) => (
-                            <button key={label} disabled={readOnly}
+                          {(m.istZug
+                            ? [["kauf", t("kaufen")], ["miete", t("mieten")]]
+                            : [["kauf", t("kaufen")], ["miete", t("mieten")], ["lohn", t("Lohn")]]
+                          ).map(([wahl, label]) => (
+                            <button key={wahl} disabled={readOnly}
+                              title={wahl === "kauf" ? t("Eigenmechanisierung: Investition, Abschreibung, eigener Fahrer.")
+                                : wahl === "miete" ? t("Maschinenmiete: nur das Gerät, je Betriebsstunde. Fahrer und Diesel stellt der Betrieb.")
+                                : t("Lohnarbeit: Maschine UND Fahrer des Lohnunternehmers, je Hektar, exklusive Diesel.")}
                               className="px-2 text-[10.5px] font-semibold"
                               style={{
                                 height: 24,
-                                background: m.gemietet === mieten ? (mieten ? "var(--nx-locate)" : "var(--nx-green)") : "var(--nx-surface)",
-                                color: m.gemietet === mieten ? "#fff" : "var(--nx-text-secondary)",
+                                background: m.beschaffung === wahl
+                                  ? (wahl === "kauf" ? "var(--nx-green)" : wahl === "miete" ? "var(--nx-warning)" : "var(--nx-locate)")
+                                  : "var(--nx-surface)",
+                                color: m.beschaffung === wahl ? "#fff" : "var(--nx-text-secondary)",
                               }}
-                              onClick={() => patch((d) => setMachineOutsourced(d, m.machineId, mieten))}>
+                              onClick={() => patch((d) => {
+                                // Die Wege schliessen sich aus: erst beide Flaggen loeschen, dann setzen.
+                                setMachineOutsourced(d, m.machineId, wahl === "lohn");
+                                setMachineRented(d, m.machineId, wahl === "miete");
+                              })}>
                               {label}
                             </button>
                           ))}
-                        </span>)}
+                        </span>
                       </td>
                       {Y.map((y) => {
                         const n = m.units[y] ?? 0;
                         const zu = n - (y ? m.units[y - 1] ?? 0 : 0);
                         return (
                           <td key={y} className="num px-2 py-1.5 text-right">
-                            {m.gemietet ? <span className="text-[10px] text-nx-text-muted">{t("Lohn")}</span>
+                            {m.gemietet ? <span className="text-[10px] text-nx-text-muted">{m.beschaffung === "miete" ? t("Miete") : t("Lohn")}</span>
                               : n ? <>{n}{zu > 0 && <span className="ml-0.5 text-[10px]" style={{ color: "var(--nx-brand-lift)" }}>+{zu}</span>}</>
                               : <span className="text-nx-text-muted">–</span>}
                           </td>
                         );
                       })}
-                      <td className="num px-2 py-1.5 text-right">{eigen ? fmtMoney((eigen) * 100) : "–"}</td>
-                      <td className="num px-2 py-1.5 text-right text-nx-text-muted">{miete == null ? "–" : fmtMoney(miete * 100)}</td>
-                      <td className="num px-2 py-1.5 text-right" style={{ color: (delta ?? 0) >= 0 ? "var(--nx-success)" : "var(--nx-error)" }}>
-                        {delta == null ? "–" : `${delta >= 0 ? "+" : ""}${fmtMoney(delta * 100)}`}
-                        {empf && <span className="ml-1 rounded px-1 text-[9px] font-bold" style={{ color: empfFarbe, background: "var(--nx-app-bg)" }}>{t(empf)}</span>}
+                      {([["kaufen", eigen], ["mieten", miete], ["Lohn", lohn]] as [string, number | null][]).map(([k, v]) => (
+                        <td key={k} className="num px-2 py-1.5 text-right"
+                            style={{ color: best && best[0] === k ? "var(--nx-text)" : "var(--nx-text-muted)",
+                                     fontWeight: best && best[0] === k ? 600 : 400 }}>
+                          {v == null || v <= 0 ? "–" : fmtMoney(v * 100)}
+                        </td>
+                      ))}
+                      <td className="px-2 py-1.5 text-right">
+                        {best && (
+                          <span className="rounded px-1.5 py-0.5 text-[9.5px] font-bold"
+                                style={{ color: empfFarbe, background: "var(--nx-app-bg)" }}
+                                title={knapp ? t("Differenz zum zweitbesten Weg unter 12 % — hier entscheidet Verfügbarkeit und Termintreue, nicht die Rechnung.") : undefined}>
+                            {t(best[0])}{knapp ? ` · ${t("knapp")}` : ""}
+                          </span>
+                        )}
                       </td>
                       <td className="num px-2 py-1.5 text-right font-semibold" style={{ color: m.gemietet ? "var(--nx-text-muted)" : "var(--nx-brand-lift)" }}>
                         {m.gemietet ? "—" : fmtMoney(investOf(m))}
@@ -255,6 +299,9 @@ export function MaschinenparkView() {
                               <Zeile k={t("Fixkosten p. a. (AfA + Zins + Vers.)")} v={`${fmtMoney(m.fixPerYear * 100)} €`} />
                               <Zeile k={t("variabel je Stunde (Rep + Schmier + Diesel)")} v={`${fmtNumber(m.varPerHour, 2)} €`} />
                               <Zeile k={t("Kapazität je Einheit und Saison")} v={`${fmtNumber(m.capPerUnitHours, 0)} h`} />
+                              {m.rentPerHour != null && (
+                                <Zeile k={t("Mietsatz je Betriebsstunde")} v={`${fmtMoney(m.rentPerHour * 100)} €`} farbe="var(--nx-locate)" />
+                              )}
                             </Box>
                             <Box titel={t("Auslastung je Planjahr")}>
                               {Y.map((y) => (
@@ -273,7 +320,8 @@ export function MaschinenparkView() {
                             <Box titel={t("Eigenkosten €/ha im Zeitverlauf")}>
                               {Y.map((y) => {
                                 const v = m.ownPerHa[y];
-                                const teuer = miete != null && v != null && v > miete;
+                                const guenstigste = Math.min(...[miete, lohn].filter((x): x is number => x != null && x > 0));
+                                const teuer = isFinite(guenstigste) && v != null && v > guenstigste;
                                 return (
                                   <Zeile key={y} k={String(START_YEAR + y)}
                                     v={v == null ? "–" : `${fmtMoney(v * 100)} €`}
@@ -281,7 +329,8 @@ export function MaschinenparkView() {
                                 );
                               })}
                               <div className="mt-1 border-t pt-1" style={{ borderColor: "var(--nx-border-divider)" }}>
-                                <Zeile k={t("Lohnarbeit inkl. Diesel")} v={miete == null ? "–" : `${fmtMoney(miete * 100)} €`} farbe="var(--nx-locate)" />
+                                <Zeile k={t("Maschinenmiete inkl. Diesel + Fahrer")} v={miete == null ? "–" : `${fmtMoney(miete * 100)} €`} farbe="var(--nx-warning)" />
+                                <Zeile k={t("Lohnarbeit inkl. Diesel")} v={lohn == null ? "–" : `${fmtMoney(lohn * 100)} €`} farbe="var(--nx-locate)" />
                               </div>
                             </Box>
                             <Box titel={t("Bestand & Ersatz")}>
@@ -310,7 +359,7 @@ export function MaschinenparkView() {
                 <td className="num px-2 py-2 text-right font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{fmtMoney(investSum)}</td>
               </tr>
               <tr>
-                <td className="px-2 py-2 font-semibold" colSpan={8}>{t("Lohnarbeit p. a. (zugemietete Klassen)")}</td>
+                <td className="px-2 py-2 font-semibold" colSpan={8}>{t("Lohn & Miete p. a. (fremd bezogene Klassen)")}</td>
                 {Y.map((y) => <td key={y} className="num px-2 py-2 text-right font-semibold" style={{ color: "var(--nx-locate)" }}>{lohnJahr[y] ? fmtMoney(lohnJahr[y]) : "–"}</td>)}
                 <td colSpan={3} />
                 <td className="num px-2 py-2 text-right font-semibold" style={{ color: "var(--nx-locate)" }}>{fmtMoney(lohnSum)}</td>
@@ -325,10 +374,134 @@ export function MaschinenparkView() {
           <b> {t("eigen €/ha")}</b> {t("= (Fixkosten je Einheit und Jahr + variable Kosten je Stunde) ÷ Fläche der bedienten Kulturen — nicht der Betriebsfläche.")}
           <b> {t("Lohn €/ha")}</b> {t("enthält Diesel, damit beide Seiten dasselbe enthalten.")}
           <br />
-          {t("„Zumieten\" schaltet die Lohnarbeits-Zeilen dieser Maschine über alle Kulturen scharf: die Sätze laufen als Direktkosten in die GuV, der CAPEX entfällt. Jede Umstellung verschiebt Geld von der Bilanz in die Ergebnisrechnung.")}
+          {t("„Im Lohn\" schaltet die Lohnarbeits-Zeilen des Gerätes über alle Kulturen scharf — der Lohnunternehmer bringt Maschine UND Fahrer, abgerechnet je Hektar. „Mieten\" gilt für Zugmaschinen: man bekommt nur das Gerät zum Stundensatz (Stundenkosten + Vermietermarge), Fahrer und Diesel stellt der Betrieb. Beides lässt den CAPEX entfallen und bucht stattdessen laufenden Aufwand — Geld wandert von der Bilanz in die Ergebnisrechnung.")}
         </div>
       </section>
+
+      <WeitereInvestitionen />
     </div>
+  );
+}
+
+/** WEITERE ANSCHAFFUNGEN — alles, was keine Feldmaschine mit Flächenleistung ist.
+ *
+ *  Die Tabelle oben leitet sich aus den Arbeitsgängen ab: eine Klasse taucht nur auf, wenn
+ *  eine Kultur sie fährt. Eine Wetterstation fährt nichts, ein Polaris Ranger mit
+ *  RTK-Vermessung und Bodenprobennahme auch nicht — beide haben trotzdem CAPEX, AfA und
+ *  Finanzierung. Sie gehören deshalb als freie Positionen daneben, nicht in die Bedarfs-
+ *  ableitung hinein.
+ *
+ *  Die Zeilen laufen über domain.capexPlan und zählen nur, wenn ihr Block scharfgeschaltet
+ *  ist (capexPlanActive). Das ist die Hybrid-Logik des Modells: entweder der pauschale
+ *  Auto-Block oder die Detailzeilen — nie beides, sonst wird doppelt gezählt.
+ */
+function WeitereInvestitionen() {
+  const { domain, patch } = useModelStore();
+  const readOnly = useModelStore((s) => s.readOnly);
+  const years = Math.max(1, domain.growth?.years ?? 1);
+  const zeilen = (domain.capexPlan ?? []).filter((it) => it.block === "maschinen");
+  const aktiv = domain.capexPlanActive?.maschinen ?? false;
+
+  const upd = (id: string, fn: (it: CapexPlanItem) => void) => patch((d) => {
+    const it = (d.capexPlan ?? []).find((x) => x.id === id); if (it) fn(it);
+  });
+  const add = () => patch((d) => {
+    d.capexPlan = d.capexPlan ?? [];
+    d.capexPlan.push({
+      id: "cx-" + Math.max(0, ...d.capexPlan.map((x) => Number(/(\d+)$/.exec(x.id)?.[1] ?? 0))) + 1,
+      block: "maschinen", bezeichnung: "Neue Anschaffung", anlagenklasse: "technik",
+      driver: "perStueck", menge: 1, einheit: "Stk", eurProEinheitCent: 0,
+      afaYears: 8, restwertPct: 0.1, jahr: 0, fkQuote: 0.5, zins: 0.06, laufzeitJahre: 7,
+      subventionPct: 0, bestand: false, kategorie: "maschinen",
+    });
+  });
+  const del = (id: string) => patch((d) => { d.capexPlan = (d.capexPlan ?? []).filter((x) => x.id !== id); });
+
+  const netOf = (it: CapexPlanItem) =>
+    it.bestand ? 0 : Math.round(it.menge * it.eurProEinheitCent * (1 - Math.max(0, Math.min(1, it.subventionPct))));
+  const summe = zeilen.reduce((s, it) => s + netOf(it), 0);
+  const th = "px-2 py-2 caption text-[10px] text-nx-text-muted";
+
+  return (
+    <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
+      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
+        <h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Weitere Anschaffungen")}</h3>
+        <span className="text-[11px] text-nx-text-muted">
+          {t("Alles ohne Flächenleistung — Wetterstation, RTK-Basis, Vermessungsfahrzeug, Werkstatt, IoT. Freie Positionen mit eigenem Anschaffungsjahr, AfA und Finanzierung.")}
+        </span>
+        <label className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold"
+          style={{ color: aktiv ? "var(--nx-green)" : "var(--nx-text-muted)" }}
+          title={t("Nur scharfgeschaltete Zeilen fließen in CAPEX, Bilanz und Finanzierung. Ausgeschaltet sind sie reine Planung.")}>
+          <input type="checkbox" checked={aktiv} disabled={readOnly}
+            onChange={(e) => patch((d) => { d.capexPlanActive = { ...(d.capexPlanActive ?? {}), maschinen: e.target.checked }; })} />
+          {aktiv ? t("zählt im Modell") : t("nur Planung")}
+        </label>
+        <span className="num text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{fmtMoney(summe)} €</span>
+      </div>
+      <div className="overflow-x-auto px-2 py-1">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr>
+              <th className={th + " text-left"} style={{ minWidth: 220 }}>{t("Position")}</th>
+              <th className={th + " text-right"}>{t("Menge")}</th>
+              <th className={th + " text-left"}>{t("Einheit")}</th>
+              <th className={th + " text-right"}>{t("€/Einheit")}</th>
+              <th className={th + " text-right"}>{t("Jahr")}</th>
+              <th className={th + " text-right"}>{t("AfA")}</th>
+              <th className={th + " text-right"}>{t("Zuschuss")}</th>
+              <th className={th + " text-right"}>{t("FK-Quote")}</th>
+              <th className={th + " text-center"}>{t("Bestand")}</th>
+              <th className={th + " text-right"}>{t("netto")}</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {zeilen.map((it) => (
+              <tr key={it.id} style={{ borderTop: "1px solid var(--nx-border-divider)", opacity: it.bestand ? 0.55 : 1 }}>
+                <td className="px-2 py-1.5"><TextInput value={it.bezeichnung} width={210} onCommit={(v) => upd(it.id, (x) => { x.bezeichnung = v; })} /></td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={it.menge} width={48} onCommit={(v) => upd(it.id, (x) => { x.menge = v; })} /></td>
+                <td className="px-1 py-1.5"><TextInput value={it.einheit} width={52} onCommit={(v) => upd(it.id, (x) => { x.einheit = v; })} /></td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={it.eurProEinheitCent} moneyCent width={86} onCommit={(v) => upd(it.id, (x) => { x.eurProEinheitCent = v; })} /></td>
+                <td className="px-1 py-1.5 text-right">
+                  <select value={it.jahr} disabled={readOnly}
+                    className="rounded-control border px-1 text-[11.5px]"
+                    style={{ height: 28, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)" }}
+                    onChange={(e) => upd(it.id, (x) => { x.jahr = parseInt(e.target.value, 10); })}>
+                    {Array.from({ length: years }, (_, y) => <option key={y} value={y}>{START_YEAR + y}</option>)}
+                  </select>
+                </td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={it.afaYears} width={40} onCommit={(v) => upd(it.id, (x) => { x.afaYears = Math.max(1, Math.round(v)); })} /></td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={Math.round(it.subventionPct * 100)} width={40} suffix="%" onCommit={(v) => upd(it.id, (x) => { x.subventionPct = v / 100; })} /></td>
+                <td className="px-1 py-1.5 text-right"><NumberInput value={Math.round(it.fkQuote * 100)} width={40} suffix="%" onCommit={(v) => upd(it.id, (x) => { x.fkQuote = v / 100; })} /></td>
+                <td className="px-2 py-1.5 text-center">
+                  <input type="checkbox" checked={it.bestand} disabled={readOnly}
+                    title={t("bereits vorhanden — kein Neu-CAPEX")}
+                    onChange={(e) => upd(it.id, (x) => { x.bestand = e.target.checked; })} />
+                </td>
+                <td className="num px-2 py-1.5 text-right font-semibold">{fmtMoney(netOf(it))}</td>
+                <td className="px-1 py-1.5 text-right">
+                  {!readOnly && <button title={t("Position entfernen")} className="text-nx-text-muted hover:text-nx-error" onClick={() => del(it.id)}><X size={12} /></button>}
+                </td>
+              </tr>
+            ))}
+            {!zeilen.length && (
+              <tr><td colSpan={11} className="px-3 py-6 text-center text-[12px] text-nx-text-muted">{t("Noch keine freie Position angelegt.")}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center gap-3 border-t px-4 py-2" style={{ borderColor: "var(--nx-border)" }}>
+        {!readOnly && (
+          <button className="inline-flex items-center gap-1.5 rounded-control border px-3 text-[11.5px] font-semibold"
+            style={{ height: 28, borderColor: "var(--nx-brand-lift)", color: "var(--nx-brand-lift)" }} onClick={add}>
+            <Plus size={12} strokeWidth={2.5} aria-hidden />{t("Position hinzufügen")}
+          </button>
+        )}
+        <span className="text-[10.5px] text-nx-text-muted">
+          {t("Anschaffungsjahr steuert das Phasing, AfA die Abschreibung, FK-Quote die Finanzierung (Rest bar). „Bestand\" heißt: schon da, kein Neu-CAPEX.")}
+        </span>
+      </div>
+    </section>
   );
 }
 

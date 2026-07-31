@@ -28,7 +28,6 @@ import { LagerKostenstelleView } from "../inputs/LagerKostenstelleView";
 import { OverheadView } from "../inputs/OverheadView";
 import { EinsatzView } from "../inputs/EinsatzView";
 import { VerwaltungView } from "../inputs/VerwaltungView";
-import { MehrjahresplanView } from "../inputs/MehrjahresplanView";
 import { LiquiditaetView } from "../inputs/LiquiditaetView";
 import { ExecutiveDashboard } from "../dashboard/ExecutiveDashboard";
 import { CheckPanel } from "../statements/CheckPanel";
@@ -163,7 +162,7 @@ export function AppShell() {
                 : view === "overhead" ? <OverheadView />
                 : view === "finanzierung" ? <FinanzierungView />
                 : view === "subventionen" ? <SubventionenView />
-                : view === "mehrjahr" ? <MehrjahresplanView />
+                : view === "mehrjahr" ? <AnbauplanView />
                 : view === "ersatz" ? <MaschinenparkView />
                 : view === "liquiditaet" ? <LiquiditaetView />
                 : view === "annahmenSheet" ? <AnnahmenView />

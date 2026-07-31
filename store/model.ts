@@ -1181,7 +1181,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // AfA/Zins in CAPEX/Finanzierung. Composer überschreibt je Build aus den Service-Sätzen.
   A("opex.machines", "opex.machines", "Maschinen-Wartung/Service /Monat", "money", 0),
   // opex.machine_rent: Intercompany-Maschinenmiete (gemietete Einheiten × Stunden × €/h). Composer-gesetzt.
-  A("opex.machine_rent", "opex.machine_rent", "Maschinen-Miete (Intercompany) /Monat", "money", 0),
+  A("opex.machine_rent", "opex.machine_rent", "Maschinen-Miete (extern) /Monat", "money", 0),
   // opex.machine_rent_income: Miet-ERTRAG des Verleihers (negativ in OpEx → hebt EBITDA). Composer-gesetzt.
   A("opex.machine_rent_income", "opex.machine_rent_income", "Maschinen-Miet-Ertrag (Intercompany) /Monat", "money", 0),
   // Aufschlag auf die Stundenkosten (AfA/h + Service/h) für die Intercompany-Miete (z. B. +15 % Isolde-Marge).
@@ -4741,8 +4741,20 @@ export type MaschinenPfad = {
   hours: number[]; servedHa: number[]; utilPct: number[];
   /** Eigenkosten je ha und Planjahr (null, wenn keine Fläche/keine Einheit). */
   ownPerHa: (number | null)[];
-  /** Lohnarbeit je ha INKL. Diesel — damit beide Seiten dasselbe enthalten. */
-  rentPerHa: number | null;
+  /** DREI WEGE zur selben Arbeit, alle drei als €/ha im Endausbau und alle drei
+   *  VOLLSTÄNDIG — sonst vergleicht man Äpfel mit Birnen:
+   *    kaufen  = AfA + Zins + Vers + Rep + Schmier + Diesel + eigener Fahrer
+   *    mieten  = Mietsatz je Stunde (Maschinenkosten + Vermietermarge) + Diesel + eigener Fahrer
+   *    Lohn    = Satz je Hektar (Maschine + Fahrer des Unternehmers) + Diesel
+   *  Bei Miete bekommt man nur das Gerät, also bleiben Fahrer und Diesel beim Betrieb.
+   *  Beim Lohn kommt der Fahrer mit, der Diesel nach den hinterlegten Sätzen nicht. */
+  rentPerHa: number | null;      // Lohnarbeit je ha, inkl. Diesel
+  mietePerHa: number | null;     // Maschinenmiete je ha, inkl. Diesel und eigenem Fahrer
+  /** Mietsatz je Betriebsstunde (Maschine ohne Fahrer). */
+  rentPerHour: number | null;
+  /** Gewählter Weg. Zugmaschinen kennen kein "lohn" — einen Schlepper vergibt man nicht
+   *  als Arbeitsgang, man mietet ihn. */
+  beschaffung: "kauf" | "miete" | "lohn";
   /** Fixkosten je Einheit und Jahr, variable Kosten je Stunde (für den Kostenaufriss). */
   fixPerYear: number; varPerHour: number;
   /** Ist die Klasse aktuell vollständig fremdvergeben? */
@@ -4817,7 +4829,18 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
     const rentPerHa = eintrag ? (eintrag.ratePerHaCent / 100) * lohnFaktor + (eintrag.dieselIncluded ? 0 : dieselProHa) : null;
 
     const relevant = (domain.lohnarbeit ?? []).filter((e) => e.machineId === spec.id && crops.includes(e.cropId));
-    const gemietet = !istZug && relevant.length > 0 && relevant.every((e) => e.active);
+    const imLohn = !istZug && relevant.length > 0 && relevant.every((e) => e.active);
+    const inMiete = (spec.rentedUnits ?? 0) > 0;
+    const beschaffung: "kauf" | "miete" | "lohn" = imLohn ? "lohn" : inMiete ? "miete" : "kauf";
+    const gemietet = imLohn || inMiete;
+
+    // Maschinenmiete: NUR das Gerät je Betriebsstunde. Diesel und Fahrer bleiben beim Betrieb,
+    //  also müssen beide oben drauf, sonst sähe Miete gegen Kauf künstlich billig aus.
+    const rentPerHour = machineRentPerHourCent(domain, spec, scenarioId) / 100;
+    const letztesJahr = years - 1;
+    const dieselUndFahrerH = (spec.dieselLPerHour ?? 0) * dieselEur + fahrerEurH;
+    const mietePerHa = servedHa[letztesJahr] > 0
+      ? (hours[letztesJahr] * (rentPerHour + dieselUndFahrerH)) / servedHa[letztesJahr] : null;
 
     out.push({
       machineId: spec.id, label: spec.label, manufacturer: spec.manufacturer, category: spec.category,
@@ -4825,12 +4848,49 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
       istZug,
       feldTage: feldTageOf(domain, spec.id), capPerUnitHours: cap,
       preisCent: machineUnitPriceCent(domain, spec, scenarioId),
-      units, hours, servedHa, utilPct, ownPerHa, rentPerHa, fixPerYear, varPerHour, gemietet,
+      units, hours, servedHa, utilPct, ownPerHa,
+      rentPerHa: istZug ? null : rentPerHa, mietePerHa, rentPerHour, beschaffung,
+      fixPerYear, varPerHour, gemietet,
     });
   }
   // Zugmaschinen zuerst: sie tragen alles andere.
   return out.sort((a, b) => Number(b.istZug) - Number(a.istZug)
     || (a.category ?? "").localeCompare(b.category ?? "") || a.label.localeCompare(b.label));
+}
+
+/** Mietsatz je Betriebsstunde (CENT) einer Maschinenklasse.
+ *
+ *  Bewusst NICHT aus einer eigenen Preisliste, sondern aus den Stundenkosten der Maschine
+ *  plus Vermietermarge (machine.rent_markup): der Vermieter trägt dieselben Kosten und will
+ *  daran verdienen. Diesel und Fahrer bleiben beim Betrieb — gemietet wird die Maschine,
+ *  nicht die Dienstleistung. Genau das unterscheidet MIETE von LOHNARBEIT: der Lohnsatz je
+ *  Hektar enthält Fahrer und Diesel, der Mietsatz je Stunde nicht.
+ *
+ *  Der ökonomische Kern: gemietet zahlt man NUR die gefahrenen Stunden. Die Fixkosten einer
+ *  eigenen Maschine laufen auch dann weiter, wenn sie steht — deshalb gewinnt Miete bei
+ *  niedriger Auslastung und verliert bei hoher. */
+export function machineRentPerHourCent(domain: Domain, spec: MachineType, scenarioId: string): number {
+  const markup = domain.assumptions["machine.rent_markup"]
+    ? resolveScalar(domain, "machine.rent_markup", scenarioId) : 0.15;
+  const stundenkosten = (spec.afaPerHourCent ?? 0) + (spec.interestPerHourCent ?? 0)
+    + (spec.insurancePerHourCent ?? 0) + (spec.repairPerHourCent ?? 0) + (spec.lubePerHourCent ?? 0);
+  return stundenkosten * (1 + markup);
+}
+
+/** Betriebsstunden einer Klasse im Planjahr y — Zugmaschinen aus den Stunden ihrer Geräte. */
+export function machineOrTractorHoursOfYear(domain: Domain, machineId: string, y: number): number {
+  if (!SIZED_TRACTOR_IDS.has(machineId)) return machineDemandHoursOfYear(domain, machineId, y);
+  return domain.machineCatalog
+    .filter((im) => im.tractorId === machineId && im.cEff)
+    .reduce((h, im) => h + machineDemandHoursOfYear(domain, im.id, y), 0);
+}
+
+/** Ganze Klasse mieten statt kaufen. Nutzt den vorhandenen rentedUnits-Pfad: der CAPEX
+ *  rechnet Neu = ⌈benötigt − owned − rented⌉, ein sehr großer rentedUnits-Wert klemmt das
+ *  also sauber auf null, ohne einen zweiten CAPEX-Pfad einzuführen. */
+export function setMachineRented(d: Domain, machineId: string, mieten: boolean): void {
+  const m = d.machineCatalog.find((x) => x.id === machineId);
+  if (m) m.rentedUnits = mieten ? 9999 : 0;
 }
 
 /** Feldstunden, die der Betrieb im Planjahr y SELBST fährt — fremdvergebene Arbeitsgänge
@@ -5557,7 +5617,18 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   // Basiswerte (Jahr-1 / scale=1) → Monatswerte:
   const baseFixMonthly = Math.round((annualFixEur * 100) / 12);
   const baseMachMonthly = Math.round(machineServiceAnnualCent(domain, scenarioId) / 12);
-  const baseRentMonthly = 0;   // Intercompany-Maschinenmiete entfällt im Solo-Modell
+  // MASCHINENMIETE (extern). Die Zeile lag auf 0, weil sie ursprünglich die Intercompany-
+  //  Miete von Isolde abbildete — die gibt es im Solo-Modell nicht. Gemietet wird jetzt am
+  //  Markt: gemietete Klassen zahlen gefahrene Stunden × Mietsatz statt CAPEX und AfA.
+  const mietKostenJahrCent = (y: number): number => {
+    let c = 0;
+    for (const m of domain.machineCatalog) {
+      if (!((m.rentedUnits ?? 0) > 0)) continue;
+      c += machineOrTractorHoursOfYear(domain, m.id, y) * machineRentPerHourCent(domain, m, scenarioId);
+    }
+    return c;
+  };
+  const baseRentMonthly = 0;
   // Intercompany-Miet-ERTRAG entfällt im Solo-Modell: es gibt keine zweite operative
   //  Gesellschaft, die Maschinen verleiht.
   const rentIncomeCent = 0;
@@ -5574,7 +5645,13 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   };
   setScaled("opex.fix", baseFixMonthly, (y) => fixFactor(y) * iIn(y));
   setScaled("opex.machines", baseMachMonthly, (y) => scale[y] * iIn(y));
-  setScaled("opex.machine_rent", baseRentMonthly, (y) => scale[y] * iIn(y));
+  if (years <= 1) { overrideConst("opex.machine_rent", Math.round(mietKostenJahrCent(0) / 12)); }
+  else {
+    const values = Array.from({ length: nPer }, (_, p) => Math.round(mietKostenJahrCent(yearOf(p)) / 12 * iIn(yearOf(p))));
+    assumptions["opex.machine_rent"] = { id: "opex.machine_rent", key: "opex.machine_rent",
+      label: "Maschinen-Miete (extern) /Monat", unit: "money",
+      scenarioProfiles: { [domain.baseScenarioId]: { kind: "curve", values } } };
+  }
   setScaled("opex.machine_rent_income", baseRentIncomeMonthly, (y) => scale[y] * iIn(y));
   setScaled("opex.transport", baseTransMonthly, (y) => scale[y] * iIn(y));
   setScaled("opex.sga", baseSgaMonthly, (y) => sgaDamp(y) * iWage(y));

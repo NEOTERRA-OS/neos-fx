@@ -39,9 +39,6 @@ const IA: Group[] = [
     { id: "maschinen", label: "Maschinenpark", view: "maschinen" },
     { id: "einsatz", label: "Einsatzplanung", view: "einsatz" },
   ]},
-  { title: "Wachstum", items: [
-    { id: "mehrjahr", label: "Wachstum & Mehrjahresplan", view: "mehrjahr" },
-  ]},
   { title: "Personal", items: [
     { id: "personal", label: "Personalplanung", view: "personal" },
     { id: "overhead", label: "Overhead / SG&A", view: "overhead" },
