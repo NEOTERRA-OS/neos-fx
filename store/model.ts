@@ -1007,7 +1007,10 @@ const AGRO_COSTS: Record<CropId, [number, number, number, number, number, number
 };
 
 /** Fixkosten je ha (Referenz A): Pacht (alle) + Overhead/Versich./Zins je Kultur. */
-const PACHT_PER_HA = 250;
+// Dritt-Pacht Süd-Dolj, €/ha/Jahr. 750 € statt 250 €: NEOTERRA pachtet BEREITS BEREGNETE
+// Flächen — die Pivots sind im Pachtzins enthalten, dafür entfällt die eigene
+// Beregnungsinvestition (siehe irrig.capex_from_year). Entscheidung 30.07.2026.
+const PACHT_PER_HA = 750;
 const OVERHEAD_PER_HA: Record<CropId, number> = {
   weizen: 150, gerste_zw: 140, soja_luzerne: 130, winterraps: 140, mais: 150, tomate: 680,
   kartoffel_pommes: 410, kartoffel_chips: 470, zwiebel_moehre: 300,
@@ -1383,6 +1386,11 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("mprice.maehdr", "mprice.maehdr", "Mähdrescher JD S7 900 + Bandschneidwerk HD40X 12,19 m (Liste; JD-Angebot)", "money", 85877800),
   A("mprice.transport", "mprice.transport", "Kipper/Anhänger (Transport)", "money", 4000000),
   A("mprice.irrig_perha", "mprice.irrig_perha", "Bewässerung/Pivot €/ha", "money_per_ha", 200000),
+  // Ab welchem Planjahr investiert NEOTERRA SELBST in Beregnung (0 = ab 2027, 3 = ab 2030)?
+  //  Die gepachteten Flächen sind bereits beregnet — bis dahin fällt KEIN Beregnungs-CAPEX an,
+  //  weder für den Bestand noch für den Flächenzuwachs. Die Investitionshöhe bleibt über
+  //  mprice.irrig_perha bzw. growth.irrigEurPerHaCent voll variabel; nur der Start verschiebt sich.
+  A("irrig.capex_from_year", "irrig.capex_from_year", "Beregnungs-CAPEX ab Planjahr (0 = sofort)", "count", 3),
   // Lager €/t GETRENNT: Hülle/Bau und Technik. Summe bleibt bei 120 €/t wie zuvor — die
   //  Aufteilung folgt der CAPEX-Taxonomie (Bau: Schüttlager + Hülle rund 11,2 Mio €,
   //  Technik: Kühl-/CA-Lager + Curing + Packlinien rund 12,4 Mio €), also etwa hälftig.
@@ -5157,6 +5165,10 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   const iIn = inflPow(resolveScalar(domain, "infl.input", scenarioId));
   const iWage = inflPow(resolveScalar(domain, "infl.wage", scenarioId));
   const iCap = inflPow(resolveScalar(domain, "infl.capex", scenarioId));
+  // Erstes Planjahr mit EIGENEM Beregnungs-CAPEX. Davor wird bereits beregnete Fläche gepachtet
+  //  (höherer Pachtzins statt Investition). Voll variabel über die Annahme.
+  const irrigFromYear = Math.max(0, Math.round(
+    domain.assumptions["irrig.capex_from_year"] ? resolveScalar(domain, "irrig.capex_from_year", scenarioId) : 0));
   // Basiswerte (Jahr-1 / scale=1) → Monatswerte:
   const baseFixMonthly = Math.round((annualFixEur * 100) / 12);
   const baseMachMonthly = Math.round(machineServiceAnnualCent(domain, scenarioId) / 12);
@@ -5433,6 +5445,9 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
         for (let y = 0; y < years; y++) {
           if (dVec[y] <= 1e-9) continue;
           if (isIrrig && y > 0) continue; // Beregnungs-Ausbau ausschließlich über expliziten Block
+          // Gepachtete Flächen sind bereits beregnet: vor irrig.capex_from_year kein eigenes
+          //  Beregnungs-CAPEX — auch nicht für den Bestand (die Pivots gehören dem Verpächter).
+          if (isIrrig && y < irrigFromYear) continue;
           capexMY.push({ ...ci, id: `${ci.id}-y${y}`, amount: Math.round(ci.amount * dVec[y] * iCap(y)),
             salvageValue: ci.salvageValue != null ? Math.round(ci.salvageValue * dVec[y] * iCap(y)) : undefined,
             purchasePeriod: y * 12 });
@@ -5558,6 +5573,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       const dOwn = Math.max(0, (irrY - prevIrr) - dealIrrIn(y)); // eigene Neu-Beregnung
       prevIrr = irrY;
       if (dOwn <= 0) continue;
+      if (y < irrigFromYear) continue;   // bis dahin wird beregnete Fläche gepachtet, nicht gebaut
       const amt = Math.round(dOwn * perHa * iCap(y));
       capexMY.push({
         id: `cx-irrig-y${y}`, name: `Beregnungsausbau (${Math.round(dOwn)} ha Pivot)`,
@@ -5764,7 +5780,7 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
     "mprice.zug_8rx", "mprice.ops_6r", "mprice.radlader", "mprice.shuttle", "mprice.fieldloader",
     "mprice.tompflanz", "mprice.tomernte", "mprice.gem_schwad", "mprice.gem_lader", "mprice.gem_moehre", "mprice.maehdr", "mprice.transport",
     "mprice.spray_gz", "mprice.spray_sf",
-    "mprice.irrig_perha", "mprice.store_pert", "mprice.store_tech_pert",
+    "mprice.irrig_perha", "irrig.capex_from_year", "mprice.store_pert", "mprice.store_tech_pert",
   ]},
   { group: "Spritzstrategie (fenstergetrieben)", keys: [
     "spray.appl_lha", "spray.window_days", "spray.boom_m", "spray.speed_kmh", "spray.refill_min",
