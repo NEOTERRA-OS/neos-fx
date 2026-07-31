@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
-import { buildModelState, buildAnbauplan, STAGES, type Domain } from "../../store/model";
+import { buildModelState, buildAnbauplan, type Domain } from "../../store/model";
 import { computeModel } from "../../core/engine";
 import { npv, irr } from "../../design/finance";
 import { fmtMoney, fmtNumber, fmtPct } from "../../design/format";
@@ -46,12 +46,16 @@ export function BewertungView() {
   const [lboLo, setLboLo] = React.useState(5.5);  const [lboHi, setLboHi] = React.useState(7.5);
 
   const model = React.useMemo(() => {
-    // Basis: Stufe 1 (4.000 ha) → Per-ha-Kennzahlen (Cent)
+    // Basis: Anbauplan des Startjahrs → Per-ha-Kennzahlen (Cent).
+    //  KORREKTUR 30.07.2026: der Nenner war fest STAGES["1"].beregneteFlaecheHa = 4.000 ha,
+    //  während buildAnbauplan(1) seit der Solo-Umstellung die 300 ha des Skalierungspfads
+    //  liefert. Jede Per-ha-Kennzahl der Bewertung war dadurch um Faktor ~13 zu niedrig.
+    //  Der Nenner kommt jetzt aus DEMSELBEN Anbauplan, auf dem gerechnet wird.
     const d1: Domain = structuredClone(domain);
     d1.stage = 1; d1.anbauplan = buildAnbauplan(1);
     const cm = computeModel(buildModelState(d1, sc), sc, { outputGranularity: "month" });
     const sum = (v: number[]) => v.reduce((a, b) => a + b, 0);
-    const area1 = STAGES["1"].beregneteFlaecheHa;
+    const area1 = Math.max(1, d1.anbauplan.reduce((acc, e) => acc + e.areaHa, 0));
     // JAHRES-Per-ha (Cent): Summe über den Horizont ÷ Anzahl Jahre ÷ Fläche — NICHT kumuliert
     //  (sonst 8×-Überhöhung, wird in proj als Jahresrate × Fläche verwendet).
     const yrs = Math.max(1, cm.timeline.periodCount / 12);

@@ -18,13 +18,13 @@ import { MaschinenHub } from "../inputs/MaschinenHub";
 import { InvestitionenView } from "../inputs/InvestitionenView";
 import { LeistungsparameterView } from "../inputs/LeistungsparameterView";
 import { PersonalView } from "../inputs/PersonalView";
-import { HoldingView } from "../inputs/HoldingView";
-import { GesellschaftenView } from "../inputs/GesellschaftenView";
 import { FinanzierungView } from "../inputs/FinanzierungView";
 import { SubventionenView } from "../inputs/SubventionenView";
 import { EroeffnungsbilanzView } from "../inputs/EroeffnungsbilanzView";
 import { ArbeitszeitkontoView } from "../inputs/ArbeitszeitkontoView";
 import { ScenarioStudioView } from "../inputs/ScenarioStudioView";
+import { HoldingView } from "../inputs/HoldingView";
+import { GesellschaftenView } from "../inputs/GesellschaftenView";
 import { BewertungView } from "../inputs/BewertungView";
 import { ShareholderView } from "../inputs/ShareholderView";
 import { PachtView } from "../inputs/PachtView";
@@ -178,13 +178,13 @@ export function AppShell() {
                 : view === "leistung" ? <LeistungsparameterView />
                 : view === "personal" ? <PersonalView />
                 : view === "overhead" ? <OverheadView />
-                : view === "holding" ? <HoldingView />
-                : view === "gesellschaften" ? <GesellschaftenView />
                 : view === "finanzierung" ? <FinanzierungView />
                 : view === "subventionen" ? <SubventionenView />
                 : view === "mehrjahr" ? <MehrjahresplanView />
                 : view === "ersatz" ? <ErsatzView />
                 : view === "liquiditaet" ? <LiquiditaetView />
+                : view === "holding" ? <HoldingView />
+                : view === "gesellschaften" ? <GesellschaftenView />
                 : view === "eroeffnung" ? <EroeffnungsbilanzView />
                 : view === "arbeitszeit" ? <ArbeitszeitkontoView />
                 : view === "einsatz" ? <EinsatzView />

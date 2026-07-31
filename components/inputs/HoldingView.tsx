@@ -7,7 +7,7 @@ import { fmtMoney } from "../../design/format";
 import { t } from "../../lib/i18n";
 import { X } from "lucide-react";
 
-/** Holding (Zypern) — gesondert gerechnet, dann konsolidiert. Kostenblöcke, Fee,
+/** Holding (Deutschland, GmbH) — gesondert gerechnet, dann konsolidiert. Kostenblöcke, Fee,
  *  Steuersatz, Quellensteuer als sensitivierbare Annahmen. */
 export function HoldingView() {
   const { domain, patch, view } = useModelStore();
@@ -25,7 +25,7 @@ export function HoldingView() {
   const removeCost = (i: number) => patch((d) => { d.holding!.costItems.splice(i, 1); });
 
   const meta: [string | undefined, string][] = [
-    [h.taxRateKey, t("Gewinnsteuersatz (CY)")],
+    [h.taxRateKey, t("Gewinnsteuersatz (DE: KSt + SolZ + GewSt)")],
     [h.managementFeeKey, t("Management-Fee (IC) / Monat")],
     [h.dividendWithholdingKey, t("Quellensteuer Dividende")],
   ];
@@ -33,11 +33,11 @@ export function HoldingView() {
   return (
     <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
-        <h2 className="text-[14px] font-semibold">{t("Holding (Zypern) — reine Verwaltungsholding")}</h2>
+        <h2 className="text-[14px] font-semibold">{t("Holding (Deutschland) — reine Verwaltungsholding")}</h2>
         <span className="caption text-[10.5px] text-nx-text-muted">{t("gesondert → Konzern-Rollup")}</span>
       </div>
       <div className="px-4 py-2 border-b text-[11.5px] text-nx-text-secondary" style={{ borderColor: "var(--nx-border-divider)" }}>
-        {t("Ohne eigenen Geschäftsbetrieb — laufende Kosten für ")}<b>{t("Substanz")}</b>{t(" (Management & Control in CY → Steuerresidenz), Compliance & Governance. CY 2026: Körperschaftsteuer ")}<b>15 %</b>, <b>{t("keine Quellensteuer")}</b>{t(" auf ausgehende Dividenden; die IC-Management-Fee unterliegt der Verrechnungspreis-Dokumentation.")}
+        {t("Ohne eigenen Geschäftsbetrieb — laufende Kosten für Geschäftsführung, Rechnungswesen und Compliance. Deutschland: Körperschaftsteuer 15 % + SolZ + Gewerbesteuer ≈ ")}<b>29,8 %</b>{t("; auf Dividenden der NEOTERRA SRL greift das Schachtelprivileg (§ 8b KStG, 95 % steuerfrei). Zypern wurde verworfen — Substanzanforderungen und Bankfähigkeit zu komplex. Die IC-Management-Fee unterliegt der Verrechnungspreis-Dokumentation.")}
       </div>
 
       <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border-divider)" }}>

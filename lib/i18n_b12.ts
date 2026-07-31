@@ -402,5 +402,18 @@ const B12: Record<string, string> = {
     "Advances are inactive — the model computes without prefinancing.",
   "Einbezogene Kulturen und die Quote sind unter Preise & Treiber (Gruppe „Anzahlungen Off-taker\") bzw. im Szenario-Studio verstellbar. Worst Case steht auf 0 — im Stressfall zahlt niemand vor.":
     "Included crops and the rate are adjustable under Prices & Drivers (group \"Off-taker advances\") or in the Scenario Studio. Worst case is set to 0 — under stress nobody pays up front.",
+  "Holding (Deutschland)": "Holding (Germany)",
+  "Gewinnsteuersatz (DE: KSt + SolZ + GewSt)": "Profit tax rate (DE: CIT + soli + trade tax)",
+  "Holding (Deutschland) \u2014 reine Verwaltungsholding": "Holding (Germany) \u2014 pure administrative holding",
+  "Ohne eigenen Gesch\u00e4ftsbetrieb \u2014 laufende Kosten f\u00fcr Gesch\u00e4ftsf\u00fchrung, Rechnungswesen und Compliance. Deutschland: K\u00f6rperschaftsteuer 15 % + SolZ + Gewerbesteuer \u2248 ": "No own operations \u2014 running cost for management, accounting and compliance. Germany: corporate income tax 15 % + solidarity surcharge + trade tax \u2248 ",
+  "; auf Dividenden der NEOTERRA SRL greift das Schachtelprivileg (\u00a7 8b KStG, 95 % steuerfrei). Zypern wurde verworfen \u2014 Substanzanforderungen und Bankf\u00e4higkeit zu komplex. Die IC-Management-Fee unterliegt der Verrechnungspreis-Dokumentation.": "; dividends from NEOTERRA SRL benefit from the participation exemption (\u00a7 8b KStG, 95 % tax-free). Cyprus was rejected \u2014 substance requirements and bankability too complex. The IC management fee is subject to transfer-pricing documentation.",
+  "Skalierungspfad der Kulturen (ha)": "Crop scaling path (ha)",
+  "Fl\u00e4che je Kultur und Planjahr aus der Kultur-Skalierungspolitik. \u03a3 Betriebsfl\u00e4che = bewirtschaftete Fl\u00e4che des Jahres.": "Area per crop and plan year from the crop scaling policy. \u03a3 farmed area = area under cultivation that year.",
+  "Kartoffel gesamt": "Potato total",
+  "\u03a3 Betriebsfl\u00e4che": "\u03a3 farmed area",
+  "Ergebnis je Planjahr (Mio \u20ac)": "Result per plan year (\u20acm)",
+  "Aktives Szenario. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,5.": "Active scenario. Red marks covenant breaches: DSCR < 1.10 or net debt / EBITDA > 3.5.",
+  "Net Debt / EBITDA": "Net debt / EBITDA",
+  "Kultur-Politik: expliziter Skalierungspfad je Kultur (Kartoffel 300 \u2192 1.000 ha bis 2031)": "Crop policy: explicit scaling path per crop (potato 300 \u2192 1,000 ha by 2031)",
 };
 export default B12;

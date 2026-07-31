@@ -1493,8 +1493,16 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("hold.it", "hold.it", "Holding IT", "money", 125000),
   A("hold.tax", "hold.tax", "Holding Steuerberatung", "money", 83000),
   A("hold.fee", "hold.fee", "Management-Fee (IC)", "money", 416700),
-  A("hold.taxrate", "hold.taxrate", "Holding-Steuersatz (CY)", "rate", 0.15),
-  A("hold.wht", "hold.wht", "Quellensteuer Dividende", "rate", 0),
+  // DEUTSCHE GmbH statt CY Ltd (Entscheidung 30.07.2026): Körperschaftsteuer 15 %
+  //  + Solidaritätszuschlag 5,5 % darauf (= 15,825 %) + Gewerbesteuer. Bei Hebesatz 400 %
+  //  sind das 14,0 % ⇒ rund 29,8 % Gesamtbelastung. Auf Dividenden AUS der SRL greift das
+  //  Schachtelprivileg (§ 8b KStG): 95 % steuerfrei, 5 % gelten als nicht abziehbare
+  //  Betriebsausgabe — die Beteiligungserträge sind daher fast unbelastet; der Satz hier
+  //  trifft die eigenen Erträge der Holding (v. a. die Management-Fee).
+  A("hold.taxrate", "hold.taxrate", "Holding-Steuersatz (DE: KSt + SolZ + GewSt)", "rate", 0.298),
+  // Ausschüttung DE-GmbH an Gesellschafter: 25 % Kapitalertragsteuer + SolZ = 26,375 %.
+  //  Auf 0 lassen, solange thesauriert wird; für die Ausschüttungsrechnung hier setzbar.
+  A("hold.wht", "hold.wht", "Kapitalertragsteuer Ausschüttung (DE, inkl. SolZ)", "rate", 0),
 
   // --- Delta 21.07. (2): Spritzstrategie (fenstergetriebene Flotte, Mischpark) ---
   // Die Spritzenzahl ist der Mehrkultur-Sommerpeak (max. gleichzeitiger PSM-Bedarf ALLER
@@ -2352,55 +2360,16 @@ export function deriveRevenueSplitMY(
   return { years, valueShare, valueCent, breakCent, byCropCent };
 }
 
+/** Forward-Migration gespeicherter Domänen. Zieht NUR noch die Studio-Schlüssel nach.
+ *
+ *  ENTFERNT 30.07.2026: die Trockenrotations-Migration. Sie hat bei jedem Laden geprüft,
+ *  ob der Anbauplan `pool: "dryland"`-Zeilen enthält, und — falls nicht — Weizen/Gerste/Raps
+ *  trocken mit dem 1,5-fachen der beregneten Fläche ANGEHÄNGT, dazu Isolde ins Entity-Register.
+ *  Im Solo-Modell ist genau das der Normalzustand: der erste Autosave-/Reload-Zyklus hätte die
+ *  Trockenrotation und Isolde stillschweigend wieder eingespielt und die Solo-Entscheidung
+ *  rückgängig gemacht. Kein Ersatz nötig — die betroffenen Kulturen sind aus dem Modell raus. */
 export function migrateDomain(dIn: Domain): Domain {
-  const d = dIn && dIn.assumptions ? migrateStudio(dIn) : dIn;
-  if (!d || !Array.isArray(d.anbauplan) || !Array.isArray(d.catalog)) return d;
-  // Kandidaten mit Kultur-Stammdaten (Katalog/Arbeitsgänge/Assumptions), die aus SEED nachgezogen
-  //  werden — inkl. Sonnenblume als Rotations-Kandidat (der Optimierer braucht ihre Kalkulation).
-  const CANDIDATE_IDS: CropId[] = ["weizen_dry", "gerste_dry", "raps_dry", "sonnenblume"];
-  // Nur diese werden bei fehlendem Dryland aktiv in den Anbauplan aufgenommen (Sonnenblume NICHT —
-  //  sie ist Kandidat, kein Default-Rotationsglied; der Optimierer/Nutzer platziert sie bewusst).
-  const DRY_IDS: CropId[] = ["weizen_dry", "gerste_dry", "raps_dry"];
-  const hasDryland = d.anbauplan.some((a) => a.pool === "dryland");
-  const hasAllCandidateData = CANDIDATE_IDS.every((id) => d.catalog.some((c) => c.cropId === id));
-  const hasIsolde = Array.isArray(d.entities) && d.entities.some((e) => e.id === ENTITY_ISOLDE);
-  if (hasDryland && hasAllCandidateData && hasIsolde) return d; // bereits migriert
-
-  // (1) Katalog: fehlende Kandidaten-Einträge aus SEED.
-  const catalog = [...d.catalog];
-  for (const id of CANDIDATE_IDS) {
-    if (!catalog.some((c) => c.cropId === id)) {
-      const seedCat = SEED.catalog.find((c) => c.cropId === id);
-      if (seedCat) catalog.push(seedCat);
-    }
-  }
-  // (2) Arbeitsgänge: fehlende Kandidaten-Programme aus SEED.
-  const arbeitsgaenge: Record<string, Arbeitsgang[]> = { ...(d.arbeitsgaenge ?? {}) };
-  for (const id of CANDIDATE_IDS) if (!arbeitsgaenge[id] && SEED.arbeitsgaenge[id]) arbeitsgaenge[id] = SEED.arbeitsgaenge[id];
-  // (3) Assumptions: fehlende Kandidaten-Schlüssel (yield./price./loss./qual./seed.<id>) aus SEED.
-  const assumptions: Record<string, Assumption> = { ...(d.assumptions ?? {}) };
-  for (const [k, v] of Object.entries(SEED.assumptions)) {
-    if (!assumptions[k] && CANDIDATE_IDS.some((id) => k.endsWith("." + id))) assumptions[k] = v;
-  }
-  // (4) Anbauplan: native Trockeneinträge anhängen, falls keine vorhanden.
-  let anbauplan = d.anbauplan;
-  if (!hasDryland) {
-    const irrHa = d.anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0);
-    const dryBase = Math.round(irrHa * 1.5);
-    const wDry = Math.round(dryBase * 0.40), gDry = Math.round(dryBase * 0.35), rDry = dryBase - wDry - gDry;
-    const mkDry = (cropId: CropId, area: number): AnbauEntry => ({
-      id: `ab-${cropId}`, cropId, areaHa: area,
-      plantingPeriod: CROP_CAL[cropId].plant, harvestPeriods: CROP_CAL[cropId].harvest.slice(), pool: "dryland",
-    });
-    anbauplan = [...d.anbauplan, mkDry("weizen_dry", wDry), mkDry("gerste_dry", gDry), mkDry("raps_dry", rDry)];
-  }
-  // (5) Entity-Register: Isolde (Cash-Crop-Gesellschaft) nachziehen, falls sie fehlt.
-  const entities = Array.isArray(d.entities) && d.entities.length ? [...d.entities] : ENTITIES.slice();
-  if (!entities.some((e) => e.id === ENTITY_ISOLDE)) {
-    const seedIsolde = ENTITIES.find((e) => e.id === ENTITY_ISOLDE);
-    if (seedIsolde) entities.push(seedIsolde);
-  }
-  return { ...d, catalog, arbeitsgaenge, assumptions, anbauplan, entities };
+  return dIn && dIn.assumptions ? migrateStudio(dIn) : dIn;
 }
 
 /* --------------------------------------------------------------------------
@@ -2627,31 +2596,32 @@ const PERSONNEL: PersonnelPlan = {
   ],
 };
 
-// Reine Verwaltungsholding (Zypern) OHNE eigenen Geschäftsbetrieb: laufende Kosten für
-// Substanz (Management & Control in CY → Steuerresidenz), Compliance & Governance.
-// Werte €/Monat (CENT), editierbar. CY-Kalibrierung 2026.
+// Reine Verwaltungsholding als DEUTSCHE GmbH ohne eigenen Geschäftsbetrieb: laufende Kosten
+// für Geschäftsführung, Rechnungswesen und Compliance. Entscheidung 30.07.2026 (Benedikt):
+// Zypern ist nach Prüfung zu komplex (Substanzanforderungen, Management & Control, CFC-Risiko,
+// Bankfähigkeit) — die GmbH ist teurer im Steuersatz (~29,8 % statt 12,5 %), aber auf
+// Beteiligungserträge greift § 8b KStG (95 % steuerfrei), und die Struktur ist unstrittig.
+// Werte €/Monat (CENT), editierbar.
 const HC = (id: string, label: string, monthlyEur: number) => ({ id, label, monthlyCent: Math.round(monthlyEur * 100) });
 const HOLDING: HoldingPlan = {
-  name: "NEOS Holding Ltd",
+  name: "NEOS Holding GmbH",
   costItems: [
-    // — Governance & Organe (Substanz) —
-    HC("h-board", "Verwaltungsrat / Directors (inkl. lokale CY-Directors, Substanz)", 1500),
-    HC("h-secretary", "Company Secretary (CY-Pflicht)", 40),
-    HC("h-domizil", "Registered Office / Domizil & Agent", 40),
-    HC("h-do", "D&O-Versicherung", 167),
-    HC("h-substance", "Substanz / lokale Präsenz (Büro, Board-Meetings CY)", 300),
-    HC("h-staff", "Lokales Personal / Payroll (Substanz, optional — brutto inkl. CY-Abgaben)", 0),
-    // — Compliance & Reporting —
-    HC("h-audit", "Statutory Audit (CY-Pflicht)", 120),
-    HC("h-account", "Buchhaltung / Accounting", 150),
-    HC("h-tax", "Steuer-Compliance / CIT-Erklärung", 70),
-    HC("h-levy", "Annual Levy (Registrar) & Filings (HE32/UBO)", 30),
-    HC("h-aml", "AML / KYC / Compliance", 50),
-    // — Legal & Struktur —
-    HC("h-legal", "Legal & Corporate Governance", 100),
-    HC("h-tp", "Transfer-Pricing-Dokumentation (IC-Fee/Darlehen)", 250),
-    // — Banking & IT —
-    HC("h-bank", "Bankgebühren / Kontoführung", 50),
+    // — Geschäftsführung & Organe —
+    HC("h-board", "Geschäftsführung (Bezüge, inkl. AG-Anteil)", 1200),
+    HC("h-beirat", "Beirat / Advisory Board (Sitzungsgelder)", 200),
+    HC("h-do", "D&O-Versicherung", 150),
+    HC("h-domizil", "Geschäftsräume / Domizil & Büro", 250),
+    HC("h-staff", "Personal Holding (Payroll, optional — brutto inkl. AG-Anteil)", 0),
+    // — Rechnungswesen & Compliance —
+    HC("h-account", "Buchhaltung / Lohnbuchhaltung", 120),
+    HC("h-abschluss", "Jahresabschluss & Offenlegung (Bundesanzeiger)", 110),
+    HC("h-audit", "Prüfung / prüfungsnahe Beratung (falls prüfungspflichtig)", 80),
+    HC("h-tax", "Steuerberatung (KSt/GewSt/USt-Erklärungen)", 150),
+    HC("h-tp", "Verrechnungspreis-Dokumentation (IC-Fee/Darlehen RO↔DE)", 200),
+    // — Recht, Bank, IT —
+    HC("h-legal", "Recht & Gesellschaftsrecht (Notar, HR-Änderungen)", 90),
+    HC("h-ihk", "IHK-Beitrag, Kammern & Gebühren", 20),
+    HC("h-bank", "Bankgebühren / Kontoführung", 40),
     HC("h-it", "IT / Kommunikation", 80),
   ],
   managementFeeKey: "hold.fee",
@@ -2661,10 +2631,12 @@ const HOLDING: HoldingPlan = {
 
 // Multi-Entity-Register (Startbestand) — CUI per ANAF-Lookup befüllbar/prüfbar.
 //  Struktur: CY-Holding hält 100 % der RO-OpCo; PropCo (Eigentumsflächen) für Pacht-Modell.
-/** NEOTERRA-SOLO (Entscheidung 30.07.2026): EINE Gesellschaft. Holding (CY), Besitzgesellschaft
- *  und Isolde Farms sind aus dem Modell entfernt — keine Konsolidierung, keine Entity-Umschaltung,
- *  keine Intercompany-Miete. Die Konzernstruktur bleibt real, wird aber hier nicht mitgerechnet. */
+/** NEOTERRA-SOLO (Entscheidung 30.07.2026): eine operative Gesellschaft plus die Holding.
+ *  Besitzgesellschaft (NEOTERRA Land SRL) und Isolde Farms sind aus dem Modell entfernt —
+ *  keine Intercompany-Miete, kein Kultur-Split über mehrere OpCos.
+ *  Die Holding wird abgebildet, aber als DEUTSCHE GmbH statt als CY Ltd. */
 const ENTITIES: Entity[] = [
+  { id: "ent-holding", name: "NEOS Holding GmbH", role: "holding", country: "DE", ownershipPct: 100, cui: "", note: "Konzernmutter (Deutschland) · Beteiligung an der NEOTERRA SRL, § 8b KStG" },
   { id: "ent-opco", name: "NEOTERRA SRL", role: "opco", country: "RO", ownershipPct: 100, cui: "", note: "Betriebsgesellschaft · Wertkulturen (Măceșu de Jos)" },
 ];
 
@@ -2887,7 +2859,7 @@ export const SEED: Domain = {
   vat: VAT,
   subsidies: SUBSIDIES,
   personnel: PERSONNEL,
-  // holding: entfällt im Solo-Modell (keine CY-Konzernmutter in der Rechnung).
+  holding: HOLDING,   // NEOS Holding GmbH (DE) — Kosten & Steuer in der Holding-Ansicht
   entities: ENTITIES,
   consolidation: { active: false }, // opt-in: Konzern-Sicht erst per Schalter im Register einblenden
   openingBalance: OPENING_BALANCE,

@@ -61,6 +61,11 @@ export function ExecutiveDashboard() {
       {/* Stufen-Board — der Ramp greifbar: Meilensteine nebeneinander statt nur Zieljahr */}
       <StufenBoard domain={sdomain} annual={annual} scenarioId={scenarioId} />
 
+      {/* Skalierungspfad + Ergebnisband als Tabellen — untereinander (Wunsch 31.07.2026).
+          Beides sind die Zahlen, die im Gespräch tatsächlich gebraucht werden. */}
+      <SkalierungspfadTabelle domain={domain} />
+      <ErgebnisTabelle annual={annual} />
+
       {/* Financial Evolution — alle Jahre, nicht nur das Zieljahr */}
       <FinancialEvolution annual={annual} />
 
@@ -259,7 +264,7 @@ function StufenBoard({ domain, annual, scenarioId }: { domain: any; annual: Comp
   const shownRows = rows.filter((r): r is { label: string; val: (y: number) => string | React.ReactNode } => r != null);
 
   return (
-    <Tile title={t("Stufen-Board — der Weg zum Zielbild")} hint={cashOnly ? t("Stufe 1 · reiner Ackerbau (Benchmark, kein Gemüse)") : t("Kultur-Politik: Kartoffel-Ramp ≤ 25 % Rotation · Tomate fix (Werkskapazität)")}>
+    <Tile title={t("Stufen-Board — der Weg zum Zielbild")} hint={cashOnly ? t("Stufe 1 · reiner Ackerbau (Benchmark, kein Gemüse)") : t("Kultur-Politik: expliziter Skalierungspfad je Kultur (Kartoffel 300 → 1.000 ha bis 2031)")}>
       <div className="overflow-x-auto">
         <table className="w-full text-[12px]">
           <thead><tr>
@@ -535,5 +540,132 @@ function FundingBox({ annual, monthly, idx }: { annual: ComputedModel; monthly: 
         ))}
       </div>
     </Tile>
+  );
+}
+
+
+/* --------------------------------------------------------------------------
+ * SKALIERUNGSPFAD (ha je Kultur und Planjahr) + ERGEBNISBAND (Mio €).
+ *  Zwei schlanke Tabellen untereinander — dieselben Zahlen wie im Skalierungsplan-
+ *  Dokument, aber live aus dem Modell statt abgeschrieben.
+ * ------------------------------------------------------------------------ */
+const TBL_TH = "px-3 py-2 caption text-[10px] text-nx-text-muted";
+const TBL_CARD: React.CSSProperties = { borderColor: "var(--nx-border)", background: "var(--nx-surface)", boxShadow: "var(--nx-el-card)" };
+
+function SkalierungspfadTabelle({ domain }: { domain: any }) {
+  const my = React.useMemo(() => deriveCropAreasMY(domain), [domain]);
+  const years = my.years;
+  // Zeilen in Anbauplan-Reihenfolge, Kartoffel-Zwischensumme direkt nach den beiden Sorten.
+  const ids = React.useMemo(() => {
+    const seen: string[] = [];
+    for (const e of domain.anbauplan ?? []) if (!seen.includes(e.cropId)) seen.push(e.cropId);
+    return seen.filter((id) => my.areas[id]);
+  }, [domain, my]);
+  const kart = ids.filter((id) => id.startsWith("kartoffel"));
+  const at = (id: string, y: number) => Math.round(my.areas[id]?.[y] ?? 0);
+  const sumAt = (list: string[], y: number) => list.reduce((s, id) => s + at(id, y), 0);
+  const cell = (v: number) => (v > 0 ? fmtNumber(v, 0) : "–");
+
+  const Row = ({ label, get, strong }: { label: string; get: (y: number) => number; strong?: boolean }) => (
+    <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+      <td className={"px-3 py-1.5 " + (strong ? "font-semibold" : "")}
+          style={{ color: strong ? "var(--nx-brand-lift)" : "var(--nx-text)" }}>{label}</td>
+      {Array.from({ length: years }, (_, y) => (
+        <td key={y} className={"num px-3 py-1.5 text-right " + (strong ? "font-semibold" : "")}
+            style={{ color: strong ? "var(--nx-brand-lift)" : "var(--nx-text)" }}>{cell(get(y))}</td>
+      ))}
+    </tr>
+  );
+
+  return (
+    <section className="rounded-tile border" style={TBL_CARD}>
+      <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
+        <h3 className="text-[13px] font-semibold">{t("Skalierungspfad der Kulturen (ha)")}</h3>
+        <p className="mt-0.5 text-[11px] text-nx-text-muted">
+          {t("Fläche je Kultur und Planjahr aus der Kultur-Skalierungspolitik. Σ Betriebsfläche = bewirtschaftete Fläche des Jahres.")}
+        </p>
+      </div>
+      <div className="overflow-x-auto px-2 py-2">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr>
+              <th className={TBL_TH + " text-left"}>{t("Kultur")}</th>
+              {Array.from({ length: years }, (_, y) => (
+                <th key={y} className={TBL_TH + " text-right"}>{START_YEAR + y}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ids.map((id) => (
+              <React.Fragment key={id}>
+                <Row label={cropName(id)} get={(y) => at(id, y)} />
+                {kart.length > 1 && id === kart[kart.length - 1] && (
+                  <Row label={t("Kartoffel gesamt")} get={(y) => sumAt(kart, y)} strong />
+                )}
+              </React.Fragment>
+            ))}
+            <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
+              <td className="px-3 py-2 font-semibold">{t("Σ Betriebsfläche")}</td>
+              {Array.from({ length: years }, (_, y) => (
+                <td key={y} className="num px-3 py-2 text-right font-semibold">{fmtNumber(sumAt(ids, y), 0)}</td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ErgebnisTabelle({ annual }: { annual: ComputedModel }) {
+  const years = annual.timeline.periodCount;
+  const p: any = annual.pnl, k: any = annual.kpis;
+  const M = (c: number) => fmtNumber(c / 100000000, 2);          // CENT → Mio €
+  const rows: { label: string; vals: number[]; fmt: (v: number) => string; strong?: boolean }[] = [
+    { label: t("Umsatz"), vals: p.revenue.values, fmt: M },
+    { label: "EBITDA", vals: p.ebitda.values, fmt: M, strong: true },
+    { label: t("Jahresergebnis"), vals: p.netIncome.values, fmt: M },
+    { label: "DSCR", vals: k.dscr.values, fmt: (v: number) => fmtNumber(v, 2) },
+    { label: t("Net Debt / EBITDA"), vals: k.netDebtToEbitda.values, fmt: (v: number) => fmtNumber(v, 1) },
+  ];
+  const tone = (label: string, v: number) =>
+    label === "DSCR" ? (v < 1.1 ? "var(--nx-error)" : "var(--nx-text)")
+    : label === t("Net Debt / EBITDA") ? (v > 3.5 ? "var(--nx-error)" : "var(--nx-text)")
+    : v < 0 ? "var(--nx-error)" : "var(--nx-text)";
+
+  return (
+    <section className="rounded-tile border" style={TBL_CARD}>
+      <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
+        <h3 className="text-[13px] font-semibold">{t("Ergebnis je Planjahr (Mio €)")}</h3>
+        <p className="mt-0.5 text-[11px] text-nx-text-muted">
+          {t("Aktives Szenario. Rot markiert Covenant-Verletzungen: DSCR < 1,10 bzw. Net Debt / EBITDA > 3,5.")}
+        </p>
+      </div>
+      <div className="overflow-x-auto px-2 py-2">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr>
+              <th className={TBL_TH + " text-left"}>{t("Position")}</th>
+              {Array.from({ length: years }, (_, y) => (
+                <th key={y} className={TBL_TH + " text-right"}>{START_YEAR + y}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.label} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                <td className={"px-3 py-1.5 " + (r.strong ? "font-semibold" : "")}>{r.label}</td>
+                {Array.from({ length: years }, (_, y) => (
+                  <td key={y} className={"num px-3 py-1.5 text-right " + (r.strong ? "font-semibold" : "")}
+                      style={{ color: tone(r.label, r.vals[y] ?? 0) }}>
+                    {r.fmt(r.vals[y] ?? 0)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

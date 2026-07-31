@@ -46,49 +46,13 @@ export function TopBar({ theme, onToggleTheme }: { theme: "light" | "dark"; onTo
         />
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="caption text-[10.5px] font-bold text-nx-text-muted" title={t("1 = nur Ackerbau (Benchmark) · 1a = + Wertkulturen · 2b = + Vollberegnung · 3c = + Fläche & Beregnung")}>{t("Stufe")}</span>
-        {/* 1 (nur Ackerbau · Benchmark) durch Trenner abgesetzt von den Value-Szenarien 1a/2b/3c.
-            Buchstabe = zusätzliche Stellschraube: a Wertkulturen · b Beregnung · c Fläche+Beregnung. */}
-        <Segmented
-          ariaLabel={t("Skalierungsstufe")}
-          value={stage}
-          onChange={(v) => setStage(v as any)}
-          options={[
-            { value: "1", label: "1", tone: "warning" },
-            { value: "1a", label: "1a", divider: true, tone: "brand" },
-            { value: "2b", label: "2b", tone: "brand" },
-            { value: "3c", label: "3c", tone: "brand" },
-          ]}
-        />
-      </div>
-
-      <div className="flex items-center gap-2">
-        <span className="caption text-[10.5px] font-bold text-nx-text-muted" title={t("Gesellschaft, für die alles gerechnet wird (Vollkosten-Standalone) — NEOTERRA (Gemüse) · Isolde (Cash Crops) · Kombiniert")}>{t("Entity")}</span>
-        <Segmented
-          ariaLabel={t("Entity")}
-          value={entityView}
-          onChange={(v) => setEntityView(v)}
-          options={[
-            { value: "combined", label: t("Kombiniert") },
-            { value: "ent-opco", label: "NEOTERRA", tone: "brand" },
-            { value: "ent-isolde", label: "Isolde", tone: "brand" },
-          ]}
-        />
-      </div>
-
-      <div className="flex items-center gap-2">
-        <span className="caption text-[10.5px] font-bold text-nx-text-muted">{t("Umfang")}</span>
-        <Segmented
-          ariaLabel={t("Umfang")}
-          value={scope}
-          onChange={(v) => setScope(v as "full" | "valueOnly")}
-          options={[
-            { value: "full", label: t("Voll-Rotation") },
-            { value: "valueOnly", label: t("Nur Wertkulturen") },
-          ]}
-        />
-      </div>
+      {/* ENTFERNT 30.07.2026 (Solo-Modell): Stufen-, Entity- und Umfang-Umschalter.
+          · Stufe: 3 der 4 Optionen haben das Modell zerstört — "1" baute den Anbauplan auf
+            Cash Crops um, "1a"/"2b" haben die Flächenkurve auf 300 ha flachgedrückt und damit
+            den gesamten Skalierungspfad gelöscht. Es gibt nur noch eine Stufe.
+          · Entity: eine Gesellschaft, "Kombiniert"/"NEOTERRA" waren rechnerisch identisch,
+            "Isolde" zeigte auf eine nicht mehr existierende Entity.
+          · Umfang: "Nur Wertkulturen" ist der Normalzustand — der Schalter war wirkungslos. */}
 
       <div className="flex items-center gap-2">
         <span className="caption text-[10.5px] font-bold text-nx-text-muted">{t("Zeit")}</span>
