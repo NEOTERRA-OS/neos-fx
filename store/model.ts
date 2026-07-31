@@ -1951,7 +1951,7 @@ const SPEC: Spec[] = [
   { id: "drille",     label: "Getreidedrille HORSCH Pronto 9 DC · 9,0 m", priceKey: "mprice.drille", cat: "gezogen", neupreis: 13000000, nutzung: 12, hJ: 350, restw: 0.25, dieselLh: 14, afa: 3036, zins: 1214, vers: 971, rep: 2429, schmier: 210, cEff: 6.00, fleet: 1, tractorId: "zug_9r" },
   { id: "einzelkorn", label: "Einzelkorn HORSCH Maestro 24.50 SX · 24 R 50 cm (12,0 m)", priceKey: "mprice.einzelkorn", cat: "gezogen", neupreis: 24000000, nutzung: 12, hJ: 300, restw: 0.25, dieselLh: 12, afa: 3958, zins: 1583, vers: 1267, rep: 3167, schmier: 180, cEff: 4.02, fleet: 2, tractorId: "zug_9r" },
   // BESTAND 2× RAUCH AERO GT 36 m (pneum. Balkenstreuer) — decken die Düngung @ Stufe 1.
-  { id: "streuer",    label: "Düngerstreuer Bredal K135 gezogen · 36,0 m",  priceKey: "mprice.streuer",    cat: "gezogen", neupreis: 8500000, nutzung: 10, hJ: 400, restw: 0.20, dieselLh: 10, afa: 2800, zins: 840, vers: 700, rep: 1750, schmier: 150, cEff: 18.62, fleet: 1, owned: 2, activeWhen: "base", tractorId: "ops_6r" },
+  { id: "streuer",    label: "Düngerstreuer Bredal K135 gezogen · 36,0 m",  priceKey: "mprice.streuer",    cat: "gezogen", neupreis: 8500000, nutzung: 10, hJ: 400, restw: 0.20, dieselLh: 10, afa: 2800, zins: 840, vers: 700, rep: 1750, schmier: 150, cEff: 18.62, fleet: 1, owned: 0, activeWhen: "base", tractorId: "ops_6r" },
   // spritze14: bleibt der COGS-/Betriebskosten-Träger (Diesel/Rep/Vers/Schmier je ha aus den
   // Arbeitsgängen). fleet: 0 → KEIN CAPEX (der Spritzen-CAPEX kommt fenstergetrieben aus
   // spray_gz/spray_sf, sonst Doppelzählung). Analog zur 8RX/6R-Aufteilung Betrieb↔CAPEX.
@@ -1970,7 +1970,7 @@ const SPEC: Spec[] = [
   // Keiler II hält wertstabil: Wiederverkaufs-/Rücknahmewert nach ~5 J. ~55–65 % der Liste (explizit 60 %,
   //  überschreibt den globalen Anhänger-Default 55 %). Bilanziell: linear auf restw 20 % über 10 J. ⇒ Buchwert
   //  bei 5 J. ~60 %, konsistent. residualPctList treibt die TCO-Effektivkosten (Wertverzehr über die Haltedauer).
-  { id: "roder_ropa", label: "Wurzelernter ROPA Keiler 2 · 2 R (1,5 m, einphasig m. Frontkrautschläger)", priceKey: "mprice.roder_ropa", cat: "gezogen", neupreis: 22500000, nutzung: 10, hJ: 300, restw: 0.20, dieselLh: 36, afa: 5333, zins: 1600, vers: 1333, rep: 5333, schmier: 480, cEff: 0.81, fleet: 6, owned: 1, residualPctList: 0.60 },
+  { id: "roder_ropa", label: "Wurzelernter ROPA Keiler 2 · 2 R (1,5 m, einphasig m. Frontkrautschläger)", priceKey: "mprice.roder_ropa", cat: "gezogen", neupreis: 22500000, nutzung: 10, hJ: 300, restw: 0.20, dieselLh: 36, afa: 5333, zins: 1600, vers: 1333, rep: 5333, schmier: 480, cEff: 0.81, fleet: 6, owned: 0, residualPctList: 0.60 },
   { id: "tompflanz",  label: "Pflanzmaschine Checchi & Magli DUAL 12 GOLD · 6 R (3,0 m)", priceKey: "mprice.tompflanz", cat: "gezogen", neupreis: 14000000, nutzung: 10, hJ: 200, restw: 0.20, dieselLh: 10, afa: 6400, zins: 1920, vers: 1600, rep: 4800, schmier: 150, cEff: 0.49, fleet: 5, tractorId: "ops_6r" },
   { id: "tomernte",   label: "Tomaten-Vollernter Guaresi G-89 · 1,8 m",           priceKey: "mprice.tomernte",   cat: "selbstf", neupreis: 45000000, nutzung: 10, hJ: 300, restw: 0.25, dieselLh: 35, afa: 11250, zins: 3750, vers: 3000, rep: 13500, schmier: 525, cEff: 0.66, fleet: 3 },
   // Zwiebel/Möhre-Ernte läuft jetzt über den geteilten ROPA Keiler (s. o.). Alt-Kette bleibt als
@@ -2003,20 +2003,20 @@ const CAPEX_ONLY_SPEC: CapexOnlySpec[] = [
   // Reale JD-Angebotswerte 9R 590: Liste 700.336 € / Rabatt 35,03 % / Restwert 29,24 % v. Liste.
   // BESTAND 3× — Prime Mover für die 12-m-Boden/Saat/Drille (590-PS-Klasse, ≠ 8RX 410).
   { id: "zug_9r",   label: "Zug JD 9R 590 (12-m-Boden/Saat)", priceKey: "mprice.zug_9r", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
-    discountPct: 0.3503, residualPctList: 0.2924, serviceRateKey: "tco.zug_8rx.service_h", serviceHoursLike: "pflug", owned: 3 },
+    discountPct: 0.3503, residualPctList: 0.2924, serviceRateKey: "tco.zug_8rx.service_h", serviceHoursLike: "pflug", owned: 0 },
   // Reale JD-Angebotswerte: Liste 686.447 € / Rabatt 36,05 % / Restwert 30,06 % v. Liste / Wartung 2,91 €/h.
   { id: "zug_8rx",  label: "Zug JD 8RX 410",       priceKey: "mprice.zug_8rx",  cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
-    discountPct: 0.3605, residualPctList: 0.3006, serviceRateKey: "tco.zug_8rx.service_h", serviceHoursLike: "onepass", owned: 1 },
+    discountPct: 0.3605, residualPctList: 0.3006, serviceRateKey: "tco.zug_8rx.service_h", serviceHoursLike: "onepass", owned: 0 },
   // Reale JD-Angebotswerte: Liste 325.094 € (6R 250 +3 %) / Rabatt 31,75 % / Restwert 36,90 % v. Liste / Wartung 2,20 €/h.
   { id: "ops_6r",   label: "Pflege/Ernte JD 6R 260", priceKey: "mprice.ops_6r", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
-    discountPct: 0.3175, residualPctList: 0.3690, serviceRateKey: "tco.ops_6r.service_h", serviceHoursLike: "roder_ropa", owned: 1 },
-  { id: "radlader", label: "JCB Radlader",         priceKey: "mprice.radlader", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 1, owned: 1 },
-  { id: "shuttle",  label: "Field-Shuttle 8×8",    priceKey: "mprice.shuttle",  cat: "selbstf", nutzung: 8,  restw: 0.25, fleet: 9, owned: 1 },
+    discountPct: 0.3175, residualPctList: 0.3690, serviceRateKey: "tco.ops_6r.service_h", serviceHoursLike: "roder_ropa", owned: 0 },
+  { id: "radlader", label: "JCB Radlader",         priceKey: "mprice.radlader", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 1, owned: 0 },
+  { id: "shuttle",  label: "Field-Shuttle 8×8",    priceKey: "mprice.shuttle",  cat: "selbstf", nutzung: 8,  restw: 0.25, fleet: 9, owned: 0 },
   // Ernte-Logistik Kartoffel: Shuttles laden am Feldrand in den DEMA Fieldloader, der die LKW befüllt (→ Lager/Fabrik).
   //  Eine Verladestation je Rode-Linie → Stückzahl folgt dem Roder (s. machineFleetCount). Elektrisch, kein eigener Antrieb.
   { id: "fieldloader", label: "DEMA Fieldloader OL-COMBI (Feldrand-Überladetrichter)", priceKey: "mprice.fieldloader", cat: "gezogen", nutzung: 10, restw: 0.20, fleet: 4, owned: 0 },
   // Straßentransport/Auslieferung — BESTAND 8× (kein Neu-CAPEX; Make-or-Buy vs. Spedition via opex.transport).
-  { id: "lkw_sattel", label: "LKW mit Sattelauflieger (Auslieferung)", priceKey: "mprice.lkw_sattel", cat: "selbstf", nutzung: 8, restw: 0.30, fleet: 8, owned: 8 },
+  { id: "lkw_sattel", label: "LKW mit Sattelauflieger (Auslieferung)", priceKey: "mprice.lkw_sattel", cat: "selbstf", nutzung: 8, restw: 0.30, fleet: 8, owned: 0 },
 ];
 
 /** Strukturierte Register-Metadaten je Maschine: Kategorie · Hersteller · Produkt. */
@@ -2109,6 +2109,12 @@ const FIELD_MACHINES: MachineType[] = SPEC.map((s) => ({
   tractorId: s.tractorId,
 }));
 
+// BESTAND = 0 (Entscheidung 31.07.2026): NEOTERRA startet 2027 ohne eigene Technik. Vorher trug
+// das Register 18 Einheiten aus dem Kombimodell — die CAPEX kapitalisierte dann den GANZEN Park
+// (rund 2,3 Mio € für Maschinen, die angeblich schon da waren), während die Eröffnungsbilanz
+// null Sachanlagen auswies. Beides zusammen ging nicht auf. Jetzt ist beides konsistent:
+// kein Bestand, keine Sachanlage, die CAPEX kauft die Flotte im jeweiligen Bedarfsjahr.
+
 // CAPEX-only-Träger: feste Flotte, aber ohne cEff/Arbeitsgang (keine COGS-/Stundenkosten).
 const CAPEX_ONLY_MACHINES: MachineType[] = CAPEX_ONLY_SPEC.map((s) => ({
   id: s.id,
@@ -2148,7 +2154,7 @@ const SPRAY_MACHINES: MachineType[] = [
     category: "Pflanzenschutz", manufacturer: "HORSCH Leeb", productName: "PT 8.300 Selbstfahrer",
     mode: "fixedFleet", driver: { kind: "total" }, assetClass: "machinery",
     afaCommercialYears: 10, afaFiscalYears: 9, fleetStage1: 0, restwertPct: 0.30, nutzungYears: 10,
-    cat: "selbstf", sprayPart: "sf", ownedUnits: 3,
+    cat: "selbstf", sprayPart: "sf", ownedUnits: 0,
     widthM: 36, speedKmh: 8.93, fieldEff: 0.75, cEff: 24.1 },
 ];
 
@@ -2163,7 +2169,7 @@ const MACHINE_CATALOG: MachineType[] = [
     category: "Düngung", manufacturer: "RAUCH", priceCent: 8500000,
     mode: "fixedFleet", driver: { kind: "total" }, assetClass: "machinery",
     afaCommercialYears: 10, afaFiscalYears: 9, fleetStage1: 0, restwertPct: 0.20, nutzungYears: 10,
-    cat: "gezogen", cEff: 18.62, ownedUnits: 1, tractorId: "ops_6r",
+    cat: "gezogen", cEff: 18.62, ownedUnits: 0, tractorId: "ops_6r",
     widthM: 36, speedKmh: 7.18, fieldEff: 0.72 },
   // 48-m-Paket (nur aktiv bei farm.boom48=1): Streuer-Swap AERO GT → HORSCH Leeb Xeric 14 FS (48 m)
   // + Umrüst-CAPEX (48-m-Gestänge auf PT/TD + Fahrgassen-Terminal). Boden/Saat/Drusch (12 m) bleiben.
