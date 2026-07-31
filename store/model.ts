@@ -751,6 +751,28 @@ function A(
   return { id, key, label, unit, scenarioProfiles: profiles };
 }
 
+/** Konstanter Wert EINES Szenarios — null, wenn das Szenario keinen eigenen Wert trägt und
+ *  damit von Base erbt. Kurven (kind "curve") liefern ebenfalls null: die werden im Modell
+ *  abgeleitet und sind im Annahmen-Sheet nicht direkt editierbar. */
+export function readScenarioConst(domain: Domain, key: string, scenarioId: string): number | null {
+  const p = domain.assumptions[key]?.scenarioProfiles?.[scenarioId];
+  return p && p.kind === "constant" ? p.value : null;
+}
+
+/** Setzt den Wert EINES Szenarios. value === null entfernt den Eigenwert — das Szenario erbt
+ *  dann wieder von Base. Genau diese Unterscheidung macht das Szenario-Band lesbar: ein leeres
+ *  Feld heißt "wie Base", eine Zahl heißt "bewusst abweichend". Mutator auf einem Entwurf. */
+export function setScenarioConst(d: Domain, key: string, scenarioId: string, value: number | null): void {
+  const a = d.assumptions[key];
+  if (!a) return;
+  if (value === null) {
+    if (scenarioId === d.baseScenarioId) return;      // Base ist die Basis, kann nicht erben
+    delete a.scenarioProfiles[scenarioId];
+    return;
+  }
+  a.scenarioProfiles[scenarioId] = { kind: "constant", value };
+}
+
 /** Baut das Assumptions-Record aus einer Liste (key = Index). */
 function asRecord(list: Assumption[]): Record<string, Assumption> {
   const o: Record<string, Assumption> = {};

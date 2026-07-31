@@ -15,7 +15,7 @@ import {
 
 export type ViewId =
   | "dashboard" | "preise" | "anbauplan" | "maschinen" | "leistung"
-  | "personal" | "arbeitszeit" | "finanzierung" | "subventionen" | "holding" | "eroeffnung" | "kulturkalk" | "investitionen"
+  | "annahmenSheet" | "personal" | "arbeitszeit" | "finanzierung" | "subventionen" | "holding" | "eroeffnung" | "kulturkalk" | "investitionen"
   | "einsatz" | "bewertung" | "contribution" | "overhead" | "verwaltung"
   | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht"
   | "gesellschaften" | "lohnarbeit" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
@@ -29,6 +29,7 @@ const IA: Group[] = [
     { id: "dashboard", label: "Executive Dashboard", view: "dashboard" },
   ]},
   { title: "Annahmen & Kulturen", items: [
+    { id: "annahmenSheet", label: "Annahmen-Sheet (Szenarien)", view: "annahmenSheet" },
     { id: "anbauplan", label: "Anbauplan & Erträge", view: "anbauplan" },
     { id: "kulturkalk", label: "Kultur-Kalkulation (Maßnahmen + Katalog)", view: "kulturkalk" },
     { id: "produktkatalog", label: "Produktkatalog (Dünger · PSM · Sorten)", view: "produktkatalog" },
@@ -81,7 +82,7 @@ const IA: Group[] = [
 
 /** Sidebar-Icons — echte Lucide-Icons (konsistent, currentColor). */
 const ICON: Record<string, LucideIcon> = {
-  dashboard: LayoutDashboard, anbauplan: Sprout, kulturkalk: ClipboardList, produktkatalog: FlaskConical, hebel: ArrowUpFromDot, abnahme: Handshake, lagerkst: Warehouse,
+  annahmenSheet: SlidersHorizontal, dashboard: LayoutDashboard, anbauplan: Sprout, kulturkalk: ClipboardList, produktkatalog: FlaskConical, hebel: ArrowUpFromDot, abnahme: Handshake, lagerkst: Warehouse,
   maschinen: Tractor, investitionen: Coins, leistung: Gauge, einsatz: CalendarRange,
   capexScenarien: GitCompare,
   ersatz: RefreshCw, mehrjahr: TrendingUp, personal: Users, overhead: Briefcase, arbeitszeit: Clock,

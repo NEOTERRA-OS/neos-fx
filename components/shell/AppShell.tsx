@@ -22,6 +22,7 @@ import { FinanzierungView } from "../inputs/FinanzierungView";
 import { SubventionenView } from "../inputs/SubventionenView";
 import { EroeffnungsbilanzView } from "../inputs/EroeffnungsbilanzView";
 import { ArbeitszeitkontoView } from "../inputs/ArbeitszeitkontoView";
+import { AnnahmenSheetView } from "../inputs/AnnahmenSheetView";
 import { ScenarioStudioView } from "../inputs/ScenarioStudioView";
 import { HoldingView } from "../inputs/HoldingView";
 import { GesellschaftenView } from "../inputs/GesellschaftenView";
@@ -174,6 +175,7 @@ export function AppShell() {
                 : view === "mehrjahr" ? <MehrjahresplanView />
                 : view === "ersatz" ? <ErsatzView />
                 : view === "liquiditaet" ? <LiquiditaetView />
+                : view === "annahmenSheet" ? <AnnahmenSheetView />
                 : view === "lohnarbeit" ? <LohnarbeitView />
                 : view === "holding" ? <HoldingView />
                 : view === "gesellschaften" ? <GesellschaftenView />

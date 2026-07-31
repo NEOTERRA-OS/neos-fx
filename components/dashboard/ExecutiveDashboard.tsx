@@ -71,15 +71,13 @@ export function ExecutiveDashboard() {
           weit unten — man las erst das Ergebnis und fand die Mengen drei Blöcke später. */}
       <CropStructureProd domain={sdomain} scenarioId={scenarioId} yearIndex={i} yearLabel={yearLabel} />
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Waterfall annual={annual} idx={i} yearLabel={yearLabel} />
-        <Covenants k={k} idx={i} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <SeasonCurve monthly={monthly} />
-        <CropMix contrib={contrib} />
-      </div>
+      {/* ENTFERNT 31.07.2026: P&L-Wasserfall, Covenant-Ampel, Saison-Kurve und Kulturmix.
+          Wasserfall und Ampel zeigten nur das jüngste Jahr — die Ergebnistabelle oben zeigt
+          alle acht inklusive DSCR und Net Debt/EBITDA mit roter Markierung. Kulturmix und
+          Deckungsbeitrag je Kultur stecken jetzt in der Anbaustruktur-Tabelle.
+          An ihre Stelle tritt der Liquiditätsverlauf — die Frage, die das Anlaufjahr
+          entscheidet, ist nicht „wie sieht die GuV aus", sondern „reicht das Geld". */}
+      <Liquiditaetsverlauf monthly={monthly} annual={annual} />
 
       {/* Ergebnisbeitrag je Kultur (DB/Vollkosten-Toggle) — direkt unter der Anbaustruktur */}
       <ContributionView />
@@ -106,57 +104,108 @@ function Tile({ title, hint, children }: { title: string; hint?: string; childre
 
 /* FinancialEvolution entfernt 31.07.2026 — doppelt zur Tabelle "Ergebnis je Planjahr". */
 
+/** ANBAUSTRUKTUR, PRODUKTION UND ERGEBNISBEITRAG — je Kultur, für JEDES Planjahr.
+ *
+ *  Führt zusammen, was vorher auf drei Stellen verteilt war: Flächen und Mengen standen hier
+ *  (nur für das letzte Jahr), der Deckungsbeitrag je Kultur im Contribution-Chart, der
+ *  Flächenanteil noch einmal im Kulturmix. Wer wissen wollte, was eine Kultur in einem
+ *  bestimmten Jahr beiträgt, musste zwischen drei Grafiken springen.
+ *
+ *  Deckungsbeitrag = Erlös + Förderung − Direktkosten (Agronomie + Maschinen-Betrieb), je ha
+ *  aus der Contribution-Rechnung und mit der Fläche des gewählten Jahres skaliert. Preis- und
+ *  Kosteninflation der Folgejahre ist darin NICHT enthalten — die Tabelle zeigt die Struktur
+ *  zu heutigen Preisen, nicht den inflationierten Jahresabschluss. */
 function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domain: any; scenarioId: string; yearIndex: number; yearLabel: string }) {
   const my = deriveCropAreasMY(domain);
-  const yi = Math.min(yearIndex, my.years - 1);
-  // Pool-basiert & native: Trockenkulturen (pool:"dryland") sind bereits in my.areas — KEIN separater
-  //  drylandRotation-Workaround mehr (sonst Doppelzählung: native + Workaround-Zeilen).
-  const dryIds = new Set<string>((domain.anbauplan ?? []).filter((a: any) => a.pool === "dryland").map((a: any) => a.cropId));
+  const [jahr, setJahr] = React.useState<number | null>(null);
+  const yi = Math.min(jahr ?? yearIndex, my.years - 1);
+  const contrib = React.useMemo(() => deriveContribution(domain, scenarioId), [domain, scenarioId]);
+  const perHa = React.useMemo(() => {
+    const m: Record<string, { db: number; rev: number; cogs: number }> = {};
+    for (const c of contrib.crops) {
+      if (c.areaHa <= 0) continue;
+      m[c.cropId] = {
+        db: c.contribPerHaCent,
+        rev: (c.revenueCent + c.subsidyCent) / c.areaHa,
+        cogs: c.cogsCent / c.areaHa,
+      };
+    }
+    return m;
+  }, [contrib]);
+
   const rows = Object.entries(my.areas).map(([cropId, curve]) => {
     const ha = (curve as number[])[yi] ?? 0;
     const y = cropYield(domain, cropId, scenarioId), loss = cropLoss(domain, cropId, scenarioId);
+    const p = perHa[cropId];
+    const dbAbs = (p?.db ?? 0) * ha;
+    const revAbs = (p?.rev ?? 0) * ha;
     return { cropId, name: cropName(cropId), color: cropColor(cropId), ha,
-      yieldTHa: y, lossPct: loss, tonnes: ha * y * (1 - loss), dry: dryIds.has(cropId) };
-  // NUR WERTKULTUREN — gespeicherte Altstände können weiterhin Ackerbau- und Trockenkulturen
-  //  im Anbauplan tragen; die gehören nicht in die Anbaustruktur des Wertkultur-Modells.
-  }).filter((r) => r.ha > 0.5 && VALUE_CROP_IDS.includes(r.cropId)).sort((a, b) => b.ha - a.ha);
+      yieldTHa: y, tonnes: ha * y * (1 - loss),
+      dbPerHa: p?.db ?? 0, dbAbs, revAbs, dbPct: revAbs > 0 ? dbAbs / revAbs : 0 };
+  }).filter((r) => r.ha > 0.5 && VALUE_CROP_IDS.includes(r.cropId)).sort((a, b) => b.dbAbs - a.dbAbs);
+
   const totHa = rows.reduce((s, r) => s + r.ha, 0) || 1;
   const totT = rows.reduce((s, r) => s + r.tonnes, 0);
-  const maxHa = Math.max(1, ...rows.map((r) => r.ha));
+  const totDb = rows.reduce((s, r) => s + r.dbAbs, 0);
+  const totRev = rows.reduce((s, r) => s + r.revAbs, 0);
+  const maxDb = Math.max(1, ...rows.map((r) => Math.abs(r.dbAbs)));
   const f0 = (v: number) => fmtNumber(v, 0);
+  const th = "caption text-[9.5px] text-nx-text-muted px-1 py-1";
+
   return (
-    <Tile title={t("Anbaustruktur & Produktion — Wertkulturen")} hint={`${t("Jahr")} ${yearLabel} · ${f0(totHa)} ha · ${f0(totT)} t ${t("netto")}`}>
+    <Tile title={t("Anbaustruktur, Produktion & Ergebnisbeitrag")}
+          hint={`${f0(totHa)} ha · ${f0(totT)} t ${t("netto")} · ${t("DB")} ${fmtMoney(totDb)} €`}>
+      <div className="mb-2 flex flex-wrap items-center gap-1">
+        <span className="caption mr-1 text-[10px] text-nx-text-muted">{t("Planjahr")}</span>
+        {Array.from({ length: my.years }, (_, y) => (
+          <button key={y} onClick={() => setJahr(y)} className="rounded-control px-2 text-[11px] font-semibold"
+            style={{ height: 24, border: "1px solid var(--nx-border)",
+              background: y === yi ? "var(--nx-green)" : "var(--nx-surface)",
+              color: y === yi ? "#fff" : "var(--nx-text-secondary)" }}>
+            {START_YEAR + y}
+          </button>
+        ))}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-[12px]">
           <thead><tr>
-            <th className="caption text-[9.5px] text-nx-text-muted text-left px-1 py-1">{t("Kultur")}</th>
-            <th className="caption text-[9.5px] text-nx-text-muted text-right px-1 py-1">{t("Fläche")}</th>
-            <th className="caption text-[9.5px] text-nx-text-muted text-right px-1 py-1">{t("Anteil")}</th>
-            <th className="caption text-[9.5px] text-nx-text-muted text-right px-1 py-1">{t("Ertrag")}</th>
-            <th className="caption text-[9.5px] text-nx-text-muted text-right px-1 py-1">{t("Produktion")}</th>
+            <th className={th + " text-left"}>{t("Kultur")}</th>
+            <th className={th + " text-right"}>{t("Fläche")}</th>
+            <th className={th + " text-right"}>{t("Anteil")}</th>
+            <th className={th + " text-right"}>{t("Ertrag")}</th>
+            <th className={th + " text-right"}>{t("Produktion")}</th>
+            <th className={th + " text-right"}>{t("Erlös + Förd.")}</th>
+            <th className={th + " text-right"}>{t("DB €/ha")}</th>
+            <th className={th + " text-right"}>{t("DB absolut")}</th>
+            <th className={th + " text-right"}>{t("DB %")}</th>
+            <th className={th} style={{ width: 90 }} />
           </tr></thead>
           <tbody>
-            {rows.map((r, idx) => (
-              <tr key={r.cropId + idx} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+            {rows.map((r) => (
+              <tr key={r.cropId} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
                 <td className="px-1 py-1">
                   <span className="inline-flex items-center gap-1.5">
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: r.color, display: "inline-block" }} />
-                    {t(r.name)}{r.dry
-                      ? <span className="caption text-[9px] text-nx-text-muted">{" · "}{t("trocken")}</span>
-                      : <span className="caption text-[9px]" style={{ color: "var(--nx-locate)" }}>{" · "}{t("bewässert")}</span>}
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: r.color, display: "inline-block" }} />
+                    {r.name}
                   </span>
                 </td>
                 <td className="num px-1 py-1 text-right">{f0(r.ha)} ha</td>
-                <td className="num px-1 py-1 text-right">
-                  <span className="inline-flex items-center gap-1 justify-end">
-                    <span style={{ width: 34, height: 5, borderRadius: 3, background: "var(--nx-surface-sunken)", position: "relative", display: "inline-block" }}>
-                      <span style={{ position: "absolute", left: 0, top: 0, height: 5, borderRadius: 3, width: `${r.ha / maxHa * 100}%`, background: r.color }} />
-                    </span>
-                    {fmtNumber(r.ha / totHa * 100, 0)} %
-                  </span>
-                </td>
+                <td className="num px-1 py-1 text-right text-nx-text-muted">{fmtNumber(r.ha / totHa * 100, 0)} %</td>
                 <td className="num px-1 py-1 text-right text-nx-text-muted">{fmtNumber(r.yieldTHa, 1)} t/ha</td>
-                <td className="num px-1 py-1 text-right font-semibold">{f0(r.tonnes)} t</td>
+                <td className="num px-1 py-1 text-right">{f0(r.tonnes)} t</td>
+                <td className="num px-1 py-1 text-right text-nx-text-muted">{fmtMoney(r.revAbs)}</td>
+                <td className="num px-1 py-1 text-right">{fmtMoney(r.dbPerHa)}</td>
+                <td className="num px-1 py-1 text-right font-semibold"
+                    style={{ color: r.dbAbs >= 0 ? "var(--nx-text)" : "var(--nx-error)" }}>{fmtMoney(r.dbAbs)}</td>
+                <td className="num px-1 py-1 text-right font-semibold"
+                    style={{ color: r.dbPct >= 0.4 ? "var(--nx-success)" : r.dbPct >= 0 ? "var(--nx-warning)" : "var(--nx-error)" }}>
+                  {fmtNumber(r.dbPct * 100, 1)} %
+                </td>
+                <td className="px-1 py-1">
+                  <div style={{ height: 7, borderRadius: 3, background: "var(--nx-app-bg)" }}>
+                    <div style={{ width: `${Math.max(0, r.dbAbs / maxDb) * 100}%`, height: 7, borderRadius: 3, background: GRAD }} />
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -167,6 +216,11 @@ function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domai
               <td className="num px-1 py-1.5 text-right">100 %</td>
               <td />
               <td className="num px-1 py-1.5 text-right font-semibold">{f0(totT)} t</td>
+              <td className="num px-1 py-1.5 text-right font-semibold">{fmtMoney(totRev)}</td>
+              <td />
+              <td className="num px-1 py-1.5 text-right font-semibold">{fmtMoney(totDb)}</td>
+              <td className="num px-1 py-1.5 text-right font-semibold">{fmtNumber(totRev > 0 ? totDb / totRev * 100 : 0, 1)} %</td>
+              <td />
             </tr>
           </tfoot>
         </table>
@@ -175,165 +229,65 @@ function CropStructureProd({ domain, scenarioId, yearIndex, yearLabel }: { domai
   );
 }
 
-/** P&L-Wasserfall: Umsatz → −COGS → Rohertrag → −OpEx → EBITDA → −AfA → EBIT → −Zins → −Steuer → JÜ. */
-function Waterfall({ annual, idx, yearLabel }: { annual: ComputedModel; idx: number; yearLabel: string }) {
-  const p = annual.pnl;
-  const v = (li: { values: number[] }) => li.values[idx] ?? 0;
-  const rev = v(p.revenue) + v(p.subsidies);
-  const steps: { label: string; delta: number; kind: "start" | "up" | "down" | "total" }[] = [
-    { label: t("Umsatz"), delta: rev, kind: "start" },
-    { label: "− COGS", delta: -v(p.cogs), kind: "down" },
-    { label: t("Rohertrag"), delta: 0, kind: "total" },
-    { label: "− OpEx/SG&A", delta: -v(p.opex), kind: "down" },
-    { label: "EBITDA", delta: 0, kind: "total" },
-    { label: t("− Abschreibung"), delta: -v(p.depreciation), kind: "down" },
-    { label: "EBIT", delta: 0, kind: "total" },
-    { label: t("− Zins"), delta: -v(p.interest), kind: "down" },
-    { label: t("− Steuer"), delta: -v(p.tax), kind: "down" },
-    { label: t("Jahresüberschuss"), delta: 0, kind: "total" },
-  ];
-  // laufender Saldo
-  let run = 0; const bars = steps.map((s) => {
-    if (s.kind === "start") { run = s.delta; return { ...s, from: 0, to: run }; }
-    if (s.kind === "total") { return { ...s, from: run, to: run }; }
-    const from = run; run += s.delta; return { ...s, from, to: run };
-  });
-  const maxV = Math.max(1, ...bars.map((b) => Math.max(b.from, b.to)));
-  const W = 100; // %
-  return (
-    <Tile title={t("P&L-Wasserfall")} hint={`${t("Jahr")} ${yearLabel} · € ${t("netto")}`}>
-      <div className="space-y-1.5">
-        {bars.map((bar, j) => {
-          const isTotal = bar.kind === "total" || bar.kind === "start";
-          const lo = Math.min(bar.from, bar.to), hi = Math.max(bar.from, bar.to);
-          const left = (lo / maxV) * W, width = Math.max(0.6, ((hi - lo) / maxV) * W);
-          const col = bar.kind === "down" ? ERR : GRAD;
-          return (
-            <div key={j} className="flex items-center gap-2">
-              <div className="w-[120px] shrink-0 text-[11px]" style={{ fontWeight: isTotal ? 700 : 400, color: "var(--nx-text-secondary)" }}>{bar.label}</div>
-              <div className="relative h-[18px] flex-1 rounded-sm" style={{ background: "var(--nx-app-bg)" }}>
-                <div className="absolute top-0 h-full rounded-sm" style={{ left: `${left}%`, width: `${width}%`, background: col, opacity: isTotal ? 1 : 0.82 }} />
-              </div>
-              <div className="num w-[92px] shrink-0 text-right text-[11px]" style={{ fontWeight: isTotal ? 700 : 400, color: bar.to < 0 ? ERR : "var(--nx-text)" }}>
-                {fmtMoney(bar.kind === "total" || bar.kind === "start" ? bar.to : bar.delta)}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Tile>
-  );
-}
+/** LIQUIDITÄTSVERLAUF — Kasse und Revolver über den gesamten Horizont, Monat für Monat.
+ *
+ *  Ersetzt Wasserfall und Covenant-Ampel im Dashboard. Die Frage, an der das Anlaufjahr hängt,
+ *  ist nicht „wie sieht die GuV aus", sondern „reicht das Geld" — und die beantwortet nur der
+ *  Monatsverlauf: der Jahresabschluss kann komfortabel aussehen, während im August vor der
+ *  Ernte die Linie gezogen ist. Markiert sind der tiefste Punkt und die höchste
+ *  Revolver-Inanspruchnahme; beides sind Verhandlungsgrößen gegenüber der Bank. */
+function Liquiditaetsverlauf({ monthly, annual }: { monthly: ComputedModel; annual: ComputedModel }) {
+  const cash: number[] = (monthly.balanceSheet as any).cash?.values ?? [];
+  const rev: number[] = (monthly.balanceSheet as any).revolver?.values ?? [];
+  const n = cash.length;
+  if (!n) return null;
+  const netto = cash.map((c, i) => c - (rev[i] ?? 0));      // frei verfügbar nach Revolver
+  const minIdx = netto.reduce((m, v, i) => (v < netto[m] ? i : m), 0);
+  const peakIdx = rev.reduce((m, v, i) => (v > (rev[m] ?? 0) ? i : m), 0);
+  const lo = Math.min(0, ...netto), hi = Math.max(0, ...netto, ...rev);
+  const spanne = hi - lo || 1;
+  const W = 1000, H = 150;
+  const x = (i: number) => (i / Math.max(1, n - 1)) * W;
+  const y = (v: number) => H - ((v - lo) / spanne) * H;
+  const pfad = (a: number[]) => a.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const jahre = Math.round(n / 12);
+  const M = (c: number) => fmtMoney(c) + " €";
 
-/** Covenant-Ampel: DSCR ≥1,25 · Net Debt/EBITDA ≤3,5 · ICR ≥2,0. */
-function Covenants({ k, idx }: { k: ComputedModel["kpis"]; idx: number }) {
-  const rows = [
-    { label: t("DSCR (Kapitaldienstdeckung)"), val: k.dscr.values[idx] ?? 0, thr: 1.25, dir: "min" as const, fmt: fmtFactor, u: "x" },
-    { label: "Net Debt / EBITDA", val: k.netDebtToEbitda.values[idx] ?? 0, thr: 3.5, dir: "max" as const, fmt: fmtFactor, u: "x" },
-    { label: t("Zinsdeckung (ICR)"), val: k.icr.values[idx] ?? 0, thr: 2.0, dir: "min" as const, fmt: fmtFactor, u: "x" },
-  ];
   return (
-    <Tile title={t("Covenant-Ampel")} hint={t("Kreditauflagen (jüngstes Jahr)")}>
-      <div className="space-y-3">
-        {rows.map((r) => {
-          const ok = r.dir === "min" ? r.val >= r.thr : r.val <= r.thr;
-          const col = ok ? BRAND : ERR;
-          const barBg = ok ? GRAD : ERR;
-          const ratio = r.dir === "min" ? Math.min(1.5, r.val / r.thr) : Math.min(1.5, r.thr / Math.max(0.01, r.val));
-          return (
-            <div key={r.label}>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-[11.5px] text-nx-text-secondary">{r.label}</span>
-                <span className="num text-[13px] font-bold" style={{ color: col }}>
-                  {r.fmt(r.val)}{r.u} <span className="text-[10px] font-normal text-nx-text-muted">{r.dir === "min" ? "≥" : "≤"} {r.fmt(r.thr)}{r.u}</span>
-                </span>
-              </div>
-              <div className="relative h-[8px] w-full rounded-full" style={{ background: "var(--nx-app-bg)" }}>
-                <div className="absolute top-0 h-full rounded-full" style={{ width: `${Math.min(100, (ratio / 1.5) * 100)}%`, background: barBg, opacity: 0.9 }} />
-                <div className="absolute top-[-2px] h-[12px] w-[2px]" style={{ left: `${(1 / 1.5) * 100}%`, background: "var(--nx-text-muted)" }} title={t("Schwelle")} />
-              </div>
-            </div>
-          );
-        })}
-        <div className="caption text-[10px] text-nx-text-muted">{t("Balken ggü. Schwelle (Marker). Grün = eingehalten, rot = verletzt.")}</div>
+    <Tile title={t("Liquiditätsverlauf")} hint={t("Freie Mittel nach Revolver (Linie) · Revolver-Inanspruchnahme (Fläche) — Monatsraster über alle Planjahre")}>
+      <div className="grid grid-cols-2 gap-px sm:grid-cols-3" style={{ background: "var(--nx-border-divider)", marginBottom: 10 }}>
+        {[
+          [t("Tiefster Punkt"), M(netto[minIdx]), `${START_YEAR + Math.floor(minIdx / 12)} · ${MONTHS[minIdx % 12]}`, netto[minIdx] < 0 ? "var(--nx-error)" : "var(--nx-text)"],
+          [t("Höchste Revolver-Nutzung"), M(rev[peakIdx] ?? 0), `${START_YEAR + Math.floor(peakIdx / 12)} · ${MONTHS[peakIdx % 12]}`, "var(--nx-warning)"],
+          [t("Kasse am Ende"), M(cash[n - 1] ?? 0), `${START_YEAR + jahre - 1}`, "var(--nx-brand-lift)"],
+        ].map(([l, v, h, c], idx) => (
+          <div key={idx} className="px-3 py-2" style={{ background: "var(--nx-surface)" }}>
+            <div className="caption text-[10px] text-nx-text-muted">{l as string}</div>
+            <div className="num text-[14px] font-semibold" style={{ color: c as string }}>{v as string}</div>
+            <div className="text-[10.5px] text-nx-text-muted">{h as string}</div>
+          </div>
+        ))}
       </div>
-    </Tile>
-  );
-}
-
-/** Saison-Kurve: monatliches EBITDA (Balken) + Revolver-Inanspruchnahme (Linie/Fläche). */
-function SeasonCurve({ monthly }: { monthly: ComputedModel }) {
-  const eb = monthly.pnl.ebitda.values;
-  const rev = monthly.balanceSheet.revolver?.values ?? [];
-  const n = eb.length;
-  const maxE = Math.max(1, ...eb.map(Math.abs));
-  const maxR = Math.max(1, ...rev);
-  const W = 560, H = 150, pad = 4, bw = (W - pad * 2) / n;
-  const zeroY = H / 2;
-  const ebY = (v: number) => zeroY - (v / maxE) * (H / 2 - 8);
-  const revPts = rev.map((v, j) => `${pad + bw * (j + 0.5)},${H - (v / maxR) * (H - 16) - 4}`).join(" ");
-  return (
-    <Tile title={t("Saison-Kurve")} hint={t("EBITDA (Balken) · Revolver (Linie) — Monatsraster")}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${W} ${H + 16}`} width="100%" height={168} preserveAspectRatio="none" role="img">
         <SeriesDefs />
-        <line x1={pad} y1={zeroY} x2={W - pad} y2={zeroY} stroke="var(--nx-border)" strokeWidth={1} />
-        {eb.map((v, j) => {
-          const y = ebY(v), h = Math.abs(y - zeroY);
-          return <rect key={j} x={pad + bw * j + 1.5} y={Math.min(y, zeroY)} width={Math.max(1, bw - 3)} height={Math.max(1, h)} fill={v < 0 ? ERR : "url(#nxSeriesV)"} opacity={0.9} rx={1} />;
-        })}
-        <polyline points={revPts} fill="none" stroke={LOCATE} strokeWidth={1.6} opacity={0.95} />
-        {n <= 12 && MONTHS.slice(0, n).map((m, j) => (
-          <text key={j} x={pad + bw * (j + 0.5)} y={H - 1} fontSize={7} textAnchor="middle" fill="var(--nx-text-muted)">{m}</text>
+        {Array.from({ length: jahre + 1 }, (_, j) => (
+          <line key={j} x1={x(j * 12)} y1={0} x2={x(j * 12)} y2={H} stroke="var(--nx-border-divider)" strokeWidth={1} />
+        ))}
+        <line x1={0} y1={y(0)} x2={W} y2={y(0)} stroke="var(--nx-text-muted)" strokeWidth={1} strokeDasharray="3 3" />
+        <path d={`${pfad(rev)} L${W},${y(0)} L0,${y(0)} Z`} fill="var(--nx-warn, #C9A227)" opacity={0.22} />
+        <path d={pfad(netto)} fill="none" stroke="url(#nxSeriesH)" strokeWidth={2} />
+        <circle cx={x(minIdx)} cy={y(netto[minIdx])} r={4} fill={netto[minIdx] < 0 ? "var(--nx-error)" : "var(--nx-success)"} />
+        {Array.from({ length: jahre }, (_, j) => (
+          <text key={j} x={x(j * 12 + 6)} y={H + 13} textAnchor="middle" fontSize={10} fill="var(--nx-text-muted)">{START_YEAR + j}</text>
         ))}
       </svg>
-      <div className="mt-1 flex gap-4 caption text-[10px] text-nx-text-muted">
-        <span className="inline-flex items-center gap-1"><span style={{ width: 10, height: 6, background: GRAD, display: "inline-block", borderRadius: 1 }} /> {t("EBITDA/Monat")}</span>
-        <span className="inline-flex items-center gap-1"><span style={{ width: 10, height: 2, background: LOCATE, display: "inline-block" }} /> {t("Revolver-Saldo")}</span>
+      <div className="mt-1 flex flex-wrap items-center gap-3 text-[10.5px] text-nx-text-muted">
+        <span className="inline-flex items-center gap-1.5"><span style={{ width: 14, height: 3, background: GRAD, display: "inline-block" }} />{t("Freie Mittel nach Revolver")}</span>
+        <span className="inline-flex items-center gap-1.5"><span style={{ width: 14, height: 8, background: "var(--nx-warn, #C9A227)", opacity: 0.35, display: "inline-block" }} />{t("Revolver-Inanspruchnahme")}</span>
       </div>
     </Tile>
   );
 }
-
-/** Umsatz & Deckungsbeitrag nach Kultur (horizontale Balken, sortiert). */
-function CropMix({ contrib }: { contrib: ReturnType<typeof deriveContribution> }) {
-  const rows = [...contrib.crops].sort((a, b) => b.revenueCent - a.revenueCent);
-  const maxRev = Math.max(1, ...rows.map((r) => r.revenueCent));
-  const marginOf = (r: any) => { const rev = r.revenueCent + (r.subsidyCent ?? 0); return rev > 0 ? r.contributionCent / rev : 0; };
-  const maxMargin = Math.max(0.01, ...rows.map(marginOf));
-  return (
-    <Tile title={t("Umsatz & Deckungsbeitrag nach Kultur")} hint={t("Balkenfarbe = DB-Marge · €/Jahr")}>
-      <div className="space-y-1.5">
-        {rows.map((r) => {
-          const w = (r.revenueCent / maxRev) * 100;
-          const margin = marginOf(r);
-          const dbPos = r.contributionCent >= 0;
-          // Farbabstufung nach DB-Marge: kräftiger emerald = höhere Marge; rot = negativ.
-          //  Intensität über brightness() (hue-treu, volle Deckkraft) — KEIN Alpha, sonst scheint im
-          //  Dark Mode der schwarze Track durch und das Emerald wirkt oliv/matt.
-          const shade = Math.min(1, Math.max(0, margin / maxMargin));
-          const bg = dbPos ? GRAD : ERR;
-          const filt = dbPos ? `brightness(${(0.78 + 0.42 * shade).toFixed(2)})` : undefined;
-          return (
-            <div key={r.cropId} className="flex items-center gap-2">
-              <div className="w-[128px] shrink-0 truncate text-[11px] text-nx-text-secondary" title={t(r.name)}>{t(r.name)}</div>
-              <div className="relative h-[16px] flex-1 rounded-sm" style={{ background: "var(--nx-surface-sunken)" }}>
-                <div className="absolute top-0 h-full rounded-sm" style={{ width: `${w}%`, background: bg, filter: filt }} />
-              </div>
-              <div className="num w-[86px] shrink-0 text-right text-[11px]">{fmtMoney(r.revenueCent)}</div>
-              <div className="num w-[112px] shrink-0 text-right text-[10.5px]" style={{ color: dbPos ? "var(--nx-text-muted)" : ERR }} title={t("Deckungsbeitrag (€ · % vom Umsatz inkl. Förderung)")}>DB {fmtMoney(r.contributionCent)} · <b style={{ color: dbPos ? "var(--nx-brand-lift)" : ERR }}>{fmtPct(margin)}</b></div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-2 flex gap-4 caption text-[10px] text-nx-text-muted">
-        <span className="inline-flex items-center gap-1"><span style={{ width: 24, height: 6, background: GRAD, display: "inline-block", borderRadius: 1 }} /> {t("DB-Marge — kräftiger = höher")}</span>
-        <span className="inline-flex items-center gap-1"><span style={{ width: 10, height: 6, background: ERR, display: "inline-block", borderRadius: 1 }} /> {t("negativ")}</span>
-      </div>
-    </Tile>
-  );
-}
-
-/** Funding-Box: Investitionsvolumen, Peak-Finanzierungsbedarf, Verschuldung. */
 function FundingBox({ annual, monthly, idx }: { annual: ComputedModel; monthly: ComputedModel; idx: number }) {
   const capex = Math.abs(sum(monthly.cashFlow.capex.values));
   const peakRevolver = Math.max(0, ...(monthly.balanceSheet.revolver?.values ?? [0]));

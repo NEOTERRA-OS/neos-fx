@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
-import { useModelStore, readAssumption } from "../../store/modelStore";
-import { derivePersonnelProposal } from "../../store/model";
+import { useModelStore, readAssumption, selectModelState } from "../../store/modelStore";
+import { derivePersonnelProposal, deriveCropAreasMY, START_YEAR } from "../../store/model";
 import { AssumptionField } from "./AssumptionField";
 import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
@@ -64,6 +64,10 @@ export function PersonalView() {
 
   return (
     <div className="space-y-4">
+      {/* Entwicklung über die Planjahre — zuerst, weil die Frage "wie viele Leute wann" vor der
+          Frage "was kostet einer" kommt. Die Kopfzahlen unten sind die Basis, hier steht der Verlauf. */}
+      <PersonalEntwicklung />
+
       {/* Kopf + Summen */}
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--nx-border)" }}>
@@ -206,5 +210,108 @@ export function PersonalView() {
         </div>
       </section>
     </div>
+  );
+}
+
+
+/** PERSONALENTWICKLUNG über die Planjahre.
+ *
+ *  Die Kopfzahlen im Planer sind eine BASIS — im Modell skalieren sie über den Wachstumspfad:
+ *  Leitung und Werkstatt gedämpft (Sockel + Fläche), Stammfahrer, Bewässerung, Lager, Saison und
+ *  Praktikanten linear mit der Fläche. Was der Planer zeigt, ist damit nur ein Jahr; wer wissen
+ *  will, wann welche Stelle dazukommt, braucht den Verlauf. Genau den zeigt diese Tabelle —
+ *  gelesen aus denselben Kurven, mit denen die Engine rechnet, nicht nachgebildet. */
+function PersonalEntwicklung() {
+  const domain = useModelStore((s) => s.domain);
+  const scenarioId = useModelStore((s) => s.view.scenarioId);
+  const ms = useModelStore(selectModelState);
+  const p = domain.personnel;
+  const years = Math.max(1, domain.growth?.years ?? 1);
+  const areas = React.useMemo(() => deriveCropAreasMY(domain), [domain]);
+
+  if (!p) return null;
+
+  /** FTE einer Rolle im Planjahr y — Mittel über die zwölf Monate der Kurve. */
+  const fteOf = (key: string, y: number): number => {
+    const prof: any = (ms as any).assumptions?.[key]?.scenarioProfiles?.[domain.baseScenarioId];
+    if (!prof) return 0;
+    if (prof.kind !== "curve") return prof.value ?? 0;
+    const v: number[] = prof.values ?? [];
+    const seg = v.slice(y * 12, y * 12 + 12);
+    return seg.length ? seg.reduce((a, b) => a + b, 0) / seg.length : (v[v.length - 1] ?? 0);
+  };
+  const grossOf = (key: string, y: number): number => {
+    const prof: any = (ms as any).assumptions?.[key]?.scenarioProfiles?.[domain.baseScenarioId];
+    if (!prof) return 0;
+    if (prof.kind !== "curve") return prof.value ?? 0;
+    const v: number[] = prof.values ?? [];
+    const seg = v.slice(y * 12, y * 12 + 12);
+    return seg.length ? seg.reduce((a, b) => a + b, 0) / seg.length : (v[v.length - 1] ?? 0);
+  };
+
+  const rows = p.roles.map((role) => ({
+    title: role.title,
+    fte: Array.from({ length: years }, (_, y) => fteOf(role.headcountKey, y)),
+    gross: Array.from({ length: years }, (_, y) => grossOf(role.grossMonthlyKey, y)),
+  }));
+  const sumFte = (y: number) => rows.reduce((s, r) => s + r.fte[y], 0);
+  // AG-Kosten p.a. je Jahr: Σ FTE × Brutto × 12 × (1 + CAM). Payroll-Detail steht im Planer unten.
+  const cam = p.rates.cam ?? 0;
+  const kostenJahr = (y: number) => rows.reduce((s, r) => s + r.fte[y] * r.gross[y] * 12 * (1 + cam), 0);
+  const flaeche = (y: number) => Object.values(areas.areas).reduce((s: number, c: any) => s + (c[y] ?? 0), 0);
+
+  const th = "px-2 py-1.5 caption text-[10px] text-nx-text-muted";
+  return (
+    <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
+      <div className="border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
+        <h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Personalentwicklung über die Planjahre")}</h3>
+        <p className="mt-0.5 text-[11px] text-nx-text-muted">
+          {t("Kopfzahlen (FTE) je Position und Jahr, wie die Engine sie rechnet: Leitung und Werkstatt gedämpft (Sockel + Fläche), alle übrigen linear mit der Betriebsfläche. Die Tabelle unten zeigt die Basis je Kopf — hier steht, wann welche Stelle dazukommt.")}
+        </p>
+      </div>
+      <div className="overflow-x-auto px-2 py-2">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr>
+              <th className={th + " text-left"}>{t("Position")}</th>
+              {Array.from({ length: years }, (_, y) => <th key={y} className={th + " text-right"}>{START_YEAR + y}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+              <td className="px-2 py-1.5 text-nx-text-muted">{t("Betriebsfläche")}</td>
+              {Array.from({ length: years }, (_, y) => (
+                <td key={y} className="num px-2 py-1.5 text-right text-nx-text-muted">{fmtNumber(flaeche(y), 0)} ha</td>
+              ))}
+            </tr>
+            {rows.map((r) => (
+              <tr key={r.title} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                <td className="px-2 py-1.5">{t(r.title)}</td>
+                {r.fte.map((v, y) => (
+                  <td key={y} className="num px-2 py-1.5 text-right">{fmtNumber(v, v < 10 ? 1 : 0)}</td>
+                ))}
+              </tr>
+            ))}
+            <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
+              <td className="px-2 py-2 font-semibold">{t("Σ FTE")}</td>
+              {Array.from({ length: years }, (_, y) => (
+                <td key={y} className="num px-2 py-2 text-right font-semibold">{fmtNumber(sumFte(y), 1)}</td>
+              ))}
+            </tr>
+            <tr style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+              <td className="px-2 py-1.5 font-semibold" style={{ color: "var(--nx-locate)" }}>{t("AG-Kosten p.a.")}</td>
+              {Array.from({ length: years }, (_, y) => (
+                <td key={y} className="num px-2 py-1.5 text-right font-semibold" style={{ color: "var(--nx-locate)" }}>
+                  {fmtMoney(kostenJahr(y))}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
+        {t("AG-Kosten = Σ FTE × Brutto × 12 × (1 + CAM). Saisonkräfte sind FTE-Äquivalente der Kampagne, nicht Köpfe. Erntehandarbeit und LKW-Fahrer stehen bewusst NICHT hier — sie sind als Direktkosten bzw. in der Transportkalkulation verbucht (siehe Hinweis unten).")}
+      </div>
+    </section>
   );
 }
