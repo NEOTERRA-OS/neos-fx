@@ -42,7 +42,7 @@ export function PeriodGrid({
   const periods = timeline.periods;
   const g = periods[0]?.granularity;
   const sub = g === "month" || g === "quarter";
-  const y0 = parseInt(timeline.startDate.slice(0, 4), 10) || 2026;
+  const y0 = parseInt(timeline.startDate.slice(0, 4), 10) || 2027;
   const m0 = parseInt(timeline.startDate.slice(5, 7), 10) || 1;
   const yearOf = (i: number) => y0 + Math.floor((m0 - 1 + i * (g === "quarter" ? 3 : 1)) / 12);
   const cols: Col[] = [];

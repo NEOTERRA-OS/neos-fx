@@ -509,7 +509,7 @@ const D: Record<string, string> = {
 "untermechanisiert": "under-mechanized",
 "am Minimum": "at minimum",
 "Maschinen & Fahrzeuge — Jahres-Planung": "Machinery & vehicles — annual planning",
-"NUR für Maschinen, die NICHT im Register/Bedarf stehen (LKW, Radlader etc. dort planen — sonst doppelt!). Diskrete Zukäufe je Planjahr (Jahr 0 = 2026), mit AfA/FK/Zuschuss": "ONLY for machines that are NOT in the register/requirement (plan trucks, wheel loaders etc. there — otherwise double!). Discrete purchases per plan year (year 0 = 2026), with depreciation/debt/grant",
+"NUR für Maschinen, die NICHT im Register/Bedarf stehen (LKW, Radlader etc. dort planen — sonst doppelt!). Diskrete Zukäufe je Planjahr (Jahr 0 = Startjahr), mit AfA/FK/Zuschuss": "ONLY for machines that are NOT in the register/requirement (plan trucks, wheel loaders etc. there — otherwise double!). Discrete purchases per plan year (year 0 = start year), with depreciation/debt/grant",
 "additiv; zählt erst mit aktiver Detailplanung": "additive; only counts with detailed planning active",
 "Bewässerung / Wasser-Infrastruktur": "Irrigation / water infrastructure",
 "Pivots, Verrohrung, Pumpen, Brunnen, Reservoir, Filtration, Strom, SCADA": "Pivots, piping, pumps, wells, reservoir, filtration, power, SCADA",

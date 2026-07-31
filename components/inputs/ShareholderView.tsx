@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
-import { buildModelState } from "../../store/model";
+import { buildModelState, START_YEAR } from "../../store/model";
 import { computeModel } from "../../core/engine";
 import { npv, irr } from "../../design/finance";
 import { fmtMoney, fmtNumber, fmtPct } from "../../design/format";
@@ -120,7 +120,7 @@ export function ShareholderView() {
   }, [rounds]);
   const OWN_COL = ["#026634", "#009A17", "#95C11F", "#E8AB30", "#E8621A", "#C2A278"];
 
-  const yr = (y: number) => 2026 + y;
+  const yr = (y: number) => START_YEAR + y;
   const kpi = (cap: string, val: string, tone?: string, sub?: string) => (
     <div className="px-4 py-2.5" style={{ background: "var(--nx-surface)" }}>
       <div className="caption text-[10px] text-nx-text-muted">{cap}</div>

@@ -25,14 +25,16 @@ export type CropRow = { cropId: string; name: string; color: string; ha: number;
 /** Anbaustruktur einer Fläche: beregneter Block (pool≠"dryland" → irrHa) + native Trockenrotation
  *  (pool="dryland" → dryHa). Pool-basiert — die Trockenkulturen tragen ihre eigenen Rain-fed-Erträge
  *  (kein DRY_YIELD_FACTOR mehr, kein separater drylandRotation-Workaround → keine Doppelzählung). */
-export function cropStructure(d: Domain, sc: string, irrHa: number, dryHa: number): CropRow[] {
+export function cropStructure(d: Domain, sc: string, irrHa: number, dryHa: number, irrHaByCrop?: Record<string, number>): CropRow[] {
   const rows: CropRow[] = [];
   const irrEntries = d.anbauplan.filter((e) => e.pool !== "dryland");
   const dryEntries = d.anbauplan.filter((e) => e.pool === "dryland");
   const baseIrr = irrEntries.reduce((s, e) => s + e.areaHa, 0) || 1;
   const irrScale = irrHa / baseIrr;
   for (const e of irrEntries) {
-    const ha = e.areaHa * irrScale;
+    // irrHaByCrop (aus deriveCropAreasMY) hat VORRANG: es trägt die Kultur-Skalierungspolitik
+    //  (Skalierungspfad/ramp/fix/Markt-Caps). Ohne Override: proportionale Skalierung wie bisher.
+    const ha = irrHaByCrop ? (irrHaByCrop[e.cropId] ?? 0) : e.areaHa * irrScale;
     rows.push({ cropId: e.cropId, name: cropName(e.cropId), color: cropColor(e.cropId), ha,
       yieldTHa: cropYield(d, e.cropId, sc), lossPct: cropLoss(d, e.cropId, sc), tonnes: netTonnes(d, e.cropId, sc, ha, false), dry: false });
   }

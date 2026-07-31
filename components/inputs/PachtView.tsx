@@ -1,13 +1,12 @@
 "use client";
 import React from "react";
 import { useModelStore } from "../../store/modelStore";
-import { pachtIndexFactor, annuityPV } from "../../store/model";
+import { pachtIndexFactor, annuityPV, START_YEAR } from "../../store/model";
 import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
 import { Check, X } from "lucide-react";
 
-const START_YEAR = 2026;
 const N_YEARS = 8;
 const BASIS_LABEL: Record<string, string> = {
   cpi: "Verbraucherpreisindex (HICP/VPI)", landvalue: "Bodenwert-gekoppelt (% p.a.)", fixed: "Fixe Staffel",

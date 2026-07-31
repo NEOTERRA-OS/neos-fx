@@ -8,7 +8,7 @@ import { TriangleAlert, X } from "lucide-react";
 import type { CapexBlock, CapexDriverMode, AnlagenKlasse, CapexPlanItem } from "../../store/model";
 
 const BLOCKS: { id: CapexBlock; label: string; hint: string; auto?: string }[] = [
-  { id: "maschinen", label: "Maschinen & Fahrzeuge — Jahres-Planung", hint: "NUR für Maschinen, die NICHT im Register/Bedarf stehen (LKW, Radlader etc. dort planen — sonst doppelt!). Diskrete Zukäufe je Planjahr (Jahr 0 = 2026), mit AfA/FK/Zuschuss", auto: "additiv; zählt erst mit aktiver Detailplanung" },
+  { id: "maschinen", label: "Maschinen & Fahrzeuge — Jahres-Planung", hint: "NUR für Maschinen, die NICHT im Register/Bedarf stehen (LKW, Radlader etc. dort planen — sonst doppelt!). Diskrete Zukäufe je Planjahr (Jahr 0 = Startjahr), mit AfA/FK/Zuschuss", auto: "additiv; zählt erst mit aktiver Detailplanung" },
   { id: "bewaesserung", label: "Bewässerung / Wasser-Infrastruktur", hint: "Pivots, Verrohrung, Pumpen, Brunnen, Reservoir, Filtration, Strom, SCADA", auto: "ersetzt den Auto-Beregnungsausbau (€/ha)" },
   { id: "lager", label: "Lager (Kartoffel + Zwiebel/Möhre)", hint: "Schütt-/Kühl-/CA-Lager, Curing, Gebäudehülle — Tomate wird NICHT gelagert", auto: "ersetzt den Auto-Lagerblock (store €/t)" },
   { id: "packhaus", label: "Packhaus / Aufbereitungslinien", hint: "Waschen, Sortieren/Grading, Verpackung, Palettierung", auto: "rein additiv (kein Auto-Block)" },

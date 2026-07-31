@@ -5,7 +5,7 @@ import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
 import { X } from "lucide-react";
-import { machineCapexAmounts, deriveFinancing } from "../../store/model";
+import { machineCapexAmounts, deriveFinancing, START_YEAR } from "../../store/model";
 import { Segmented } from "../primitives/Segmented";
 import type { LeasingContract, ContractKind, PaymentFrequency, RateBasis, RepaymentProfile } from "../../core/types";
 
@@ -335,7 +335,6 @@ export function FinanzierungView() {
  *  Anschaffungsjahr, FK-Quote, Zins & Laufzeit als eigener Investitionskredit (Annuität) in die
  *  3-Statement-Engine (auch spätere Jahre, inkl. CAPEX-Inflationsindex). Hier editierbar. */
 function PlanFinanzierung({ domain, patch }: { domain: any; patch: (fn: (d: any) => void) => void }) {
-  const START_YEAR = 2026;
   const active = domain.capexPlanActive ?? {};
   const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
   const items = (domain.capexPlan ?? []).filter((it: any) => active[it.block] && !it.bestand);

@@ -33,7 +33,7 @@ function aggLine(li: LineItem, groups: number[][]): LineItem {
 
 function startYear(t: Timeline): number {
   const y = parseInt(t.startDate.slice(0, 4), 10);
-  return isFinite(y) ? y : 2026;
+  return isFinite(y) ? y : 2027;
 }
 function startMonth(t: Timeline): number {
   const m = parseInt(t.startDate.slice(5, 7), 10);

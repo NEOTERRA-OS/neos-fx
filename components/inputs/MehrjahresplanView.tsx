@@ -4,11 +4,10 @@ import { useModelStore } from "../../store/modelStore";
 import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { cropStructure, type CropRow } from "./cropCalc";
-import { effectiveGrowth } from "../../store/model";
+import { effectiveGrowth, deriveCropAreasMY, START_YEAR } from "../../store/model";
 import { t } from "../../lib/i18n";
 import { X } from "lucide-react";
 
-const START_YEAR = 2026;
 
 /** Wachstum — EINE konsolidierte Sicht (über ha, keine Stufen):
  *  Akquiseprofil (Deals) → Flächen-Ramp (editierbar) → Wachstums-CAPEX (Beregnungsausbau + Zukauf
@@ -247,7 +246,15 @@ export function MehrjahresplanView() {
  *  unberegneter Block mit der Trockenfläche (Trockenrotation). */
 function AnbauMatrix({ Y, irrByYear, dryByYear, domain, sc }: { Y: number[]; irrByYear: number[]; dryByYear: number[]; domain: any; sc: string }) {
   const [mode, setMode] = React.useState<"ha" | "t">("ha");
-  const structByYear = Y.map((y) => cropStructure(domain, sc, irrByYear[y], dryByYear[y]));
+  // Flächen je Jahr aus der KULTUR-SKALIERUNGSPOLITIK (Skalierungspfad/ramp/fix/Markt-Caps),
+  //  nicht mehr als proportionale Streckung des Anbauplans — sonst zeigt die Matrix jedes Jahr
+  //  dieselbe Struktur, obwohl Kartoffel 300 → 1.000 ha läuft.
+  const myAreas = React.useMemo(() => deriveCropAreasMY(domain).areas, [domain]);
+  const structByYear = Y.map((y) => {
+    const over: Record<string, number> = {};
+    for (const [cid, curve] of Object.entries(myAreas)) over[cid] = curve[Math.min(y, curve.length - 1)] ?? 0;
+    return cropStructure(domain, sc, irrByYear[y], dryByYear[y], over);
+  });
   const keyOf = (r: CropRow) => r.cropId + "|" + (r.dry ? 1 : 0);
   // stabile Zeilenliste aus dem letzten Jahr (alle Kulturen sicher vorhanden)
   const last = structByYear[structByYear.length - 1];

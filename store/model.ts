@@ -95,7 +95,7 @@ export const STAGE_SEMANTICS: { sel: StageSel; growth: string; short: string; de
   { sel: "3c", growth: "s3b", short: "+ Fläche & Beregnung",     desc: "c = Fläche + Beregnung: Zukauf/Übernahme bis zum Zielausbau (20.000 ha)." },
 ];
 export const STAGES: Record<string, { label: string; beregneteFlaecheHa: number; stageFactor: number; feldHa: number }> = {
-  "1":  { label: "Stufe 1 (2026)",  beregneteFlaecheHa: 4000,  stageFactor: 1,   feldHa: 667 },
+  "1":  { label: "Stufe 1 (2027)",  beregneteFlaecheHa: 4000,  stageFactor: 1,   feldHa: 667 },
   "2":  { label: "Stufe 2 (2035)",  beregneteFlaecheHa: 10000, stageFactor: 2.5, feldHa: 1667 },
   "3b": { label: "Stufe 3b (Ziel)", beregneteFlaecheHa: 20000, stageFactor: 5,   feldHa: 3333 },
 };
@@ -378,10 +378,16 @@ export type CommentThread = {
  *  · "scale" (Default): Fläche wächst proportional mit der beregneten Fläche (Residual-Füller).
  *  · "fix":   Fläche bleibt konstant (z. B. Tomate = kontrahierte Werkskapazität).
  *  · "ramp":  Fläche wächst SCHNELLSTMÖGLICH auf targetHa — begrenzt durch shareCap
- *             (Anbaupause: Kartoffel ≤ 25 % der beregneten Fläche, Wirtsgruppen-weit). */
+ *             (Anbaupause: Kartoffel ≤ 25 % der beregneten Fläche, Wirtsgruppen-weit).
+ *  · "path":  EXPLIZITER Skalierungspfad — haByYear[] gibt die Fläche je Planjahr direkt vor
+ *             (Index 0 = START_YEAR). Kürzer als der Horizont ⇒ letzter Wert wird fortgeschrieben.
+ *             Für Kulturen, deren Hochlauf verhandelt/beschlossen ist (Kartoffel 300 ha 2027 →
+ *             1.000 ha 2031) und nicht aus einer Optimierung fallen soll. */
 export type CropPolicy = {
-  mode: "scale" | "fix" | "ramp";
+  mode: "scale" | "fix" | "ramp" | "path";
   targetHa?: number;      // Ziel-Fläche (nur ramp)
+  /** Fläche je Planjahr in ha (nur "path"); Index 0 = START_YEAR. Kurz ⇒ letzter Wert gilt weiter. */
+  haByYear?: number[];
   shareCap?: number;      // max. Anteil an der beregneten Fläche (Default 0.25 für Kartoffel-Gruppe)
   /** ABSATZ-Obergrenze in t/Jahr (Marktanalyse): Fläche wird auf capTonnes/Ertrag gekappt,
    *  der Überschuss wandert in die übrigen scale-Kulturen (v. a. Cash Crops/Kartoffel-Rotation). */
@@ -434,6 +440,14 @@ export function deriveCropAreasMY(domain: Domain): { years: number; irrHa: numbe
     // (1) fix
     for (const e of domain.anbauplan) {
       if (pol[e.cropId]?.mode === "fix") { areas[e.cropId][y] += e.areaHa; fixed += e.areaHa; }
+    }
+    // (1b) path — expliziter Skalierungspfad je Planjahr. Hat Vorrang vor ramp/scale und
+    //  belegt die Fläche wie eine fixe Vorgabe; der Rest der Rotation ist Residual.
+    for (const id of Object.keys(pol)) {
+      const p = pol[id];
+      if (p?.mode !== "path" || !p.haByYear?.length || !areas[id]) continue;
+      const ha = p.haByYear[Math.min(y, p.haByYear.length - 1)] ?? 0;
+      areas[id][y] += ha; fixed += ha;
     }
     // (2) ramp — Kartoffel-Gruppe gemeinsam unter shareCap, so schnell wie erlaubt Richtung Σ targets
     const rampIds = domain.anbauplan.map((e) => e.cropId).filter((id, i, arr) => arr.indexOf(id) === i && pol[id]?.mode === "ramp");
@@ -716,9 +730,12 @@ function asRecord(list: Assumption[]): Record<string, Assumption> {
 }
 
 /* --------------------------------------------------------------------------
- * Timeline: Mehrjahresplan, monatlich, Basisjahr 2026. N_YEARS Jahre × 12 Monate.
+ * Timeline: Mehrjahresplan, monatlich, Basisjahr 2027. N_YEARS Jahre × 12 Monate.
+ *  ENTSCHEIDUNG 30.07.2026 (Benedikt): 2026 fällt komplett aus der Planung — das Modell
+ *  rechnet ab 2027 als JAHR 1 (Periode 0 = Januar 2027). Alle Jahresindizes y sind damit
+ *  START_YEAR + y; UI-Ansichten importieren START_YEAR statt eigener Konstanten.
  * ------------------------------------------------------------------------ */
-const START_YEAR = 2026;
+export const START_YEAR = 2027;
 const N_YEARS = 8;
 const N = N_YEARS * 12;
 const DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -1722,7 +1739,7 @@ export function deriveMassnahmenChecks(domain: Domain): CheckResult[] {
     checks.push({
       id: "dolden_pause",
       label: worst > DOLDEN_CAP_DEFAULT + 1e-6
-        ? `Doldenblütler-Anbaupause verletzt: ${Math.round(worst * 100)} % Apiaceae (Jahr ${2026 + worstY}) > 20 %`
+        ? `Doldenblütler-Anbaupause verletzt: ${Math.round(worst * 100)} % Apiaceae (Jahr ${START_YEAR + worstY}) > 20 %`
         : `Doldenblütler-Anbaupause OK (Apiaceae max. ${Math.round(worst * 100)} % ≤ 20 % — Sellerie + ½ Möhre)`,
       passed: worst <= DOLDEN_CAP_DEFAULT + 1e-6,
       maxDeviation: Math.max(0, worst - DOLDEN_CAP_DEFAULT),
@@ -2119,18 +2136,68 @@ const MACHINE_CATALOG: MachineType[] = [
 ];
 
 /* --------------------------------------------------------------------------
- * ANBAUPLAN (6-Feld-Rotation) — je Feld = beregnete Fläche ÷ 6.
- *  Kartoffel-Feld auf Pommes + Chips gesplittet.
+ * SKALIERUNGSPFAD der Spezialkulturen — ha je Planjahr, Index 0 = START_YEAR (2027).
+ *  Beschlossen 30.07.2026 (Benedikt): NEOTERRA plant für 2027 300 ha Kartoffel; weitere
+ *  Wertkulturen kommen ab 2028 dazu. Kartoffel läuft stufenweise auf 1.000 ha bis 2031
+ *  (= 25 % der beregneten Fläche, 4-Jahres-Anbaupause ⇒ Obergrenze der Rotation).
+ *  Werte sind auf Stufe 1 (4.000 ha beregnet) kalibriert und skalieren mit der Stufe.
+ *
+ *  Kultur              2027  2028  2029  2030  2031  2032  2033  2034
+ *  Kartoffel Pommes     150   225   300   400   500   500   500   500
+ *  Kartoffel Chips      150   225   300   400   500   500   500   500
+ *  Industrietomate        0   150   300   450   600   667   667   667
+ *  Zwiebel/Möhre          0   100   200   300   400   467   467   467
+ *  Knollensellerie        0    30    50    70    90   100   100   100
+ *  Süßkartoffel           0    20    30    40    50    50    50    50
+ *  Knoblauch              0    20    30    40    50    50    50    50
+ *  Σ Spezialkulturen    300   770 1.210 1.700 2.190 2.334 2.334 2.334
+ *  Rest = Ackerbau    3.700 3.230 2.790 2.300 1.810 1.666 1.666 1.666
+ */
+export const SKALIERUNG_HA: Record<string, number[]> = {
+  kartoffel_pommes: [150, 225, 300, 400, 500, 500, 500, 500],
+  kartoffel_chips:  [150, 225, 300, 400, 500, 500, 500, 500],
+  tomate:           [  0, 150, 300, 450, 600, 667, 667, 667],
+  zwiebel_moehre:   [  0, 100, 200, 300, 400, 467, 467, 467],
+  knollensellerie:  [  0,  30,  50,  70,  90, 100, 100, 100],
+  suesskartoffel:   [  0,  20,  30,  40,  50,  50,  50,  50],
+  knoblauch:        [  0,  20,  30,  40,  50,  50,  50,  50],
+};
+
+/** Skalierungspfad → CropPolicy-Eintrag je Kultur (mit Stufen-Skalierung). */
+export function skalierungPolicy(stage: Stage = 1): Record<string, CropPolicy> {
+  const sf = STAGES[String(stage)].beregneteFlaecheHa / 4000;
+  const out: Record<string, CropPolicy> = {};
+  for (const [id, path] of Object.entries(SKALIERUNG_HA))
+    out[id] = { mode: "path", haByYear: path.map((h) => Math.round(h * sf)) };
+  return out;
+}
+
+/* --------------------------------------------------------------------------
+ * ANBAUPLAN — Jahr 0 (= START_YEAR) der Spezialkulturen aus dem Skalierungspfad,
+ *  Restfläche als Ackerbau-Rotation. Kartoffel-Feld auf Pommes + Chips gesplittet.
  * ------------------------------------------------------------------------ */
 export function buildAnbauplan(stage: Stage): AnbauEntry[] {
-  const feld = Math.round(STAGES[String(stage)].beregneteFlaecheHa / 6);
-  const pommes = Math.floor(feld / 2);
-  const chips = feld - pommes;
-  // Ackerbau-Break-Slot (bisher 1 Feld Soja/Luzerne) Kompendium-konform gedrittelt:
-  // Soja/Luzerne · Winterraps · Körnermais (Ölsaaten-/Break-Rotation, Sclerotinia-Entzerrung).
-  const sojaA = Math.round(feld / 3);
-  const rapsA = Math.round(feld / 3);
-  const maisA = feld - sojaA - rapsA;
+  const irr = STAGES[String(stage)].beregneteFlaecheHa;
+  const sf = irr / 4000;                      // SKALIERUNG_HA ist auf Stufe 1 (4.000 ha) kalibriert
+  // JAHR 0 (= START_YEAR) der Spezialkulturen kommt aus dem beschlossenen Skalierungspfad,
+  //  NICHT mehr aus der schematischen 6-Feld-Teilung: 2027 sind 300 ha Kartoffel geplant,
+  //  die übrigen Wertkulturen starten ab 2028. So sind Anbauplan (Jahr 0, Basis für CAPEX-,
+  //  Flotten- und Lager-Bemessung) und deriveCropAreasMY deckungsgleich.
+  const y0 = (id: string) => Math.round((SKALIERUNG_HA[id]?.[0] ?? 0) * sf);
+  const pommes = y0("kartoffel_pommes");
+  const chips = y0("kartoffel_chips");
+  const tomateA = y0("tomate");
+  const sellerie = y0("knollensellerie");
+  const suess = y0("suesskartoffel");
+  const knobl = y0("knoblauch");
+  const zwiebel = y0("zwiebel_moehre");
+  // Restfläche der Rotation trägt der Ackerbau (Weizen/Gerste/Mais je 1, Raps/Soja je ½) —
+  //  Σ beregnet bleibt exakt die beregnete Fläche der Stufe, keine Phantom-Hektar.
+  const specialSum = pommes + chips + tomateA + sellerie + suess + knobl + zwiebel;
+  const rest = Math.max(0, irr - specialSum);
+  const wA = Math.round(rest * 0.25), gA = Math.round(rest * 0.25), mA = Math.round(rest * 0.25);
+  const sojaA = Math.round(rest * 0.125);
+  const rapsA = rest - wA - gA - mA - sojaA;
   const mk = (cropId: CropId, area: number): AnbauEntry => ({
     id: `ab-${cropId}`,
     cropId,
@@ -2143,19 +2210,13 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
   //  Weizen 40 % · Gerste 35 % · Raps 25 % (Rain-fed-Varianten mit eigener Kalkulation).
   const dryBase = Math.round(STAGES[String(stage)].beregneteFlaecheHa * 1.5);
   const wDry = Math.round(dryBase * 0.40), gDry = Math.round(dryBase * 0.35), rDry = dryBase - wDry - gDry;
-  // Marktanalyse 24.07.: Zwiebel/Möhre-Feld teilt sich mit den neuen Import-Substitutions-Kulturen
-  //  (Celeriac läuft bereits im Betrieb; Süßkartoffel/Knoblauch als skalierbare Pilotflächen).
-  const sellerie = Math.round(feld * 0.15);   // ~100 ha @ Stufe 1
-  const suess = Math.round(feld * 0.075);     // ~50 ha
-  const knobl = Math.round(feld * 0.075);     // ~50 ha
-  const zwiebel = feld - sellerie - suess - knobl;
   return [
-    mk("weizen", feld),
-    mk("gerste_zw", feld),
+    mk("weizen", wA),
+    mk("gerste_zw", gA),
     mk("soja_luzerne", sojaA),
     mk("winterraps", rapsA),
-    mk("mais", maisA),
-    mk("tomate", feld),
+    mk("mais", mA),
+    mk("tomate", tomateA),
     mk("kartoffel_pommes", pommes),
     mk("kartoffel_chips", chips),
     mk("zwiebel_moehre", zwiebel),
@@ -2834,18 +2895,16 @@ export const SEED: Domain = {
   overhead: SEED_OVERHEAD,
   growth: GROWTH,
   standort: { name: "Măceșu de Jos · Süd-Dolj (Oltenien)", rainfallMm: 550, soil: "chernozem", summerHeat: "hoch" },
-  // Kultur-Skalierungspolitik: Kartoffel PRIO 1 — schnellstmöglich auf 3.000 ha (2×1.500), aber
-  //  gedeckelt auf 25 % der beregneten Fläche (4-J-Anbaupause). Tomate FIX auf heutiger Fläche
-  //  (~59 kt ≈ kontrahierbare Menge EINES mittelgroßen Werks — nicht mit der Fläche skalieren).
-  //  Alle übrigen Kulturen füllen die Rotation proportional (Residual).
+  // Kultur-Skalierungspolitik: EXPLIZITER Skalierungspfad (SKALIERUNG_HA) für alle Spezial-
+  //  kulturen — 2027 nur 300 ha Kartoffel, Hochlauf auf 1.000 ha bis 2031, übrige Wertkulturen
+  //  ab 2028. Ersetzt den bisherigen "ramp so schnell wie der Anbaupause-Cap erlaubt"-Automatismus
+  //  (der 2027 sofort 1.000 ha Kartoffel gestellt hätte). Ackerbau füllt die Rotation als Residual.
+  //  Marktanalyse 24.07.: Absatzobergrenzen bleiben als Sicherung ÜBER dem Pfad aktiv —
+  //  Zwiebel/Möhre ~60 kt, Knollensellerie ~22 kt (HS-070690-Pool).
   cropPolicy: {
-    kartoffel_pommes: { mode: "ramp", targetHa: 1500 },
-    kartoffel_chips: { mode: "ramp", targetHa: 1500 },
-    tomate: { mode: "fix" },
-    // Marktanalyse 24.07.: Absatzobergrenzen (Import-Substitution + Marktführer-Anteil, editierbar).
-    //  Zwiebel/Möhre ~60 kt (statt 225 kt!), Knollensellerie ~22 kt (HS-070690-Pool).
-    zwiebel_moehre: { mode: "scale", capTonnes: 60000 },
-    knollensellerie: { mode: "scale", capTonnes: 22000 },
+    ...skalierungPolicy(1),
+    zwiebel_moehre: { ...skalierungPolicy(1).zwiebel_moehre, capTonnes: 60000 },
+    knollensellerie: { ...skalierungPolicy(1).knollensellerie, capTonnes: 22000 },
   },
   // Bodenprobenahme (Handoff-SSOT): Default Precision (1 ha/Probe, 4-J-Turnus), Eigen wirtschaftlich überlegen.
   soilSampling: {

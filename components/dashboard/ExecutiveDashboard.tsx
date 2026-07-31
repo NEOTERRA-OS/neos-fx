@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, selectComputedAnnual, selectComputedMonthly } from "../../store/modelStore";
-import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, scopedDomain } from "../../store/model";
+import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, scopedDomain, START_YEAR } from "../../store/model";
 import { useModelStore as useStore, readAssumption } from "../../store/modelStore";
 import { cropName, cropColor, cropYield, cropLoss } from "../inputs/cropCalc";
 import { CheckPanel } from "../statements/CheckPanel";
@@ -212,7 +212,6 @@ function FinancialEvolution({ annual }: { annual: ComputedModel }) {
 function StufenBoard({ domain, annual, scenarioId }: { domain: any; annual: ComputedModel; scenarioId: string }) {
   const my = deriveCropAreasMY(domain);
   const gEff = effectiveGrowth(domain.growth);
-  const START_YEAR = 2026;
   // Meilensteine STUFENBEWUSST (aktiver Wachstumspfad, nicht immer der 3b-Endausbau):
   //  s1  → Start + Status quo (flach, letztes Jahr)
   //  s2  → Start + Erreichungsjahr der Vollberegnung (≈2029) + Zieljahr (falls später)
