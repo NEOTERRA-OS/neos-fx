@@ -3066,39 +3066,60 @@ const VAT: VatPolicy = {
 const CAP_PAYOUT: { period: number; share: number }[] = [{ period: 9, share: 0.7 }, { period: 11, share: 0.3 }];
 const SUBSIDIES: Subsidy[] = [
   // — Säule 1: Direktzahlungen —
-  { id: "s-biss", name: "BISS — Basisprämie (Sprijin de bază)", basis: "per_ha", ratePerHaCent: 10066,
+  // SATZE NACHGEFUEHRT — Subventions-Monitor 01.08.2026 (Projektdoku
+  //  `NEOS-FX-Subventions-Monitor-2026-08.md`). Freigabe Benedikt am 01.08.2026.
+  { id: "s-biss", name: "BISS — Basisprämie (Sprijin de bază)", basis: "per_ha", ratePerHaCent: 8934,
     pillar: 1, category: "biss", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
   // CRISS AUS: In Rumänien ist die umverteilende Prämie auf Betriebe von 1 bis 50 ha
   //  GESAMTFLÄCHE begrenzt — wer 50 ha überschreitet, verliert den Anspruch für ALLE Hektar,
   //  nicht nur für die darüber liegenden. NEOTERRA startet mit 300 ha. Die firstHaCap-Logik
   //  bildete eine Staffel ab, die es so nicht gibt.
-  { id: "s-criss", name: "CRISS — umverteilende Prämie (nur Betriebe ≤ 50 ha, hier ohne Anspruch)", basis: "per_ha", ratePerHaCent: 5300,
+  { id: "s-criss", name: "CRISS — umverteilende Prämie (nur Betriebe ≤ 50 ha, hier ohne Anspruch)", basis: "per_ha", ratePerHaCent: 5142,
     firstHaCap: 50, pillar: 1, category: "criss", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
-  { id: "s-eco", name: "Öko-Regelungen / Eco-Schemes (PD, Ø)", basis: "per_ha", ratePerHaCent: 7000,
+  // Oeko-Regelung PD-04 (Ackerbau-Gutpraxis) 56,28 EUR/ha statt der Pauschale 70. PD-28
+  //  (Brache) ist NICHT angesetzt: der Betrieb bewirtschaftet bewaesserte Wertkulturen und
+  //  legt keine Flaeche still — und der Satz faellt 2026 ohnehin von 49,45 auf 20 EUR/ha.
+  { id: "s-eco", name: "Öko-Regelung PD-04 (Ackerbau-Gutpraxis)", basis: "per_ha", ratePerHaCent: 5628,
     pillar: 1, category: "eco", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
   // — VCP / Gekoppelte Stützung (Voluntary Coupled Payments · Sprijin Cuplat Vegetal) — KULTURSPEZIFISCH —
-  { id: "vcp-tomate", name: "VCP — Industrietomate (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
+  // Tomate ist die EINZIGE Kultur des Plans, die in PD-17 „legume cultivate in camp"
+  //  unstrittig gelistet ist. Eskalationspfad 1.609 (2025) / 1.612 (2026) / 1.614 (2027);
+  //  das Modell startet 2027, deshalb 1.614.
+  { id: "vcp-tomate", name: "VCP — Industrietomate (PD-17 Freilandgemüse)", basis: "per_ha", ratePerHaCent: 161400,
     cropIds: ["tomate"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  // VCP FÜR ALLE GEMÜSEKULTUREN — AKTIV, auf ausdrückliche Entscheidung (Benedikt, 31.07.2026).
-  //  OFFENER PUNKT, bewusst so getroffen: eine Recherche fand für die rumänische Intervention
-  //  PD-17 „legume cultivate în câmp" eine Kulturliste mit Tomate, Gurke, Paprika und
-  //  Aubergine — Zwiebel, Möhre, Knoblauch, Sellerie und Süßkartoffel standen dort nicht
-  //  drauf. Quelle war allerdings ein Agrarnachrichtenportal (agrointel.ro), NICHT der
-  //  Rechtstext von MADR/APIA. Die Betriebsseite geht davon aus, dass die Gemüsekulturen
-  //  gefördert werden, und kennt den Markt.
-  //  RISIKO, falls die engere Lesart stimmt: 667 ha ab 2032, rund 1,07 Mio €/Jahr und
-  //  etwa 5,7 Mio € kumuliert 2028–2034 — voll im EBITDA und im Cashflow. Vor einer
-  //  Bankunterlage gehört das gegen den APIA-Rechtstext geprüft; bis dahin steht es hier
-  //  aktiv, aber dokumentiert.
-  { id: "vcp-zwiebel", name: "VCP — Zwiebel / Möhre (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  { id: "vcp-gemuese-neu", name: "VCP — Sellerie / Süßkartoffel (Freilandgemüse)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  { id: "vcp-knoblauch", name: "VCP — Knoblauch (Sprijin cuplat usturoi)", basis: "per_ha", ratePerHaCent: 160700,
+  /* GEKOPPELTE STUETZUNG FUER ZWIEBEL/MOEHRE, SELLERIE UND SUESSKARTOFFEL: ABGESCHALTET.
+   *
+   *  Entscheidungsverlauf, weil er fuer die Bankunterlage nachvollziehbar sein muss:
+   *   · 31.07.2026 — eine erste Recherche fand fuer die Intervention PD-17 „legume cultivate
+   *     in camp" nur Tomate, Gurke, Paprika und Aubergine. Benedikt entschied, die Foerderung
+   *     fuer die uebrigen Gemuesekulturen stehen zu lassen: die Betriebsseite gehe davon aus,
+   *     dass sie gefoerdert werden.
+   *   · 01.08.2026 — der Subventions-Monitor bestaetigt denselben Befund mit mehreren Quellen
+   *     und beziffert ihn als groessten Hebel des Reports. Benedikt gibt die Abschaltung frei.
+   *
+   *  WIRKUNG: Zwiebel/Moehre 467 ha und Sellerie/Suesskartoffel 150 ha im Endausbau,
+   *  zusammen 617 ha x 1.607 EUR/ha = rund 0,99 Mio EUR/Jahr weniger Foerderung ab 2032.
+   *
+   *  QUELLENLAGE, unveraendert offen: alle Belege des Monitors sind Agrarnachrichtenportale
+   *  (agrointel.ro, agroinfo.ro, agro-tv.ro), NICHT der MADR-Ordin oder der APIA-Rechtstext.
+   *  Sie stuetzen sich gegenseitig, ersetzen den Rechtstext aber nicht. Vor der Bankunterlage
+   *  gehoert der Kulturkatalog von PD-17 im Original geprueft. Zurueckdrehen ist ein Schalter:
+   *  `active: true` an den beiden Zeilen unten.
+   */
+  { id: "vcp-zwiebel", name: "VCP — Zwiebel / Möhre (nicht in PD-17 gelistet)", basis: "per_ha", ratePerHaCent: 160700,
+    cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+  { id: "vcp-gemuese-neu", name: "VCP — Sellerie / Süßkartoffel (nicht in PD-17 gelistet)", basis: "per_ha", ratePerHaCent: 160700,
+    cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+  // KNOBLAUCH BLEIBT AKTIV — bewusst, nicht aus Versehen. Der Monitor vom 01.08.2026 nennt
+  //  Knoblauch an keiner Stelle, weder als foerderfaehig noch als ausgeschlossen. Rumaenien
+  //  fuehrt „sprijin cuplat usturoi" historisch als EIGENE Intervention neben PD-17, weshalb
+  //  der PD-17-Befund hier nicht traegt. 50 ha x 1.607 EUR/ha = rund 80 T EUR/Jahr — der
+  //  kleinste der drei Posten, aber der einzige ohne Beleg in beide Richtungen. ZU PRUEFEN.
+  { id: "vcp-knoblauch", name: "VCP — Knoblauch (eigene Intervention, ungeprüft)", basis: "per_ha", ratePerHaCent: 160700,
     cropIds: ["knoblauch"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
   // Soja ist im Solo-Modell keine Kultur mehr. Die Zeile lag aktiv da und haette gezahlt,
   //  sobald jemand Soja wieder in den Anbauplan nimmt.
-  { id: "vcp-soja", name: "VCP — Soja (Kultur nicht im Plan)", basis: "per_ha", ratePerHaCent: 20000,
+  { id: "vcp-soja", name: "VCP — Soja (Kultur nicht im Plan)", basis: "per_ha", ratePerHaCent: 15500,
     cropIds: ["soja_luzerne"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
   { id: "vcp-kartoffel", name: "VCP — Verarbeitungskartoffel (falls berechtigt)", basis: "per_ha", ratePerHaCent: 0,
     cropIds: ["kartoffel_pommes", "kartoffel_chips"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
@@ -3404,7 +3425,7 @@ function valueCropMachineCatalog(catalog: MachineType[]): MachineType[] {
  *  Modell und werden bei einem Versionssprung nachgezogen. PLANENTSCHEIDUNGEN (Flächen,
  *  Kulturpfade, Beschaffung je Klasse, Bestand, Handeingaben, Verträge, Szenariowerte) gehören
  *  dem Nutzer und bleiben unberührt. */
-export const STAMMDATEN_VERSION = 3;
+export const STAMMDATEN_VERSION = 4;   // 4 = Subventions-Monitor 01.08.2026
 
 /** Felder des Maschinenkatalogs, die dem NUTZER gehören und einen Versionssprung überleben. */
 const MASCHINE_NUTZERFELDER = ["ownedUnits", "rentedUnits", "rentedFrom", "ownedAgeYears", "ownedHoursTotal"] as const;
