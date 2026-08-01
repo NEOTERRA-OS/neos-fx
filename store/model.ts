@@ -3070,11 +3070,11 @@ const SUBSIDIES: Subsidy[] = [
   //  `NEOS-FX-Subventions-Monitor-2026-08.md`). Freigabe Benedikt am 01.08.2026.
   { id: "s-biss", name: "BISS — Basisprämie (Sprijin de bază)", basis: "per_ha", ratePerHaCent: 8934,
     pillar: 1, category: "biss", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
-  // CRISS AUS: In Rumänien ist die umverteilende Prämie auf Betriebe von 1 bis 50 ha
-  //  GESAMTFLÄCHE begrenzt — wer 50 ha überschreitet, verliert den Anspruch für ALLE Hektar,
-  //  nicht nur für die darüber liegenden. NEOTERRA startet mit 300 ha. Die firstHaCap-Logik
-  //  bildete eine Staffel ab, die es so nicht gibt.
-  { id: "s-criss", name: "CRISS — umverteilende Prämie (nur Betriebe ≤ 50 ha, hier ohne Anspruch)", basis: "per_ha", ratePerHaCent: 5142,
+  /* CRISS AUS — belegt. Die umverteilende Praemie ist auf Betriebe von 1 bis 50 ha
+   *  GESAMTFLAECHE begrenzt; wer die Schwelle ueberschreitet, verliert den Anspruch fuer ALLE
+   *  Hektar, nicht nur fuer die darueber liegenden („Exploatatiile care depasesc acest prag nu
+   *  sunt eligibile"). NEOTERRA startet mit 300 ha. Satz AJ 2025: 53,5212 EUR/ha. */
+  { id: "s-criss", name: "CRISS — umverteilende Prämie (nur Betriebe ≤ 50 ha, hier ohne Anspruch)", basis: "per_ha", ratePerHaCent: 5352,
     firstHaCap: 50, pillar: 1, category: "criss", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
   // Oeko-Regelung PD-04 (Ackerbau-Gutpraxis) 56,28 EUR/ha statt der Pauschale 70. PD-28
   //  (Brache) ist NICHT angesetzt: der Betrieb bewirtschaftet bewaesserte Wertkulturen und
@@ -3082,10 +3082,19 @@ const SUBSIDIES: Subsidy[] = [
   { id: "s-eco", name: "Öko-Regelung PD-04 (Ackerbau-Gutpraxis)", basis: "per_ha", ratePerHaCent: 5628,
     pillar: 1, category: "eco", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
   // — VCP / Gekoppelte Stützung (Voluntary Coupled Payments · Sprijin Cuplat Vegetal) — KULTURSPEZIFISCH —
-  // Tomate ist die EINZIGE Kultur des Plans, die in PD-17 „legume cultivate in camp"
-  //  unstrittig gelistet ist. Eskalationspfad 1.609 (2025) / 1.612 (2026) / 1.614 (2027);
-  //  das Modell startet 2027, deshalb 1.614.
-  { id: "vcp-tomate", name: "VCP — Industrietomate (PD-17 Freilandgemüse)", basis: "per_ha", ratePerHaCent: 161400,
+  /* PD-17 „Legume cultivate in camp" — die EINZIGE Kopplung, die eine Kultur dieses Plans
+   *  erreicht. Foerderfaehig sind vier Arten: tomate, castraveti, ardei, vinete.
+   *  Mindestertrag Tomate 15.000 kg/ha (Plan: 88 t/ha) und Vermarktungsnachweis bis 1. November;
+   *  Lieferung an eine registrierte Verarbeitungseinheit zaehlt, Industrietomate ist also drin.
+   *
+   *  SATZ = 1.448,10 EUR/ha, der TATSAECHLICH AUSGEZAHLTE Betrag fuer Antragsjahr 2025
+   *  (OMADR 42/2026 i.d.F. 141/2026, Monitorul Oficial 28.04.2026). Die 1.607 bis 1.614 EUR/ha
+   *  aus dem Monitor sind PLANWERTE des Strategieplans, keine Zahlbetraege. Der Satz ist keine
+   *  feste Groesse: er ergibt sich Jahr fuer Jahr aus Sektorumschlag geteilt durch die
+   *  tatsaechlich beantragte Flaeche und schwankt entsprechend — 1.607,00 (AJ 2024) gegen
+   *  1.448,10 (AJ 2025), also knapp zehn Prozent in einem Jahr. Angesetzt ist der letzte
+   *  belegte Zahlbetrag; er ist konservativer als der Planwert und der einzige mit Beleg. */
+  { id: "vcp-tomate", name: "VCP — Industrietomate (PD-17 Freilandgemüse)", basis: "per_ha", ratePerHaCent: 144810,
     cropIds: ["tomate"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
   /* GEKOPPELTE STUETZUNG FUER ZWIEBEL/MOEHRE, SELLERIE UND SUESSKARTOFFEL: ABGESCHALTET.
    *
@@ -3110,18 +3119,37 @@ const SUBSIDIES: Subsidy[] = [
     cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
   { id: "vcp-gemuese-neu", name: "VCP — Sellerie / Süßkartoffel (nicht in PD-17 gelistet)", basis: "per_ha", ratePerHaCent: 160700,
     cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
-  // KNOBLAUCH BLEIBT AKTIV — bewusst, nicht aus Versehen. Der Monitor vom 01.08.2026 nennt
-  //  Knoblauch an keiner Stelle, weder als foerderfaehig noch als ausgeschlossen. Rumaenien
-  //  fuehrt „sprijin cuplat usturoi" historisch als EIGENE Intervention neben PD-17, weshalb
-  //  der PD-17-Befund hier nicht traegt. 50 ha x 1.607 EUR/ha = rund 80 T EUR/Jahr — der
-  //  kleinste der drei Posten, aber der einzige ohne Beleg in beide Richtungen. ZU PRUEFEN.
-  { id: "vcp-knoblauch", name: "VCP — Knoblauch (eigene Intervention, ungeprüft)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["knoblauch"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
+  /* KNOBLAUCH: KEINE gekoppelte Stuetzung. Am 01.08.2026 stand hier noch die Vermutung, es
+   *  gebe eine eigene Intervention „sprijin cuplat usturoi" neben PD-17. Die Recherche gegen
+   *  den Interventionskatalog des Strategieplans widerlegt das: die pflanzlichen Kopplungen
+   *  sind PD-09 Soja, PD-10 Luzerne, PD-11 Koernerleguminosen, PD-12 Hanf, PD-13 Reis,
+   *  PD-14 Pflanzkartoffel, PD-15 Hopfen, PD-16 Zuckerruebe, PD-17 Freilandgemuese,
+   *  PD-18 Gemuese unter Glas, PD-19 Obst, PD-20 Futterpflanzensaatgut. Knoblauch kommt in
+   *  keiner davon vor. Die Zeile ist damit gegenstandslos. */
+  { id: "vcp-knoblauch", name: "VCP — Knoblauch (in keiner Kopplung enthalten)", basis: "per_ha", ratePerHaCent: 0,
+    cropIds: ["knoblauch"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+  /* PROGRAMUL USTUROIUL — der Knoblauch-Topf, den es WIRKLICH gibt, aber als nationale
+   *  De-minimis-Beihilfe statt als CAP-Kopplung (HG 402/2026, Monitorul Oficial 444 vom
+   *  26.05.2026). 3.000 EUR/ha klingt gross, die Deckel machen ihn klein:
+   *   · hoechstens SECHS Hektar je Beguenstigtem — der Plan hat 50 ha Knoblauch,
+   *   · De-minimis-Obergrenze 50.000 EUR je Unternehmen in drei Jahren, also im Schnitt
+   *     rund 16.700 EUR im Jahr, und dieser Rahmen gilt fuer ALLE De-minimis-Beihilfen
+   *     zusammen,
+   *   · Mindestertrag 3,5 t/ha und Mindestdichte 30 Pflanzen/m2,
+   *   · beschlossen ist das Programm fuer 2026; der Plan beginnt 2027.
+   *  INAKTIV im Basisfall: eine einjaehrige De-minimis-Zusage acht Jahre fortzuschreiben
+   *  waere keine Planung. Als Upside sichtbar — Schalter umlegen ergibt 18.000 EUR/Jahr
+   *  (6 ha x 3.000), wovon die De-minimis-Grenze im dritten Jahr wieder etwas abschneidet. */
+  { id: "min-usturoi", name: "Programul Usturoiul — De-minimis (max. 6 ha, Deckel 50 T€/3 J.)", basis: "per_ha",
+    ratePerHaCent: 300000, firstHaCap: 6, cropIds: ["knoblauch"],
+    pillar: 2, category: "agri_env", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
   // Soja ist im Solo-Modell keine Kultur mehr. Die Zeile lag aktiv da und haette gezahlt,
   //  sobald jemand Soja wieder in den Anbauplan nimmt.
-  { id: "vcp-soja", name: "VCP — Soja (Kultur nicht im Plan)", basis: "per_ha", ratePerHaCent: 15500,
+  { id: "vcp-soja", name: "VCP — Soja (Kultur nicht im Plan)", basis: "per_ha", ratePerHaCent: 14198,
     cropIds: ["soja_luzerne"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
-  { id: "vcp-kartoffel", name: "VCP — Verarbeitungskartoffel (falls berechtigt)", basis: "per_ha", ratePerHaCent: 0,
+    // Bestaetigt: gekoppelt gefoerdert wird nur PFLANZKARTOFFEL (PD-14 „samanta de cartof",
+  //  1.806,30 EUR/ha im Antragsjahr 2025). Verarbeitungskartoffel faellt nicht darunter.
+  { id: "vcp-kartoffel", name: "VCP — Verarbeitungskartoffel (nur Pflanzkartoffel wäre PD-14)", basis: "per_ha", ratePerHaCent: 0,
     cropIds: ["kartoffel_pommes", "kartoffel_chips"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
   { id: "s-young", name: "Junglandwirte-Zuschlag (erste 100 ha, falls berechtigt)", basis: "per_ha", ratePerHaCent: 2600,
     firstHaCap: 100, pillar: 1, category: "young", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
@@ -3425,7 +3453,7 @@ function valueCropMachineCatalog(catalog: MachineType[]): MachineType[] {
  *  Modell und werden bei einem Versionssprung nachgezogen. PLANENTSCHEIDUNGEN (Flächen,
  *  Kulturpfade, Beschaffung je Klasse, Bestand, Handeingaben, Verträge, Szenariowerte) gehören
  *  dem Nutzer und bleiben unberührt. */
-export const STAMMDATEN_VERSION = 4;   // 4 = Subventions-Monitor 01.08.2026
+export const STAMMDATEN_VERSION = 5;   // 5 = Subventionen gegen den MADR-Ordin geprueft
 
 /** Felder des Maschinenkatalogs, die dem NUTZER gehören und einen Versionssprung überleben. */
 const MASCHINE_NUTZERFELDER = ["ownedUnits", "rentedUnits", "rentedFrom", "ownedAgeYears", "ownedHoursTotal"] as const;
