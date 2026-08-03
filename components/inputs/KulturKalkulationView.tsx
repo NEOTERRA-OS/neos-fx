@@ -2,12 +2,13 @@
 import React from "react";
 import { DirektkostenSummary } from "./DirektkostenSummary";
 import { useModelStore } from "../../store/modelStore";
-import { START_YEAR, deriveCropMassnahmen, deriveAgronomieWarnings, getProductCatalog, exportMassnahmenplan, MACHINE_LABELS, CROP_NAME, type CropCalc, type MassnahmeBM } from "../../store/model";
+import { START_YEAR, deriveCropMassnahmen, deriveAgronomieWarnings, getProductCatalog, exportMassnahmenplan, schlaegeOf, MACHINE_LABELS, CROP_NAME, type CropCalc, type MassnahmeBM } from "../../store/model";
 import { findProduct, categoriesForOp, type CatalogProduct } from "../../store/productCatalog";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { NumberInput, TextInput } from "./NumberInput";
 import { ProductPicker } from "./ProductPicker";
 import { cropColor } from "./cropCalc";
+import { neueMeasureId, measureIdForMachine } from "../../store/measureId";
 import { t } from "../../lib/i18n";
 import { JahrWahl, JAHR_DEFAULT } from "./JahrWahl";
 import { Link, Search, Ban, TriangleAlert, Check, X } from "lucide-react";
@@ -40,6 +41,12 @@ export function KulturKalkulationView() {
   const jy = Math.min(Math.max(0, jahr), jahre - 1);
   const calc = deriveCropMassnahmen(domain, crop, sc, jy);
   const mById = (id: string) => domain.machineCatalog.find((m) => m.id === id);
+  /* WO die Maßnahme stattfindet. Ohne den Ort ist eine Zeile über 700 ha Kartoffel
+   *  keine Aufgabe, sondern eine Position — und der Unterschied zwischen 16 Feldern
+   *  und 16 Schlägen ist genau der zwischen „spritzen" und „roden". */
+  const schlaegeJahr = schlaegeOf(domain, crop, jy);
+  const felderJahr = new Set(schlaegeJahr.map((s) => s.feldId));
+  const zugeteiltHa = schlaegeJahr.reduce((a, s) => a + s.areaHa, 0);
 
   // Kostenkatalog INTEGRIERT: Mengen & Stücksätze werden direkt hier editiert.
   const updQty = (opCode: string, lineIdx: number, v: number) => patch((d) => {
@@ -59,7 +66,9 @@ export function KulturKalkulationView() {
   type Draft = typeof domain;
   const opOf = (d: Draft, opCode: string) => d.catalog.find((c) => c.cropId === crop)?.ops.find((o) => o.code === opCode);
   // SSOT-Verzahnung: Streuer-/Spritzen-Überfahrten an die Maßnahmen koppeln (Composer/Flotte konsistent).
-  const newMid = () => `user-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+  // Neue Maßnahmen bekommen sofort eine sprechende, positionsfreie ID — nicht
+  //  `user-<Zeitstempel>`: die sagt nichts und sortiert sich in keinen Fachbereich ein.
+  const newMid = (fach: Parameters<typeof neueMeasureId>[1], label?: string) => neueMeasureId(crop, fach, label);
   const syncPasses = (d: Draft) => {
     const e = d.catalog.find((c) => c.cropId === crop);
     const psmSum = (e?.ops.find((o) => o.code === "OP-PSM")?.lines ?? []).reduce((s, l) => s + (l.passes ?? 1), 0);
@@ -73,8 +82,8 @@ export function KulturKalkulationView() {
   };
   const addLine = (opCode: string, prefix?: string, mid?: string) => patch((d) => {
     const op = opOf(d, opCode); if (!op) return;
-    if (opCode === "OP-DUENG") op.lines.push({ label: prefix ? `${prefix} · Neu` : "Neue Gabe (Streuer) · Neu", costType: "fertilizer", quantityPerHa: 0, unitCostKey: "price.per_euro", unit: "€/ha", mid: mid ?? newMid() });
-    else op.lines.push({ label: "Neue Position", costType: "other", quantityPerHa: 0, unitCostKey: "price.per_euro", unit: "€/ha", mid: mid ?? newMid() });
+    if (opCode === "OP-DUENG") op.lines.push({ label: prefix ? `${prefix} · Neu` : "Neue Gabe (Streuer) · Neu", costType: "fertilizer", quantityPerHa: 0, unitCostKey: "price.per_euro", unit: "€/ha", mid: mid ?? newMid("DUENGUNG", prefix) });
+    else op.lines.push({ label: "Neue Position", costType: "other", quantityPerHa: 0, unitCostKey: "price.per_euro", unit: "€/ha", mid: mid ?? newMid("MATERIAL") });
     syncPasses(d);
   });
   const removeLine = (opCode: string, lineIdx: number) => patch((d) => {
@@ -104,16 +113,19 @@ export function KulturKalkulationView() {
     }
   });
   // Neue Maßnahmen: Düngegabe, PSM-Anwendung, Maschinen-Arbeitsgang.
-  const addGift = () => patch((d) => { const op = opOf(d, "OP-DUENG"); if (op) { op.lines.push({ label: "Neue Gabe (Streuer) · N", costType: "fertilizer", quantityPerHa: 0, unitCostKey: "fert.n", unit: "kg N/ha", mid: newMid() }); syncPasses(d); } });
-  const addPsm = () => patch((d) => { const op = opOf(d, "OP-PSM"); if (op) { op.lines.push({ label: "Neue Anwendung (BBCH …)", costType: "crop_protection", quantityPerHa: 0, unitCostKey: "price.per_euro", unit: "€/ha (Mittel)", passes: 1, mid: newMid() }); syncPasses(d); } });
+  const addGift = () => patch((d) => { const op = opOf(d, "OP-DUENG"); if (op) { op.lines.push({ label: "Neue Gabe (Streuer) · N", costType: "fertilizer", quantityPerHa: 0, unitCostKey: "fert.n", unit: "kg N/ha", mid: newMid("DUENGUNG", "Neue Gabe") }); syncPasses(d); } });
+  const addPsm = () => patch((d) => { const op = opOf(d, "OP-PSM"); if (op) { op.lines.push({ label: "Neue Anwendung (BBCH …)", costType: "crop_protection", quantityPerHa: 0, unitCostKey: "price.per_euro", unit: "€/ha (Mittel)", passes: 1, mid: newMid("PFLANZENSCHUTZ", "Neue Anwendung") }); syncPasses(d); } });
   const addMachineMeasure = (mId: string) => patch((d) => {
     if (!d.arbeitsgaenge[crop]) d.arbeitsgaenge[crop] = [];
-    if (!d.arbeitsgaenge[crop].some((x) => x.m === mId)) d.arbeitsgaenge[crop].push({ m: mId, passes: 1, mid: `${crop}::mach::${mId}` });
+    if (!d.arbeitsgaenge[crop].some((x) => x.m === mId)) d.arbeitsgaenge[crop].push({ m: mId, passes: 1, mid: measureIdForMachine(crop, mId) });
   });
+  /* Der Export folgt dem gewählten Bezugsjahr. Ein jahrloser Maßnahmenplan wäre
+   *  auch ortlos: dieselbe Kultur steht in jedem Jahr auf anderen Feldern — genau
+   *  das ist die Bedingung, unter der die Fruchtfolge aufgeht. */
   const exportPlan = () => {
-    const blob = new Blob([JSON.stringify(exportMassnahmenplan(domain, sc), null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(exportMassnahmenplan(domain, sc, { jahr: jy }), null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "neosfx-massnahmenplan.json"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = `neosfx-massnahmenplan-${START_YEAR + jy}.json`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -279,7 +291,15 @@ export function KulturKalkulationView() {
                           onClick={() => removeMeasure(r)}><X size={12} strokeWidth={2.5} aria-hidden /></button>
                       )}
                     </div>
-                    <div className="num text-[9px] text-nx-text-muted" title={t("Stabile Maßnahmen-ID für den FMS-Abgleich")}>#{r.measureId}</div>
+                    <div className="num text-[9px] text-nx-text-muted" title={t("Stabile, positionsfreie Maßnahmen-ID für den FMS-Abgleich")}>#{r.measureId}</div>
+                    <div className="text-[9px] text-nx-text-muted"
+                      title={t(r.bezug === "schlag"
+                        ? "Schlagbezug: Feld × Jahr × Kultur × Sorte — der Termin ist sortenabhängig"
+                        : "Feldbezug: mehrere Sorten auf einem Feld werden in EINER Überfahrt erledigt")}>
+                      {r.bezug === "schlag"
+                        ? `${schlaegeJahr.length} ${t("Schläge")}`
+                        : `${felderJahr.size} ${t("Felder")}`} · {fmtNumber(zugeteiltHa, 0)} ha
+                    </div>
                   </td>
                   <td className="px-2 py-1.5 text-nx-text-secondary">
                     {r.machineId ? (() => {

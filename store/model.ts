@@ -31,10 +31,16 @@
  * ============================================================================
  */
 import { buildFelder, buildBeregnungseinheiten, buildSchlaege } from "./schlaege";
+import {
+  measureIdForLine, measureIdForMachine, parseMeasureId, istAltId,
+  BEZUG_JE_FACH, FACH_JE_OP, type Fachbereich,
+} from "./measureId";
 import type {
   ModelState,
   Assumption,
   AssumptionMeta,
+  AssumptionStatus,
+  AssumptionConfidence,
   Timeline,
   Scenario,
   Unit,
@@ -64,6 +70,11 @@ import type {
   HarvestAdvancePolicy,
   UUID,
   CheckResult,
+  Feld,
+  Beregnungseinheit,
+  Schlag,
+  IstWert,
+  IstMassnahme,
 } from "../core/types";
 export type { OfftakeContract, HarvestAdvancePolicy } from "../core/types";
 import { DEFAULT_PRODUCTS, type CatalogProduct } from "./productCatalog";
@@ -339,6 +350,14 @@ export type Domain = {
   anbauplan: AnbauEntry[];
   /** Editierbare Arbeitsgänge je Kultur (cropId → Maschine·Überfahrten). Referenz C. */
   arbeitsgaenge: Record<string, Arbeitsgang[]>;
+  /** IST-WERTE zu Annahmen (Ertrag, Gehalt, Preis, Wassergabe). Der Ort, an dem
+   *  eine Wiedervorlage ankommt — ohne ihn bleibt jeder ANNAHME-Faktor eine
+   *  Absichtserklärung. Verändert die Rechnung NICHT: Ist-Daten belegen oder
+   *  widerlegen eine Annahme, sie ersetzen sie nicht automatisch. Wer misst,
+   *  entscheidet trotzdem selbst, ob der Messwert der neue Planwert wird. */
+  istWerte?: IstWert[];
+  /** IST-MASSNAHMEN (Plan ↔ Ist je `measureId` × Schlag). Rückmeldung aus dem FMS. */
+  istMassnahmen?: IstMassnahme[];
   /** Modell-Entscheidungen (Make-or-Buy). */
   decisions: Decisions;
   debt: DebtTranche[];
@@ -1925,7 +1944,7 @@ for (const cid of Object.keys(ARBEITSGAENGE) as CropId[]) {
     if (g.m === "streuer") g.passes = duengPasses(cid);
     if (g.m === "spritze14") g.passes = psmPasses(cid);
     // Stabile Maßnahmen-ID je Feld-Arbeitsgang (FMS-Abgleich).
-    if (!g.mid) g.mid = `${cid}::mach::${g.m}`;
+    if (!g.mid) g.mid = measureIdForMachine(cid, g.m);
   }
 }
 
@@ -2100,26 +2119,28 @@ function buildCropOps(cropId: CropId): OpSeed[] {
   // Phase 4: je Gabe eine Zeile JE NÄHRSTOFF (Menge kg × Preis-Assumption fert.*) → Menge × Preis transparent.
   //  Alle Zeilen EINER Gabe teilen sich eine stabile Maßnahmen-ID (mid) für den FMS-Abgleich.
   const duengLines: OpLineSeed[] = [];
-  DUENGUNG_PROGRAM[cropId].forEach((g, gi) => {
+  DUENGUNG_PROGRAM[cropId].forEach((g) => {
     const kN = g.fert ? "fert.n_fert" : "fert.n";
     const kP = g.fert ? "fert.p_fert" : "fert.p";
     const kK = g.fert ? "fert.k_fert" : "fert.k";
-    const mid = `${cropId}::dueng::${gi}`;
+    // Die ID der Gabe kommt aus IHRER Beschriftung, nicht aus ihrer Stelle im
+    //  Programm — der Index taucht hier bewusst nicht mehr auf.
+    const mid = measureIdForLine(cropId, "OP-DUENG", g.label);
     if (g.n) duengLines.push({ ...L(`${g.label} · N`, "fertilizer", g.n, kN, "kg N/ha"), mid });
     if (g.p) duengLines.push({ ...L(`${g.label} · P₂O₅`, "fertilizer", g.p, kP, "kg P₂O₅/ha"), mid });
     if (g.k) duengLines.push({ ...L(`${g.label} · K₂O`, "fertilizer", g.k, kK, "kg K₂O/ha"), mid });
     if (g.s) duengLines.push({ ...L(`${g.label} · S`, "fertilizer", g.s, "fert.s", "kg S/ha"), mid });
   });
   // PSM: je Überfahrt Mittelkosten €/ha (editierbar). Wirkstoffe im Label (EU/RO zugelassen 2025/26).
-  const psmLines: OpLineSeed[] = PSM_PROGRAM[cropId].map((p, pi) =>
-    ({ ...L(p.label, "crop_protection", p.eurHa, "psm.per_euro", "€/ha (Mittel)"), passes: p.passes ?? 1, mid: `${cropId}::psm::${pi}` }));
+  const psmLines: OpLineSeed[] = PSM_PROGRAM[cropId].map((p) =>
+    ({ ...L(p.label, "crop_protection", p.eurHa, "psm.per_euro", "€/ha (Mittel)"), passes: p.passes ?? 1, mid: measureIdForLine(cropId, "OP-PSM", p.label) }));
   return [
-    { code: "OP-SAAT",  label: "Saatgut/Pflanzgut",           costPeriods: [clampP(cal.plant)],     lines: [{ ...L(`Saatgut/Pflanzgut (Saatstärke)`, "seed", seed.qty, `seed.${cropId}`, `${seed.unit}/ha`), mid: `${cropId}::saat` }] },
+    { code: "OP-SAAT",  label: "Saatgut/Pflanzgut",           costPeriods: [clampP(cal.plant)],     lines: [{ ...L(`Saatgut/Pflanzgut (Saatstärke)`, "seed", seed.qty, `seed.${cropId}`, `${seed.unit}/ha`), mid: measureIdForLine(cropId, "OP-SAAT", "Saatgut") }] },
     { code: "OP-DUENG", label: "Düngung (Gaben)",             costPeriods: [clampP(cal.dueng ?? cal.plant + 1)], lines: duengLines },
     { code: "OP-PSM",   label: "Pflanzenschutz (BBCH)",       costPeriods: [clampP(cal.psm ?? cal.plant + 2)], lines: psmLines },
-    { code: "OP-BEREG", label: "Bewässerung (mm × €/mm·ha)",  costPeriods: [clampP(cal.bereg ?? cal.plant + 3)], lines: [{ ...L(`Bewässerung`, "other", mm, "irrig.eur_mm", "mm/ha"), mid: `${cropId}::bereg` }] },
-    { code: "OP-MAT",   label: "Material/Lager",              costPeriods: cal.harvest.slice(),     lines: [{ ...L("Material/Lager", "other", c[4], "price.per_euro", "€/ha"), mid: `${cropId}::mat` }] },
-    { code: "OP-HAND",  label: "Handarbeit (nicht-maschinell)", costPeriods: cal.harvest.slice(),   lines: [{ ...L("Handarbeit", "labor", c[5], "price.per_euro", "€/ha"), mid: `${cropId}::hand` }] },
+    { code: "OP-BEREG", label: "Bewässerung (mm × €/mm·ha)",  costPeriods: [clampP(cal.bereg ?? cal.plant + 3)], lines: [{ ...L(`Bewässerung`, "other", mm, "irrig.eur_mm", "mm/ha"), mid: measureIdForLine(cropId, "OP-BEREG", "Bewässerung") }] },
+    { code: "OP-MAT",   label: "Material/Lager",              costPeriods: cal.harvest.slice(),     lines: [{ ...L("Material/Lager", "other", c[4], "price.per_euro", "€/ha"), mid: measureIdForLine(cropId, "OP-MAT", "Material/Lager") }] },
+    { code: "OP-HAND",  label: "Handarbeit (nicht-maschinell)", costPeriods: cal.harvest.slice(),   lines: [{ ...L("Handarbeit", "labor", c[5], "price.per_euro", "€/ha"), mid: measureIdForLine(cropId, "OP-HAND", "Handarbeit") }] },
   ];
 }
 
@@ -2604,6 +2625,64 @@ export function cropAreasMemo(domain: Domain): ReturnType<typeof deriveCropAreas
   return v;
 }
 
+/* --------------------------------------------------------------------------
+ * FLAECHENIDENTITAET — Felder, Beregnungseinheiten, Schlaege je Domaenen-Stand.
+ *
+ * Bis 03.08.2026 entstand die Zuteilung INNERHALB von `buildModelState` und war
+ * damit nur der Engine zugaenglich. Der Massnahmenplan konnte deshalb sagen, WAS
+ * zu tun ist, aber nicht WO — und ein Arbeitsauftrag ohne Ort ist keine Aufgabe,
+ * sondern eine Position. Hier steht sie jetzt einmal fuer alle Aufrufer.
+ *
+ * Memoisiert je Domaenen-Objekt: `buildSchlaege` laeuft ueber 223 Felder x 9 Jahre
+ * und wird vom Export je Kultur erneut gebraucht.
+ * ------------------------------------------------------------------------ */
+export type FlaechenBild = {
+  felder: Feld[];
+  beregnungseinheiten: Beregnungseinheit[];
+  schlaege: Schlag[];
+  /** Verstoesse gegen die Anbaupause, die die Zuteilung nicht aufloesen konnte. */
+  verstoesse: { feldId: string; gruppe: string; jahr: number; abstand: number }[];
+};
+const _flaecheMemo = new WeakMap<object, FlaechenBild>();
+export function flaechenMemo(domain: Domain): FlaechenBild {
+  let v = _flaecheMemo.get(domain as object);
+  if (v) return v;
+  const areasMY = cropAreasMemo(domain).areas;
+  const jahre = Math.max(1, domain.growth?.years ?? 1);
+  /* Der Feldbestand umfasst die ROTATIONSFLAECHE, nicht nur die eigene.
+   *  Das ist der Punkt, den erst die Schlagsicht zeigt: wenn die Kartoffel nur
+   *  ueber NEOTERRAs eigene 3.834 ha rotiert, belegt sie dort 65 % und die
+   *  Vierjahrespause ist nicht einzuhalten — auch dann nicht, wenn der Anteil an
+   *  der abgestimmten Rotationsflaeche korrekt 25 % betraegt.
+   *  Die Fruchtfolge geht nur auf, wenn die Flaechen zwischen beiden Betrieben
+   *  jaehrlich WECHSELN: ein gemeinsamer Pool von 10.000 ha, in dem NEOTERRA
+   *  3.834 ha bewirtschaftet — aber nicht jedes Jahr dieselben.
+   *  Genau das ist der Inhalt der "engen Abstimmung" mit dem Partnerbetrieb. */
+  const maxHa = Math.max(...ROTATION_TOTAL_HA.slice(0, jahre));
+  const felder = buildFelder(maxHa);
+  const beregnungseinheiten = buildBeregnungseinheiten(felder);
+  const zweitnutzung = new Set(domain.anbauplan.filter((e) => e.zweitnutzung).map((e) => e.cropId));
+  const { schlaege, verstoesse } = buildSchlaege(felder, {
+    areas: areasMY, zweitnutzung, jahre,
+    wirtsgruppen: [
+      { id: "kartoffel", pauseYears: KARTOFFEL_PAUSE_JAHRE, cropIds: ["kartoffel_pommes", "kartoffel_chips"] },
+      { id: "alliaceen", pauseYears: 5, cropIds: ["knoblauch", "zwiebel_moehre"] },
+      { id: "apiaceen", pauseYears: 5, cropIds: ["knollensellerie", "zwiebel_moehre"] },
+      { id: "solanaceen", pauseYears: 4, cropIds: ["tomate"] },
+    ],
+  });
+  v = { felder, beregnungseinheiten, schlaege, verstoesse };
+  _flaecheMemo.set(domain as object, v);
+  return v;
+}
+
+/** Schlaege einer Kultur in einem Planjahr — die Flaeche hinter einer Massnahme. */
+export function schlaegeOf(domain: Domain, cropId: string, jahrIdx = 0): Schlag[] {
+  const jahre = Math.max(1, domain.growth?.years ?? 1);
+  const jy = Math.min(Math.max(0, Math.round(jahrIdx)), jahre - 1);
+  return flaechenMemo(domain).schlaege.filter((s) => s.cropId === cropId && s.jahr === jy);
+}
+
 /** BEMESSUNGSJAHR einer Maschine: das erste Planjahr, in dem sie überhaupt gebraucht wird —
  *  also eine Nutzer-Kultur Fläche hat UND den Gang nicht fremdvergibt.
  *
@@ -2981,8 +3060,48 @@ export function migrateDomain(dIn: Domain): Domain {
       })
     : d.subsidies;
 
-  return { ...d, anbauplan, cropPolicy, catalog, growth, timeline, holding, entities,
-    assumptions, overhead, subsidies, machineCatalog, pacht, stammdatenVersion: STAMMDATEN_VERSION,
+  /* MASSNAHMEN-IDs VON DER POSITION LOESEN.
+   *  Gespeicherte Staende tragen die alte, aus dem Seed-Index gebaute Form
+   *  (`kartoffel_pommes::psm::2`). Sie laesst sich nicht in Ruhe lassen: sobald
+   *  jemand eine Anwendung einfuegt oder loescht, zeigt dieselbe ID auf eine
+   *  andere Massnahme — und der Ist-Bezug wandert stillschweigend mit.
+   *  Die neue ID kommt aus der BESCHRIFTUNG DER ZEILE SELBST, nicht aus ihrer
+   *  Stelle im Array. Deshalb ueberlebt die Umstellung auch Staende, in denen
+   *  Zeilen ergaenzt oder umsortiert wurden — es gibt nichts abzuzaehlen.
+   *  Frei vergebene IDs (`user-…`) bleiben, wie sie sind: sie waren nie an eine
+   *  Position gebunden, und jede Ist-Rueckmeldung haengt bereits an ihnen. */
+  const midAlias = new Map<string, string>();
+  const catalogMid = Array.isArray(catalog) ? catalog.map((c) => ({
+    ...c,
+    ops: (c.ops ?? []).map((op) => ({
+      ...op,
+      lines: (op.lines ?? []).map((ln) => {
+        if (ln.mid && !istAltId(ln.mid)) return ln;
+        const neu = measureIdForLine(c.cropId, op.code, ln.label);
+        if (ln.mid) midAlias.set(ln.mid, neu);
+        return { ...ln, mid: neu };
+      }),
+    })),
+  })) : catalog;
+
+  const arbeitsgaenge = d.arbeitsgaenge && typeof d.arbeitsgaenge === "object"
+    ? Object.fromEntries(Object.entries(d.arbeitsgaenge).map(([cid, gs]) => [cid,
+        (gs ?? []).map((g) => {
+          if (g.mid && !istAltId(g.mid)) return g;
+          const neu = measureIdForMachine(cid, g.m);
+          if (g.mid) midAlias.set(g.mid, neu);
+          return { ...g, mid: neu };
+        })]))
+    : d.arbeitsgaenge;
+
+  /* Erfasste Ist-Massnahmen ziehen mit. Ohne diesen Schritt waere die Umstellung
+   *  genau der Bruch, den sie verhindern soll. */
+  const istMassnahmen = Array.isArray(d.istMassnahmen)
+    ? d.istMassnahmen.map((i) => midAlias.has(i.measureId) ? { ...i, measureId: midAlias.get(i.measureId)! } : i)
+    : d.istMassnahmen;
+
+  return { ...d, anbauplan, cropPolicy, catalog: catalogMid, arbeitsgaenge, growth, timeline, holding, entities,
+    assumptions, overhead, subsidies, machineCatalog, pacht, istMassnahmen, stammdatenVersion: STAMMDATEN_VERSION,
     scope: "full", stage: 1, entityView: undefined };
 }
 
@@ -3894,8 +4013,13 @@ export type CropMassnahme = {
   /** BBCH-Stadium + Timing relativ zu Saat (S) / Ernte (E) — der eigentliche Treiber. */
   bbch: string; timing: string;
   machineId?: string; machineLabel?: string; passes: number;
-  /** Stabile Maßnahmen-ID (FMS-Abgleich Plan ↔ Ist) — eindeutig je geplanter Maßnahme. */
+  /** Stabile Maßnahmen-ID (FMS-Abgleich Plan ↔ Ist) — eindeutig je geplanter Maßnahme.
+   *  Form `<cropId>.<FACHBEREICH>.<SLUG>`, positionsfrei (siehe `store/measureId.ts`). */
   measureId: string;
+  /** Fachbereich aus der ID — Ordnungsebene für Filter, Gruppierung und Invalidierung. */
+  fachbereich: Fachbereich;
+  /** Bezugsebene des Arbeitsauftrags: `schlag` (sortenscharf) oder `feld`. */
+  bezug: "feld" | "schlag";
   /** Katalog-Op-Code dieser Maßnahme (falls sie Betriebsmittel führt) — für Add/Delete im Journal. */
   opCode?: string;
   /** Zeilen-Indizes im opCode-Op, die zu DIESER Maßnahme gehören (für gezieltes Löschen). */
@@ -3959,7 +4083,9 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
   const isFertigation = (label: string) => /fertigation/i.test(label);
   const isUnterfuss = (label: string) => /unterfuß|unterfuss/i.test(label);
 
-  const rows: CropMassnahme[] = [];
+  /* Fachbereich und Bezugsebene folgen aus der ID und werden deshalb erst am Ende
+   *  ergänzt — sie sind abgeleitet, nicht eingegeben. */
+  const rows: Omit<CropMassnahme, "fachbereich" | "bezug">[] = [];
 
   // 1) Feld-Maschinen-Maßnahmen (Bodenbearbeitung, Aussaat, Ernte …) — je Arbeitsgang eine Zeile.
   //    Streuer & Spritze werden NICHT hier gebündelt, sondern unten je Einzelmaßnahme aufgelöst.
@@ -3971,7 +4097,7 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
     let bm: MassnahmeBM[] = []; let opCode: string | undefined; let lineIdxs: number[] | undefined;
     if (meta.order === 3) { opCode = "OP-SAAT"; bm = linesOf(opCode); lineIdxs = bm.map((b) => b.lineIdx); }
     const bmCent = sum(bm);
-    const measureId = g.mid ?? (opCode === "OP-SAAT" ? (bm[0]?.mid ?? `${cropId}::saat`) : `${cropId}::mach::${g.m}`);
+    const measureId = g.mid ?? (opCode === "OP-SAAT" ? (bm[0]?.mid ?? measureIdForLine(cropId, "OP-SAAT", "Saatgut")) : measureIdForMachine(cropId, g.m));
     rows.push({ order: meta.order, phase: meta.phase, monat: monLabel(meta.when(sow, harv)), bbch: meta.bbch, timing: meta.timing, kind: "machine", measureId,
       machineId: g.m, machineLabel: m.label, passes: g.passes, opCode, lineIdxs, bm, dieselLHa, fahrerHHa: hours, maschineCent, bmCent, totalCent: maschineCent + bmCent });
   }
@@ -4000,7 +4126,7 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
     const dl = viaStreuer ? streuerCost.dieselLHa / nStreuer : 0;
     const fh = viaStreuer ? streuerCost.hours / nStreuer : 0;
     const applyHint = isFertigation(lb) ? "Fertigation (Pivot)" : isUnterfuss(lb) ? "Unterfuß (mit Aussaat)" : undefined;
-    rows.push({ order: 4 + gi * 0.01, phase: lb, monat: monLabel(MACHINE_PHASE.streuer.when(sow, harv)), bbch: bbchOf(lb), timing: "Düngegabe", measureId: bm[0]?.mid ?? `${cropId}::dueng::${gi}`,
+    rows.push({ order: 4 + gi * 0.01, phase: lb, monat: monLabel(MACHINE_PHASE.streuer.when(sow, harv)), bbch: bbchOf(lb), timing: "Düngegabe", measureId: bm[0]?.mid ?? measureIdForLine(cropId, "OP-DUENG", lb),
       kind: viaStreuer ? "machine" : "input", machineId: viaStreuer ? "streuer" : undefined, machineLabel: viaStreuer ? streuerLabel : undefined, applyHint,
       passes: viaStreuer ? 1 : 0, opCode: "OP-DUENG", lineIdxs: bm.map((b) => b.lineIdx), bm, dieselLHa: dl, fahrerHHa: fh, maschineCent: mc, bmCent, totalCent: mc + bmCent });
   });
@@ -4019,7 +4145,7 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
     const share = passes / totPasses;
     const mc = Math.round(spritzeCost.maschineCent * share);
     const dl = spritzeCost.dieselLHa * share; const fh = spritzeCost.hours * share;
-    rows.push({ order: 5 + pi * 0.01, phase: b.label, monat: monLabel(MACHINE_PHASE.spritze14.when(sow, harv)), bbch: bbchOf(b.label), timing: "Spritz-Überfahrt", measureId: b.mid ?? `${cropId}::psm::${pi}`,
+    rows.push({ order: 5 + pi * 0.01, phase: b.label, monat: monLabel(MACHINE_PHASE.spritze14.when(sow, harv)), bbch: bbchOf(b.label), timing: "Spritz-Überfahrt", measureId: b.mid ?? measureIdForLine(cropId, "OP-PSM", b.label),
       kind: "machine", machineId: "spritze14", machineLabel: spritzeLabel, passes, opCode: "OP-PSM", lineIdxs: [b.lineIdx], bm: [b], dieselLHa: dl, fahrerHHa: fh, maschineCent: mc, bmCent: b.cent, totalCent: mc + b.cent });
   });
 
@@ -4027,7 +4153,7 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
   const addInput = (code: string, phase: string, order: number, month: number, bbch: string, timing: string) => {
     const bm = linesOf(code); const c = sum(bm);
     const op = entry?.ops.find((o) => o.code === code);
-    if (op || c > 0) rows.push({ order, phase, monat: monLabel(month), bbch, timing, kind: "input", measureId: bm[0]?.mid ?? `${cropId}::${code.replace("OP-", "").toLowerCase()}`, passes: 0, opCode: code, lineIdxs: bm.map((b) => b.lineIdx), bm, dieselLHa: 0, fahrerHHa: 0, maschineCent: 0, bmCent: c, totalCent: c });
+    if (op || c > 0) rows.push({ order, phase, monat: monLabel(month), bbch, timing, kind: "input", measureId: bm[0]?.mid ?? measureIdForLine(cropId, code, phase), passes: 0, opCode: code, lineIdxs: bm.map((b) => b.lineIdx), bm, dieselLHa: 0, fahrerHHa: 0, maschineCent: 0, bmCent: c, totalCent: c });
   };
   addInput("OP-BEREG", "Bewässerung (Pivot/Fertigation)", 4.5, (sow + harv) / 2, "30–80", "kritische Phasen (Blüte/Füllung)");
   addInput("OP-MAT", "Material / Lager", 8.5, harv, "—", "mit Ernte (E)");
@@ -4053,6 +4179,15 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
   }
   rows.sort((a, b) => a.order - b.order);
 
+  /* Fachbereich/Bezug aus der ID. Fällt sie aus dem Schema (Altbestand, im Betrieb
+   *  frei angelegte Maßnahme), entscheidet der Op-Code — und wenn auch der fehlt,
+   *  gilt `schlag`: die strengere Zuordnung verliert nichts, die gröbere schon. */
+  const rowsFinal: CropMassnahme[] = rows.map((r) => {
+    const p = parseMeasureId(r.measureId);
+    const fach: Fachbereich = p?.fach ?? FACH_JE_OP[r.opCode ?? ""] ?? "MATERIAL";
+    return { ...r, fachbereich: fach, bezug: BEZUG_JE_FACH[fach] };
+  });
+
   // Summen unabhängig vom Zeilen-Layout (== bisheriges Aggregat; Composer/Flotte unberührt).
   const machTot = gaenge.reduce((s, g) => byId.get(g.m) ? s + machineCost(g).maschineCent : s, 0);
   const dieselLHaTot = gaenge.reduce((s, g) => byId.get(g.m) ? s + machineCost(g).dieselLHa : s, 0);
@@ -4062,7 +4197,7 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
   const bmTot = seedCent + fertCent + psmCent + waterCent + materialCent + handCent;
   const t = { maschineCent: machTot, bmCent: bmTot, dieselLHa: dieselLHaTot, dieselCent: Math.round(dieselLHaTot * dieselPrice),
     fahrerHHa: fahrerHHaTot, totalCent: machTot + bmTot, seedCent, fertCent, psmCent, waterCent, materialCent, handCent };
-  return { cropId, name: entry?.name ?? cropId, areaHa, rows, totals: t };
+  return { cropId, name: entry?.name ?? cropId, areaHa, rows: rowsFinal, totals: t };
 }
 
 /** Produktkatalog des Domains (mit Fallback auf den Seed-Katalog, falls nicht persistiert). */
@@ -4249,23 +4384,262 @@ export function deriveAssumptionRegister(domain: Domain, scenarioId: string): As
   return rows.sort((x, y) => x.category.localeCompare(y.category) || x.label.localeCompare(y.label));
 }
 
-/** Maßnahmenplan-Export für den FMS-Abgleich (Plan ↔ Ist). Jede Maßnahme mit stabiler measureId,
- *  Timing, Produktverknüpfung, Aufwand und Kosten — matchbar mit der Ist-Ausführung im FMS. */
-export function exportMassnahmenplan(domain: Domain, scenarioId: string) {
+/**
+ * Maßnahmenplan-Export für NEOS Farm (Plan ↔ Ist).
+ *
+ * v2 gegenüber v1: jede Maßnahme trägt jetzt ihren ORT. Bis dahin stand dort
+ * „Kartoffel Pommes · 500 ha · Krautfäule-Serie" — das ist keine Aufgabe, sondern
+ * eine Position. Jetzt hängt an der Maßnahme die Liste der Schläge mit ihren
+ * Feldern, und der Fachbereich sagt, auf welcher Ebene der Auftrag entsteht:
+ * die Rodung schlagscharf (Markies und Frieslander reifen getrennt ab), die
+ * Spritzung darf aufs Feld.
+ *
+ * Der Kopfsatz bleibt EINE Zeile je Kultur × Maßnahme; die Auflösung auf ~15.000
+ * Einzelaufträge macht NEOS Farm, nicht der Export. Wer sie hier schon will,
+ * setzt `aufloesung: "schlag"`.
+ *
+ * `jahr` ist der Planjahr-INDEX (0 = Modellstart). Ohne ihn wäre der Export
+ * jahrlos und damit ortlos: dieselbe Kultur steht in jedem Jahr auf anderen
+ * Feldern — das ist die Voraussetzung dafür, dass die Fruchtfolge überhaupt
+ * aufgeht.
+ */
+export type MassnahmenExportOpt = {
+  /** Planjahr-Index. Default 0 (Modellstart). */
+  jahr?: number;
+  /** `kopf` (Default): je Kultur × Maßnahme eine Zeile mit Schlagliste.
+   *  `schlag`: zusätzlich je Schlag ein Auftragssatz. */
+  aufloesung?: "kopf" | "schlag";
+};
+export function exportMassnahmenplan(domain: Domain, scenarioId: string, opt: MassnahmenExportOpt = {}) {
+  const jahre = Math.max(1, domain.growth?.years ?? 1);
+  const jahr = Math.min(Math.max(0, Math.round(opt.jahr ?? 0)), jahre - 1);
+  const kalenderjahr = START_YEAR + jahr;
+  const flaeche = flaechenMemo(domain);
   const crops = [...new Set(domain.anbauplan.map((a) => a.cropId))];
+
   const measures = crops.flatMap((cropId) => {
-    const calc = deriveCropMassnahmen(domain, cropId, scenarioId);
-    return calc.rows.map((r) => ({
-      measureId: r.measureId,
-      cropId, crop: calc.name, areaHa: calc.areaHa,
-      typ: r.opCode ?? "MACHINE",
-      massnahme: r.phase, bbch: r.bbch, timing: r.timing, monat: r.monat,
-      maschine: r.machineLabel ?? r.applyHint ?? null, ueberfahrten: r.passes,
-      positionen: r.bm.map((b) => ({ bezeichnung: b.label, menge: b.qty, einheit: b.unit, productId: b.productId ?? null, kostenCent: b.cent })),
-      maschineCent: r.maschineCent, betriebsmittelCent: r.bmCent, summeCent: r.totalCent,
-    }));
+    const calc = deriveCropMassnahmen(domain, cropId, scenarioId, jahr);
+    const schlaege = schlaegeOf(domain, cropId, jahr);
+    return calc.rows.map((r) => {
+      /* Bei Feldbezug fallen mehrere Sorten-Schläge desselben Feldes zu EINER
+       *  Überfahrt zusammen. Wer das nicht tut, zählt die Spritzung doppelt,
+       *  sobald zwei Sorten auf einem Feld stehen. */
+      const ziele = r.bezug === "feld"
+        ? [...new Map(schlaege.map((s) => [s.feldId, s])).values()]
+            .map((s) => ({ feldId: s.feldId, schlagId: null as string | null, sorte: null as string | null,
+              areaHa: schlaege.filter((x) => x.feldId === s.feldId).reduce((a, x) => a + x.areaHa, 0) }))
+        : schlaege.map((s) => ({ feldId: s.feldId, schlagId: s.id, sorte: s.sorte ?? null, areaHa: s.areaHa }));
+      const flaecheHa = Math.round(ziele.reduce((a, z) => a + z.areaHa, 0) * 10) / 10;
+      return {
+        measureId: r.measureId,
+        fachbereich: r.fachbereich,
+        bezug: r.bezug,
+        cropId, crop: calc.name,
+        jahr, kalenderjahr,
+        areaHa: calc.areaHa,
+        typ: r.opCode ?? "MACHINE",
+        massnahme: r.phase, bbch: r.bbch, timing: r.timing, monat: r.monat,
+        maschine: r.machineLabel ?? r.applyHint ?? null, ueberfahrten: r.passes,
+        positionen: r.bm.map((b) => ({ bezeichnung: b.label, menge: b.qty, einheit: b.unit, productId: b.productId ?? null, kostenCent: b.cent })),
+        maschineCent: r.maschineCent, betriebsmittelCent: r.bmCent, summeCent: r.totalCent,
+        /* Die zugeteilte Fläche kann von `areaHa` der Kultur abweichen: Felder sind
+         *  45 ha groß und werden nicht angeschnitten. Beide Zahlen stehen bewusst
+         *  nebeneinander — die Differenz ist eine Aussage, kein Rundungsfehler. */
+        flaeche: { schlagAnzahl: r.bezug === "feld" ? 0 : ziele.length, feldAnzahl: new Set(ziele.map((z) => z.feldId)).size, zugeteiltHa: flaecheHa },
+        ziele,
+      };
+    });
   });
-  return { schema: "neosfx.massnahmenplan/v1", exportedFrom: "NEOS FX", scenarioId, count: measures.length, measures };
+
+  const auftraege = opt.aufloesung === "schlag"
+    ? measures.flatMap((m) => m.ziele.map((z) => ({
+        auftragId: `${m.measureId}@${z.schlagId ?? z.feldId}@${kalenderjahr}`,
+        measureId: m.measureId, fachbereich: m.fachbereich, bezug: m.bezug,
+        cropId: m.cropId, jahr: m.jahr, kalenderjahr,
+        feldId: z.feldId, schlagId: z.schlagId, sorte: z.sorte, areaHa: z.areaHa,
+        massnahme: m.massnahme, bbch: m.bbch, timing: m.timing, monat: m.monat,
+        maschine: m.maschine, ueberfahrten: m.ueberfahrten,
+      })))
+    : undefined;
+
+  return {
+    schema: "neosfx.massnahmenplan/v2",
+    exportedFrom: "NEOS FX",
+    scenarioId, jahr, kalenderjahr,
+    /* Flächenregister mit: der Plan ist ohne die Felder nicht lesbar. `vorlaeufig`
+     *  sagt, dass Größe und Lage geschätzt sind — die IDs sind es nicht. */
+    flaechen: {
+      felder: flaeche.felder,
+      beregnungseinheiten: flaeche.beregnungseinheiten,
+      schlaege: flaeche.schlaege.filter((s) => s.jahr === jahr),
+      verstoesse: flaeche.verstoesse.filter((v) => v.jahr === jahr),
+    },
+    count: measures.length,
+    measures,
+    ...(auftraege ? { auftragCount: auftraege.length, auftraege } : {}),
+  };
+}
+
+/* --------------------------------------------------------------------------
+ * IST-DATEN — Auswertung.
+ *
+ * Zwei Blickrichtungen, weil es zwei Fragen sind:
+ *
+ *   deriveWiedervorlage   Welche Annahme ist noch ungeprüft, und liegt inzwischen
+ *                         eine Messung vor? Das ist die Liste, die die 165
+ *                         ANNAHME-Faktoren abarbeitet.
+ *
+ *   deriveIstAbgleich     Was war geplant, was wurde ausgeführt? Je Maßnahme, je
+ *                         Schlag, mit Abweichung.
+ *
+ * Beide RECHNEN NICHT ins Modell. Ein Messwert löst keine Annahme automatisch ab:
+ * ein Ertrag von 38 t/ha aus einem Hageljahr ist ein Datum, keine Planungsgrundlage.
+ * Die Auswertung sagt, was gemessen wurde und wie weit es vom Plan abweicht — die
+ * Entscheidung, den Planwert zu ändern, bleibt beim Bearbeiter und läuft über die
+ * bestehende Annahmen-Pflege mit Audit-Eintrag.
+ * ------------------------------------------------------------------------ */
+export type WiedervorlageRow = {
+  key: string; label: string; category: string; unit: string;
+  planwert: number | null;
+  status: AssumptionStatus;
+  confidence?: AssumptionConfidence;
+  owner?: string;
+  quelle?: string;
+  /** Anzahl vorliegender Messungen. 0 ⇒ die Annahme trägt sich selbst. */
+  istAnzahl: number;
+  /** Mittel der Messungen (ungewichtet — Gewichtung nach Fläche braucht den Schlagbezug
+   *  an JEDER Messung; solange er fehlt, wäre eine gewichtete Zahl eine Scheingenauigkeit). */
+  istMittel: number | null;
+  istMin: number | null;
+  istMax: number | null;
+  letzteMessung?: string;
+  /** Relative Abweichung Ist ↔ Plan. null, solange nichts gemessen wurde. */
+  abweichung: number | null;
+  /** Was zu tun ist. `belegen` = ungeprüft und ungemessen — die eigentliche Wiedervorlage. */
+  handlung: "belegen" | "pruefen" | "bestaetigt" | "abweichung";
+};
+
+/** Ist-Werte zu einem Annahmeschlüssel, optional auf ein Erntejahr eingegrenzt. */
+export function istWerteOf(domain: Domain, key: string, erntejahr?: number): IstWert[] {
+  return (domain.istWerte ?? []).filter((i) => i.key === key && (erntejahr === undefined || i.erntejahr === erntejahr));
+}
+
+/** Schwelle, ab der eine Messung als Bestätigung des Planwerts durchgeht. */
+export const IST_TOLERANZ = 0.1;
+
+export function deriveWiedervorlage(domain: Domain, scenarioId: string): WiedervorlageRow[] {
+  const rows: WiedervorlageRow[] = [];
+  for (const key of Object.keys(domain.assumptions)) {
+    const a = domain.assumptions[key];
+    const prof = a.scenarioProfiles[scenarioId] ?? a.scenarioProfiles[domain.baseScenarioId];
+    const planwert = constValueOf(prof as { kind: string; value?: number });
+    const ist = istWerteOf(domain, key);
+    const werte = ist.map((i) => i.wert).filter((v) => Number.isFinite(v));
+    const mittel = werte.length ? werte.reduce((s, v) => s + v, 0) / werte.length : null;
+    const status = a.meta?.status ?? "offen";
+    const abw = mittel != null && planwert != null && planwert !== 0 ? (mittel - planwert) / Math.abs(planwert) : null;
+    const handlung: WiedervorlageRow["handlung"] =
+      !werte.length ? (status === "geprueft" ? "pruefen" : "belegen")
+      : abw != null && Math.abs(abw) > IST_TOLERANZ ? "abweichung"
+      : "bestaetigt";
+    rows.push({
+      key, label: a.label, category: assumptionCategory(key), unit: String(a.unit ?? ""),
+      planwert, status, confidence: a.meta?.confidence, owner: a.meta?.owner, quelle: a.meta?.source,
+      istAnzahl: werte.length, istMittel: mittel,
+      istMin: werte.length ? Math.min(...werte) : null,
+      istMax: werte.length ? Math.max(...werte) : null,
+      letzteMessung: ist.map((i) => i.erhobenAm ?? "").filter(Boolean).sort().slice(-1)[0],
+      abweichung: abw, handlung,
+    });
+  }
+  /* Sortierung nach Dringlichkeit: was nichts trägt, steht oben. Eine Wiedervorlage,
+   *  die alphabetisch sortiert ist, wird nicht abgearbeitet, sondern gescrollt. */
+  const rang = { belegen: 0, abweichung: 1, pruefen: 2, bestaetigt: 3 } as const;
+  return rows.sort((x, y) => rang[x.handlung] - rang[y.handlung]
+    || x.category.localeCompare(y.category) || x.label.localeCompare(y.label));
+}
+
+export type IstAbgleichRow = {
+  measureId: string;
+  fachbereich: Fachbereich | null;
+  bezug: "feld" | "schlag";
+  cropId: string;
+  massnahme: string;
+  /** Planwerte des Jahres: Flächen-Ziele und Kosten. */
+  planUeberfahrten: number;
+  planFlaecheHa: number;
+  planKostenCent: number;
+  /** Ist. `istFlaecheHa` ist die Summe der zurückgemeldeten Teilflächen. */
+  istAnzahl: number;
+  istFlaecheHa: number;
+  istUeberfahrten: number;
+  istKostenCent: number;
+  /** Schläge/Felder ohne Rückmeldung — der eigentliche Befund. */
+  offeneZiele: number;
+  ungeplant: boolean;
+};
+
+/**
+ * Plan ↔ Ist je Maßnahme für ein Planjahr.
+ *
+ * Ausgewertet wird gegen die ZIELE der Maßnahme, nicht gegen ihre Hektarzahl:
+ * „450 von 500 ha gespritzt" verdeckt, dass drei Schläge komplett ausgelassen
+ * wurden. Die Zahl, die zählt, ist die der Flächen ohne Rückmeldung.
+ */
+export function deriveIstAbgleich(domain: Domain, scenarioId: string, jahrIdx = 0): IstAbgleichRow[] {
+  const jahre = Math.max(1, domain.growth?.years ?? 1);
+  const jahr = Math.min(Math.max(0, Math.round(jahrIdx)), jahre - 1);
+  const kalenderjahr = START_YEAR + jahr;
+  const istJahr = (domain.istMassnahmen ?? []).filter((i) => i.erntejahr === undefined || i.erntejahr === kalenderjahr);
+  const istJeMeasure = new Map<string, IstMassnahme[]>();
+  for (const i of istJahr) {
+    const a = istJeMeasure.get(i.measureId) ?? []; a.push(i); istJeMeasure.set(i.measureId, a);
+  }
+
+  const rows: IstAbgleichRow[] = [];
+  const gesehen = new Set<string>();
+  for (const cropId of [...new Set(domain.anbauplan.map((a) => a.cropId))]) {
+    const calc = deriveCropMassnahmen(domain, cropId, scenarioId, jahr);
+    const schlaege = schlaegeOf(domain, cropId, jahr);
+    for (const r of calc.rows) {
+      gesehen.add(r.measureId);
+      const zielIds = r.bezug === "feld"
+        ? [...new Set(schlaege.map((s) => s.feldId))]
+        : schlaege.map((s) => s.id);
+      const ist = istJeMeasure.get(r.measureId) ?? [];
+      const gemeldet = new Set(ist.map((i) => (r.bezug === "feld" ? i.feldId : i.schlagId) ?? "").filter(Boolean));
+      rows.push({
+        measureId: r.measureId, fachbereich: r.fachbereich, bezug: r.bezug, cropId, massnahme: r.phase,
+        planUeberfahrten: r.passes,
+        planFlaecheHa: Math.round(schlaege.reduce((s, x) => s + x.areaHa, 0) * 10) / 10,
+        planKostenCent: Math.round(r.totalCent * schlaege.reduce((s, x) => s + x.areaHa, 0)),
+        istAnzahl: ist.length,
+        istFlaecheHa: Math.round(ist.reduce((s, i) => s + (i.areaHa ?? 0), 0) * 10) / 10,
+        istUeberfahrten: ist.reduce((s, i) => s + (i.ueberfahrten ?? 0), 0),
+        istKostenCent: ist.reduce((s, i) => s + (i.kostenCent ?? 0), 0),
+        offeneZiele: zielIds.filter((z) => !gemeldet.has(z)).length,
+        ungeplant: false,
+      });
+    }
+  }
+
+  /* Ist ohne Plan. Nicht wegwerfen: eine ausgeführte Maßnahme, die im Plan fehlt,
+   *  ist der interessantere Befund von beiden — sie zeigt, was der Plan nicht weiß. */
+  for (const [measureId, ist] of istJeMeasure) {
+    if (gesehen.has(measureId)) continue;
+    const p = parseMeasureId(measureId);
+    rows.push({
+      measureId, fachbereich: p?.fach ?? null, bezug: p ? BEZUG_JE_FACH[p.fach] : "schlag",
+      cropId: p?.cropId ?? "—", massnahme: ist[0]?.note ?? "(nicht im Plan)",
+      planUeberfahrten: 0, planFlaecheHa: 0, planKostenCent: 0,
+      istAnzahl: ist.length,
+      istFlaecheHa: Math.round(ist.reduce((s, i) => s + (i.areaHa ?? 0), 0) * 10) / 10,
+      istUeberfahrten: ist.reduce((s, i) => s + (i.ueberfahrten ?? 0), 0),
+      istKostenCent: ist.reduce((s, i) => s + (i.kostenCent ?? 0), 0),
+      offeneZiele: 0, ungeplant: true,
+    });
+  }
+  return rows;
 }
 
 /** Maschinen-Ist-Stunden/Jahr über alle Kulturen, die die Maschine nutzen (Referenz C). */
@@ -5951,33 +6325,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   /* FLAECHENIDENTITAET — Felder, Beregnungseinheiten, Schlaege.
    *  Vorlaeufig: Groesse und Lage sind geschaetzt, die IDs sind es nicht. Der
    *  Uebergang auf die echten Felder ist spaeter eine einmalige Zuordnungstabelle. */
-  const flaeche = (() => {
-    const areasMY = cropAreasMemo(domain).areas;
-    const jahre = Math.max(1, domain.growth?.years ?? 1);
-    /* Der Feldbestand umfasst die ROTATIONSFLAECHE, nicht nur die eigene.
-     *  Das ist der Punkt, den erst die Schlagsicht zeigt: wenn die Kartoffel nur
-     *  ueber NEOTERRAs eigene 3.834 ha rotiert, belegt sie dort 65 % und die
-     *  Vierjahrespause ist nicht einzuhalten — auch dann nicht, wenn der Anteil an
-     *  der abgestimmten Rotationsflaeche korrekt 25 % betraegt.
-     *  Die Fruchtfolge geht nur auf, wenn die Flaechen zwischen beiden Betrieben
-     *  jaehrlich WECHSELN: ein gemeinsamer Pool von 10.000 ha, in dem NEOTERRA
-     *  3.834 ha bewirtschaftet — aber nicht jedes Jahr dieselben.
-     *  Genau das ist der Inhalt der "engen Abstimmung" mit dem Partnerbetrieb. */
-    const maxHa = Math.max(...ROTATION_TOTAL_HA.slice(0, jahre));
-    const felder = buildFelder(maxHa);
-    const beregnungseinheiten = buildBeregnungseinheiten(felder);
-    const zweitnutzung = new Set(domain.anbauplan.filter((e) => e.zweitnutzung).map((e) => e.cropId));
-    const { schlaege } = buildSchlaege(felder, {
-      areas: areasMY, zweitnutzung, jahre,
-      wirtsgruppen: [
-        { id: "kartoffel", pauseYears: KARTOFFEL_PAUSE_JAHRE, cropIds: ["kartoffel_pommes", "kartoffel_chips"] },
-        { id: "alliaceen", pauseYears: 5, cropIds: ["knoblauch", "zwiebel_moehre"] },
-        { id: "apiaceen", pauseYears: 5, cropIds: ["knollensellerie", "zwiebel_moehre"] },
-        { id: "solanaceen", pauseYears: 4, cropIds: ["tomate"] },
-      ],
-    });
-    return { felder, beregnungseinheiten, schlaege };
-  })();
+  const flaeche = flaechenMemo(domain);
 
   const parcels: Parcel[] = domain.anbauplan.filter((a) => !a.zweitnutzung).map((a) => {
     const cat = domain.catalog.find((c) => c.cropId === a.cropId);

@@ -3,9 +3,10 @@ import React from "react";
 import { useModelStore } from "../../store/modelStore";
 import {
   deriveAssumptionRegister, readScenarioConst, setScenarioConst,
+  istWerteOf, flaechenMemo, START_YEAR, IST_TOLERANZ,
   type AssumptionRow, type Domain,
 } from "../../store/model";
-import type { AssumptionConfidence, AssumptionStatus } from "../../core/types";
+import type { AssumptionConfidence, AssumptionStatus, IstQuelle } from "../../core/types";
 import { fmtNumber } from "../../design/format";
 import { einheit } from "../../design/units";
 import { NumberInput, TextInput } from "./NumberInput";
@@ -212,6 +213,107 @@ function Zeile({ r, editor, aktiv, onSelect }: {
   );
 }
 
+/* ----------------------------------------------------------------- Ist-Werte */
+
+const IST_QUELLEN: IstQuelle[] = ["messung", "labor", "fms", "waage", "lieferschein", "schaetzung"];
+
+/**
+ * Die Ist-Seite einer Annahme.
+ *
+ * Von den 244 Ertragswirkungsfaktoren tragen 165 den Belegstatus ANNAHME. Sie sind
+ * gesetzt, nicht gemessen — und eine Wiedervorlage ist nur dann eine, wenn es einen
+ * Ort gibt, an dem die Messung ankommt. Das ist dieser Block.
+ *
+ * Der Messwert ERSETZT den Planwert NICHT. Ein Ertrag von 38 t/ha aus einem
+ * Hageljahr ist ein Datum, keine Planungsgrundlage. Er steht neben der Annahme,
+ * mit Abweichung und Herkunft; ob daraus ein neuer Planwert wird, entscheidet der
+ * Bearbeiter — über dasselbe Feld wie bisher, mit Audit-Eintrag.
+ */
+function IstBlock({ r, editor }: { r: AssumptionRow; editor: string }) {
+  const { domain, patch } = useModelStore();
+  const werte = istWerteOf(domain, r.key);
+  const felder = flaechenMemo(domain).felder;
+  const [neu, setNeu] = React.useState<{ wert: string; jahr: string; feldId: string; quelle: IstQuelle }>(
+    { wert: "", jahr: String(START_YEAR), feldId: "", quelle: "messung" });
+  const feld = "caption text-[9.5px] font-bold uppercase tracking-wide text-nx-text-muted";
+
+  const mittel = werte.length ? werte.reduce((s, i) => s + i.wert, 0) / werte.length : null;
+  const abw = mittel != null && r.value != null && r.value !== 0 ? (mittel - r.value) / Math.abs(r.value) : null;
+
+  const erfassen = () => {
+    const wert = Number(String(neu.wert).replace(",", "."));
+    if (!Number.isFinite(wert) || neu.wert.trim() === "") return;
+    patch((d) => {
+      d.istWerte = [...(d.istWerte ?? []), {
+        id: `ist-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+        key: r.key, wert, einheit: r.unit || undefined,
+        erntejahr: Number(neu.jahr) || undefined,
+        feldId: neu.feldId || undefined,
+        quelle: neu.quelle,
+        erhobenAm: new Date().toISOString(), erfasstVon: editor,
+      }];
+      logMeta(d, r.key, editor, t("Ist-Wert"), "", `${wert}${r.unit ? " " + r.unit : ""} (${neu.jahr}${neu.feldId ? ", " + neu.feldId : ""})`);
+    });
+    setNeu({ ...neu, wert: "", feldId: "" });
+  };
+  const loeschen = (id: string) => patch((d) => { d.istWerte = (d.istWerte ?? []).filter((i) => i.id !== id); });
+
+  const ampel = abw == null ? "var(--nx-text-muted)"
+    : Math.abs(abw) > IST_TOLERANZ ? "var(--nx-warning)" : "var(--nx-green)";
+
+  return (
+    <div className="border-t px-3 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
+      <div className="flex items-center justify-between">
+        <div className={feld}>{t("Ist-Werte")}</div>
+        <div className="num text-[10.5px]" style={{ color: ampel }}>
+          {werte.length === 0 ? t("keine Messung") : `${werte.length} × · Ø ${fmtNumber(mittel!, 2)}${abw == null ? "" : ` · ${abw > 0 ? "+" : ""}${fmtNumber(abw * 100, 0)} %`}`}
+        </div>
+      </div>
+
+      {werte.length > 0 && (
+        <div className="mt-1.5 max-h-[150px] space-y-1 overflow-y-auto">
+          {werte.map((i) => (
+            <div key={i.id} className="flex items-center justify-between gap-2 text-[10.5px] text-nx-text-muted">
+              <span className="truncate">
+                <b className="num text-nx-text">{fmtNumber(i.wert, 2)}</b> {i.einheit ?? ""} · {i.erntejahr ?? "—"}
+                {i.feldId ? ` · ${i.feldId}` : ""} · {t(i.quelle ?? "messung")}
+              </span>
+              <button className="shrink-0 text-nx-error hover:opacity-70" title={t("Messung entfernen")} onClick={() => loeschen(i.id)}>
+                <X size={11} strokeWidth={2.5} aria-hidden />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        <input value={neu.wert} onChange={(e) => setNeu({ ...neu, wert: e.target.value })}
+          placeholder={t("Wert")} className="num rounded-control border px-1.5 text-[11.5px]"
+          style={{ height: 26, width: 72, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)" }} />
+        <input value={neu.jahr} onChange={(e) => setNeu({ ...neu, jahr: e.target.value })}
+          placeholder={t("Jahr")} className="num rounded-control border px-1.5 text-[11.5px]"
+          style={{ height: 26, width: 56, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)" }} />
+        <select value={neu.feldId} onChange={(e) => setNeu({ ...neu, feldId: e.target.value })}
+          className="rounded-control border px-1 text-[11px]"
+          style={{ height: 26, width: 78, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)" }}>
+          <option value="">{t("Betrieb")}</option>
+          {felder.map((f) => <option key={f.id} value={f.id}>{f.nummer}</option>)}
+        </select>
+        <select value={neu.quelle} onChange={(e) => setNeu({ ...neu, quelle: e.target.value as IstQuelle })}
+          className="rounded-control border px-1 text-[11px]"
+          style={{ height: 26, width: 92, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)" }}>
+          {IST_QUELLEN.map((q) => <option key={q} value={q}>{t(q)}</option>)}
+        </select>
+        <button onClick={erfassen} className="rounded-control border px-2 text-[11px] font-semibold"
+          style={{ height: 26, borderColor: "var(--nx-border)", color: "var(--nx-locate)" }}>{t("erfassen")}</button>
+      </div>
+      <div className="mt-1 text-[9.5px] text-nx-text-muted">
+        {t("Ohne Feldbezug ist ein Messwert ein Betriebsdurchschnitt und belegt keinen Faktor.")}
+      </div>
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------- Detail-Panel */
 
 function Detail({ r, editor, onClose, onComment }: {
@@ -289,6 +391,8 @@ function Detail({ r, editor, onClose, onComment }: {
           <MessageSquare size={12} strokeWidth={2.5} aria-hidden />{t("Kommentare")}
         </button>
       </div>
+
+      <IstBlock r={r} editor={editor} />
 
       <div className="border-t px-3 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
         <div className={feld}>{t("Änderungshistorie")}</div>

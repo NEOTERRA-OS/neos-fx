@@ -750,6 +750,89 @@ export interface Schlag {
   areaHa: number;
 }
 
+/* --------------------------------------------------------------------------
+ * IST-DATEN — was tatsaechlich gemessen und ausgefuehrt wurde.
+ *
+ * Warum das ins Datenmodell gehoert und nicht in eine Nebenliste: von den 244
+ * Ertragswirkungsfaktoren tragen 165 den Belegstatus ANNAHME — zwei Drittel. Sie
+ * sind gesetzt, nicht gemessen. Eine Annahme mit Wiedervorlage ist nur dann eine
+ * Wiedervorlage, wenn es einen Ort gibt, an dem die Messung ankommt; sonst bleibt
+ * sie eine Absichtserklaerung. Genau dieser Ort fehlte.
+ *
+ * Zwei Arten, weil es zwei Fragen sind:
+ *
+ *   IstWert       Was ist herausgekommen? Ertrag, Naehrstoffgehalt, Wassergabe,
+ *                 Marktpreis — gegen eine ANNAHME (`Assumption.key`) gehalten.
+ *                 Das ist die Rueckmeldung an das Modell.
+ *
+ *   IstMassnahme  Was wurde getan? Datum, Menge, Mittel, Ueberfahrten — gegen
+ *                 eine geplante Massnahme (`measureId`) gehalten. Das ist die
+ *                 Rueckmeldung an den Plan.
+ *
+ * Beide tragen Ort (Feld/Schlag) und Zeit. Ohne den Ort ist ein Ist-Wert nicht
+ * mehr als ein Betriebsdurchschnitt und taugt nicht, um einen Faktor zu belegen:
+ * ein Ertrag von 52 t/ha sagt nichts, solange nicht feststeht, auf welchem Boden,
+ * mit welcher Sorte und unter welcher Beregnung er entstanden ist.
+ * ------------------------------------------------------------------------ */
+
+/** Herkunft eines Ist-Werts. `messung` ist die einzige Stufe, die eine ANNAHME ablöst. */
+export type IstQuelle = 'messung' | 'labor' | 'fms' | 'waage' | 'lieferschein' | 'schaetzung';
+
+/** Eine Ist-Beobachtung zu einer Annahme (Ertrag, Gehalt, Preis, Wassergabe …). */
+export interface IstWert {
+  id: UUID;
+  /** Schluessel der Annahme, gegen die gemessen wird — z. B. `yield.kartoffel_pommes`. */
+  key: string;
+  wert: number;
+  /** Einheit der Messung. Weicht sie von der Einheit der Annahme ab, ist der Wert
+   *  NICHT vergleichbar — deshalb wird sie mitgefuehrt und nicht unterstellt. */
+  einheit?: string;
+  /** Erntejahr als Kalenderjahr (nicht Planjahr-Index): ein Messwert ueberlebt
+   *  jede Verschiebung des Modellstarts. */
+  erntejahr?: number;
+  feldId?: string;
+  schlagId?: string;
+  cropId?: string;
+  sorte?: string;
+  quelle?: IstQuelle;
+  /** Belegstelle: Laborbericht, Waagezettel, FMS-Export. */
+  beleg?: string;
+  erhobenAm?: string;       // ISO
+  erfasstVon?: string;
+  note?: string;
+}
+
+/** Eine ausgefuehrte Massnahme — die Ist-Seite des Massnahmenplans. */
+export interface IstMassnahme {
+  id: UUID;
+  /** Geplante Massnahme, auf die gebucht wird. Positionsfreie ID
+   *  (`<cropId>.<FACHBEREICH>.<SLUG>`), siehe `store/measureId.ts`. */
+  measureId: string;
+  /** Ort. Bei Fachbereichen mit Feldbezug reicht `feldId`; Ernte und Aussaat
+   *  brauchen den Schlag, weil sie sortenscharf sind. */
+  schlagId?: string;
+  feldId?: string;
+  /** Kalenderjahr der Ausfuehrung. */
+  erntejahr?: number;
+  datum?: string;           // ISO
+  /** Tatsaechlich behandelte Flaeche — sie weicht regelmaessig von der Planflaeche
+   *  ab (Vorgewende, Teilflaechen, Abbruch wegen Wetter). */
+  areaHa?: number;
+  menge?: number;
+  einheit?: string;
+  ueberfahrten?: number;
+  kostenCent?: Money;
+  productId?: string;
+  quelle?: IstQuelle;
+  beleg?: string;
+  erfasstVon?: string;
+  note?: string;
+  /** Ausgefuehrt, aber nicht geplant. Bewusst erlaubt: eine zusaetzliche
+   *  Krautfaeule-Spritzung nach Regenperiode ist keine Fehlbuchung, sondern die
+   *  Wirklichkeit — und genau die Abweichung, die der Plan lernen muss. */
+  ungeplant?: boolean;
+}
+
 /** Eine Eigenkapitalzufuehrung in einer bestimmten Periode. */
 export interface EquityInjection {
   /** Periodenindex (0-basiert). */
