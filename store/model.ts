@@ -805,7 +805,7 @@ function asRecord(list: Assumption[]): Record<string, Assumption> {
  *  START_YEAR + y; UI-Ansichten importieren START_YEAR statt eigener Konstanten.
  * ------------------------------------------------------------------------ */
 export const START_YEAR = 2027;
-const N_YEARS = 8;
+const N_YEARS = 9;   // 2027-2035 — der Zielhorizont endet mit 2.500 ha Kartoffel
 const N = N_YEARS * 12;
 const DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const pad2 = (x: number) => (x < 10 ? `0${x}` : `${x}`);
@@ -830,16 +830,32 @@ const MONTH_END: string[] = Array.from({ length: N }, (_, i) => {
  *  Knoblauch              0    20    30    40    50    50    50    50
  *  Σ Spezialkulturen    300   670 1.210 1.700 2.190 2.334 2.334 2.334
  */
+/* ZIELBILD 2035 — 2.500 ha Kartoffel (Vorgabe Betrieb 03.08.2026).
+ *
+ * Die Aufteilung folgt der Abnahme, nicht der Fläche: **50.000 t Chips, der Rest
+ * Pommes.** Bei 42 t/ha Chips sind das 1.190 ha; die verbleibenden 1.310 ha gehen
+ * in die Pommesschiene und liefern bei 50 t/ha rund 65.500 t. Zusammen 2.500 ha
+ * und rund 115.500 t.
+ *
+ * Der Hochlauf 2032-2035 ist bewusst gleichmäßig: die Rotationsfläche muss
+ * mitwachsen (4 × Kartoffel = 10.000 ha in 2035), und die wird mit dem
+ * Partnerbetrieb abgestimmt — ein Sprung ließe sich dort nicht abbilden.
+ *
+ * Die übrigen Wertkulturen wachsen NICHT mit. Sie hängen an Absatzdeckeln
+ * (Zwiebel/Möhre 60.000 t, Sellerie 22.000 t) bzw. an der Werkskapazität
+ * (Tomate 667 ha) und bleiben ab 2032 auf ihrem Niveau. Der Zuwachs bis 2035
+ * ist damit vollständig Kartoffel.
+ *                    2027  2028  2029  2030  2031  2032  2033  2034  2035 */
 export const SKALIERUNG_HA: Record<string, number[]> = {
-  kartoffel_pommes: [150, 225, 300, 400, 500, 500, 500, 500],
-  kartoffel_chips:  [150, 225, 300, 400, 500, 500, 500, 500],
+  kartoffel_pommes: [150, 225, 300, 400, 500,  700,  900, 1100, 1310],
+  kartoffel_chips:  [150, 225, 300, 400, 500,  650,  800,  980, 1190],
   // 2028 auf 50 ha begrenzt (Benedikt 31.07.2026: "50 ha gehen") — Pilotjahr für die
   //  Industrietomate, erst danach der Hochlauf auf die Werkskapazität.
-  tomate:           [  0,  50, 300, 450, 600, 667, 667, 667],
-  zwiebel_moehre:   [  0, 100, 200, 300, 400, 467, 467, 467],
-  knollensellerie:  [  0,  30,  50,  70,  90, 100, 100, 100],
-  suesskartoffel:   [  0,  20,  30,  40,  50,  50,  50,  50],
-  knoblauch:        [  0,  20,  30,  40,  50,  50,  50,  50],
+  tomate:           [  0,  50, 300, 450, 600,  667,  667,  667,  667],
+  zwiebel_moehre:   [  0, 100, 200, 300, 400,  467,  467,  467,  467],
+  knollensellerie:  [  0,  30,  50,  70,  90,  100,  100,  100,  100],
+  suesskartoffel:   [  0,  20,  30,  40,  50,   50,   50,   50,   50],
+  knoblauch:        [  0,  20,  30,  40,  50,   50,   50,   50,   50],
 };
 
 /** Skalierungspfad → CropPolicy-Eintrag je Kultur (mit Stufen-Skalierung). */
