@@ -1539,11 +1539,16 @@ function computeDebtSchedule(state: ModelState, chain: UUID[], n: number, ppy: n
     const payPerYear = Math.max(1, Math.min(rawPayPerYear, ppy));
     const interval = Math.max(1, Math.round(ppy / payPerYear)); // Modellperioden je Rate
     const nPay = Math.max(1, Math.round((t.termMonths / 12) * payPerYear));
-    const r = annualRate(t.drawPeriod) / payPerYear; // Periodenzins je Rate (fix genähert)
+    /** Periodenzins je Rate — PERIODENSCHARF, nicht zum Ziehungszeitpunkt eingefroren.
+     *  Vorher las diese Zeile den Satz einmal beim Abruf und hielt ihn über die gesamte
+     *  Laufzeit ("fix genähert"), während der Revolver daneben periodenscharf rechnete.
+     *  Eine Zinssensitivität wirkte damit nur auf den Revolver — das Modell sah gegen
+     *  Zinsänderungen weit robuster aus, als das Unternehmen es ist.
+     *  Bei `fixed` und bei konstanter Referenzkurve ist das Ergebnis identisch zu vorher;
+     *  der Unterschied zeigt sich erst unter einer Zinskurve, also genau dort, wo er hin soll. */
+    const rAt = (p: number) => annualRate(p) / payPerYear;
+    const r = rAt(t.drawPeriod); // Satz bei Ziehung — bestimmt die Form der Annuität
 
-    const disc = Math.pow(1 + r, -nPay);
-    const pmt =
-      r > 0 ? (financed - residual * disc) * r / (1 - disc) : (financed - residual) / nPay;
     const linPrin = (financed - residual) / nPay;
 
     let outstanding = 0;
@@ -1562,11 +1567,22 @@ function computeDebtSchedule(state: ModelState, chain: UUID[], n: number, ppy: n
         avansOut[p] += avans;
       }
       if (isDue(p) && paymentsMade < nPay && outstanding > residual + 1e-6) {
-        const zins = outstanding * r;
+        const rp = rAt(p);                 // Satz DIESER Periode
+        const zins = outstanding * rp;
         let tilg: number;
         if (t.repayment === 'linear') tilg = linPrin;
         else if (t.repayment === 'bullet') tilg = paymentsMade === nPay - 1 ? outstanding - residual : 0;
-        else tilg = pmt - zins; // annuity
+        else {
+          // Annuität mit Zinsanpassung: die Rate wird bei geändertem Satz auf die
+          // Restlaufzeit neu gestellt — so machen es Banken auch. Bei konstantem
+          // Satz ist pmtT identisch mit pmt, die Reihe also unverändert.
+          const rest = nPay - paymentsMade;
+          const dq = Math.pow(1 + rp, -rest);
+          const pmtT = rp > 0
+            ? (outstanding - residual * dq) * rp / (1 - dq)
+            : (outstanding - residual) / Math.max(1, rest);
+          tilg = pmtT - zins;
+        }
         tilg = Math.min(Math.max(0, tilg), outstanding - residual);
         interest[p] += zins;
         repayments[p] += tilg;
@@ -1635,6 +1651,87 @@ export function computeFinancingSchedule(
     rows,
     totalInterest,
     totalPaid,
+  };
+}
+
+/* --------------------------------------------------------------------------
+ * Verlustvortrag (RO Art. 31 Cod fiscal i.d.F. Legea 296/2023)
+ * ------------------------------------------------------------------------ */
+
+export interface LossCarryOptions {
+  /** Vortrag zulassen. */
+  enabled: boolean;
+  /** Vortragsdauer in Jahren. RO seit Legea 296/2023: fuenf statt sieben. */
+  years: number;
+  /** Anteil der Jahresbemessung, der hoechstens verrechnet werden darf. RO: 0,7. */
+  maxOffsetShare: number;
+}
+
+export interface LossCarryResult {
+  /** Bemessung je Jahr NACH Verrechnung (nie negativ). */
+  baseAfterOffset: number[];
+  /** Je Jahr tatsaechlich verrechneter Betrag. */
+  offsetPerYear: number[];
+  /** Summe der Verluste, die ungenutzt verfallen sind. */
+  expired: number;
+  /** Summe der am Ende des Horizonts noch offenen Verluste. */
+  open: number;
+}
+
+/**
+ * Verlustvortrag mit Verfall — als eigenstaendige, pruefbare Funktion.
+ *
+ * Zwei Regeln gelten zusammen, und vorher war nur eine umgesetzt:
+ *   a) Verrechnung hoechstens 70 % der Jahresbemessung   — war richtig
+ *   b) Vortrag hoechstens fuenf aufeinanderfolgende Jahre — fehlte
+ *
+ * Ohne (b) verrechnete das Modell ueber den Horizont 2027-2034 im Jahr 2034 noch
+ * Verluste aus 2027. Das ist zu wenig Steuer und zu viel ausgewiesene Liquiditaet,
+ * ausgerechnet in den Jahren, in denen Darlehen endfaellig werden.
+ *
+ * Verrechnet wird FIFO — der aelteste Verlust zuerst. Andernfalls verfaellt ein
+ * alter Verlust, waehrend ein juengerer verrechnet wird, und das waere teurer als
+ * noetig.
+ */
+export function applyLossCarryforward(
+  taxablePerYear: number[],
+  opt: LossCarryOptions,
+): LossCarryResult {
+  const baseAfterOffset: number[] = [];
+  const offsetPerYear: number[] = [];
+  const pool: { year: number; amount: number }[] = [];
+  let expired = 0;
+
+  for (let y = 0; y < taxablePerYear.length; y++) {
+    const taxableYr = taxablePerYear[y];
+    // Verfall VOR der Verrechnung: was aelter als `years` ist, ist weg.
+    while (pool.length && y - pool[0].year > opt.years) {
+      expired += pool[0].amount;
+      pool.shift();
+    }
+    if (taxableYr <= 0) {
+      if (opt.enabled && taxableYr < 0) pool.push({ year: y, amount: -taxableYr });
+      baseAfterOffset.push(0);
+      offsetPerYear.push(0);
+      continue;
+    }
+    let offset = 0;
+    if (opt.enabled) {
+      let room = taxableYr * opt.maxOffsetShare;
+      while (pool.length && room > 1e-9) {
+        const take = Math.min(pool[0].amount, room);
+        pool[0].amount -= take; room -= take; offset += take;
+        if (pool[0].amount <= 1e-6) pool.shift();
+      }
+    }
+    baseAfterOffset.push(taxableYr - offset);
+    offsetPerYear.push(offset);
+  }
+  return {
+    baseAfterOffset,
+    offsetPerYear,
+    expired,
+    open: pool.reduce((s, e) => s + e.amount, 0),
   };
 }
 
@@ -1724,24 +1821,47 @@ export function computeModel(
    *  Monat isoliert besteuert wird); (2) Verlustvortrag über Jahresgrenzen (RO Art. 31: Verrechnung
    *  max. 70 % der Jahresbemessung); (3) Reinvestitions-Befreiung auf die Bemessung NACH Verlust-
    *  abzug. Zahllast anteilig auf Monate mit positiver Bemessung verteilt (Vorauszahlungs-Timing). */
+  // Diagnose: was ist ungenutzt verfallen, was steht noch offen. Beides gehört
+  // sichtbar gemacht — ein verfallener Verlustvortrag ist bares Geld.
+  let lossCarryExpired = 0;
+  let lossCarryOpen = 0;
   const annualCurrentTax = (taxableArr: number[]): number[] => {
     const out = zeros(n);
     const carryEnabled = state.tax.lossCarryforward !== false;
-    let lossCarry = 0;
+    /** Verlustvortrag mit VERFALL. Legea 296/2023 hat Art. 31 Cod fiscal in zwei
+     *  Richtungen geaendert: die Verrechnung ist auf 70 % der Jahresbemessung
+     *  begrenzt (war hier schon richtig), UND der Vortrag laeuft nur noch fuenf
+     *  aufeinanderfolgende Jahre statt sieben (fehlte). Ueber den Horizont
+     *  2027-2034 ist das kein Randfall: ein Verlust aus 2027 ist nach 2032
+     *  verfallen, das Modell verrechnete ihn bis dahin noch 2034 — also zu wenig
+     *  Steuer und zu viel ausgewiesene Liquiditaet in genau den Jahren, in denen
+     *  Darlehen endfaellig werden.
+     *  Verrechnet wird FIFO: der aelteste Verlust zuerst, sonst verfaellt er,
+     *  waehrend ein juengerer verrechnet wird. */
+    const jahre: number[] = [];
+    const qual: number[] = [];
+    const grenzen: [number, number][] = [];
     for (let y = 0; y * ppy < n; y++) {
       const a = y * ppy, b = Math.min(n, a + ppy);
-      let taxableYr = 0, qualYr = 0, posSum = 0;
-      for (let i = a; i < b; i++) { taxableYr += taxableArr[i]; qualYr += reinvestByPeriod[i]; posSum += Math.max(0, taxableArr[i]); }
-      let taxYr = 0;
-      if (taxableYr <= 0) {
-        if (carryEnabled) lossCarry += -taxableYr;
-      } else {
-        const offset = carryEnabled ? Math.min(lossCarry, taxableYr * 0.7) : 0;
-        lossCarry -= offset;
-        let base = taxableYr - offset;
-        if (reinvestOn) base = Math.max(0, base - Math.min(base, qualYr));
-        taxYr = base * (taxRate[a] ?? 0);
-      }
+      let taxableYr = 0, qualYr = 0;
+      for (let i = a; i < b; i++) { taxableYr += taxableArr[i]; qualYr += reinvestByPeriod[i]; }
+      jahre.push(taxableYr); qual.push(qualYr); grenzen.push([a, b]);
+    }
+    const vt = applyLossCarryforward(jahre, {
+      enabled: carryEnabled,
+      years: state.tax.lossCarryforwardYears ?? 5,
+      maxOffsetShare: 0.7,
+    });
+    lossCarryExpired = vt.expired;
+    lossCarryOpen = vt.open;
+
+    for (let y = 0; y < jahre.length; y++) {
+      const [a, b] = grenzen[y];
+      let posSum = 0;
+      for (let i = a; i < b; i++) posSum += Math.max(0, taxableArr[i]);
+      let base = vt.baseAfterOffset[y];
+      if (reinvestOn && base > 0) base = Math.max(0, base - Math.min(base, qual[y]));
+      const taxYr = base > 0 ? base * (taxRate[a] ?? 0) : 0;
       if (taxYr > 0 && posSum > 0) { for (let i = a; i < b; i++) out[i] = taxYr * Math.max(0, taxableArr[i]) / posSum; }
       else if (taxYr > 0) out[b - 1] = taxYr;
     }
@@ -1764,9 +1884,14 @@ export function computeModel(
   const minCash = state.revolver.minCashTarget ?? 0;
   const openingCash = state.openingBalance?.cash ?? 0;
 
-  for (let it = 0; it < maxIter; it++) {
-    iterations = it + 1;
-    const interestTotal = addArr(addArr(debt.interest, revolverInterest), workingCapital.advanceCost);
+  /** Ein Durchgang der Fixpunktschleife. Bewusst als Funktion, damit es **eine**
+   *  Formel je Groesse gibt. Vorher stand die CFO-Formel zweimal im Code — einmal
+   *  hier, einmal beim Zusammensetzen der Statements — und die beiden Fassungen
+   *  waren bereits auseinandergelaufen (die Statement-Fassung kannte den
+   *  fvBio-Term nicht). Solange fvBio null ist, faellt das nicht auf; sobald
+   *  IAS 41 implementiert wird, sofort. */
+  const iterate = (revInterestIn: number[]) => {
+    const interestTotal = addArr(addArr(debt.interest, revInterestIn), workingCapital.advanceCost);
     const pbt = subArr(ebit, interestTotal);              // bilanzielles Ergebnis v. St.
     const taxableFiscal = subArr(ebitFiscal, interestTotal); // steuerliche Bemessung
     // Zahlungswirksame Steuer: JAHRES-Bemessung + Verlustvortrag + Reinvestitions-Befreiung.
@@ -1776,31 +1901,37 @@ export function computeModel(
     // NI = bilanzielles EBT − (zahlungswirksame + latente Steuer)
     const netIncome = subArr(pbt, addArr(currentTax, deferredTax));
 
-    // CFO = NI + bilanz. Abschreibung + latente Steuer (nicht zahlungswirksam)
-    //       − FV(Bio) − ΔWC   (latente Steuer wird zurückaddiert)
-    const cfo = subArr(
-      addArr(addArr(addArr(netIncome, depCommercial), deferredTax), scaleArr(fvBio, -1)),
-      addArr(wcChange, disposalGainLoss), // Buchgewinn/-verlust raus (Cash steckt im CFI-Erlös)
+    /** CFO = NI + bilanz. AfA + latente Steuer − FV(Bio) − ΔWC + USt-Timing.
+     *  Die USt gehoert HIER hinein und nicht in eine eigene vierte Kategorie.
+     *  Vorher lief sie ausserhalb von CFO/CFI/CFF direkt in die Kasse — mit dem
+     *  Ergebnis, dass sich die drei ausgewiesenen Bloecke NICHT auf den
+     *  ausgewiesenen Netto-Cashflow summierten. Genau diese Probe rechnet ein
+     *  Finanzierer als erste nach. Sachlich ist die USt ein Zahlungszeitpunkt-
+     *  Effekt auf operative Vorgaenge, also operativer Cashflow. */
+    const cfo = addArr(
+      subArr(
+        addArr(addArr(addArr(netIncome, depCommercial), deferredTax), scaleArr(fvBio, -1)),
+        addArr(wcChange, disposalGainLoss), // Buchgewinn/-verlust raus (Cash steckt im CFI-Erlös)
+      ),
+      vat.vatCashFlow,
     );
     // CFI = −CapEx + Verkaufserlöse aus Ausmusterung
     const cfi = addArr(scaleArr(capexOut, -1), disposalProceeds);
     // CFF ohne Revolver = Drawdowns − Tilgung − Restwert-Ballon
     const cffExRevolver = subArr(subArr(debt.drawdowns, debt.repayments), debt.balloon);
 
-    // Cash vor Revolver, kumuliert:
-    const newRevBalance = zeros(n);
-    const newRevInterest = zeros(n);
-    const newRevMovement = zeros(n);
-    const newClosingCash = zeros(n);
+    const revBalance = zeros(n);
+    const revInterest = zeros(n);
+    const revMovement = zeros(n);
+    const cash = zeros(n);
 
     let prevCash = openingCash;
     let prevRev = 0;
     for (let p = 0; p < n; p++) {
-      const revInt = round(prevRev * revRateAt(p));
-      newRevInterest[p] = revInt; // fließt in NI der nächsten Iteration ein
+      revInterest[p] = round(prevRev * revRateAt(p)); // fließt in NI der nächsten Iteration
       // Revolver-Zins NICHT separat abziehen: er steckt bereits im Jahresüber-
       // schuss (netIncome -> cfo) und würde sonst doppelt zählen.
-      const preCash = prevCash + cfo[p] + cfi[p] + cffExRevolver[p] + vat.vatCashFlow[p];
+      const preCash = prevCash + cfo[p] + cfi[p] + cffExRevolver[p];
       let draw = 0;
       let repay = 0;
       if (preCash < minCash) {
@@ -1809,33 +1940,37 @@ export function computeModel(
         repay = Math.min(prevRev, preCash - minCash);
       }
       const rev = prevRev + draw - repay;
-      newRevMovement[p] = draw - repay;
-      newRevBalance[p] = rev;
-      newClosingCash[p] = preCash + draw - repay;
-      prevCash = newClosingCash[p];
+      revMovement[p] = draw - repay;
+      revBalance[p] = rev;
+      cash[p] = preCash + draw - repay;
+      prevCash = cash[p];
       prevRev = rev;
     }
+    return { interestTotal, pbt, currentTax, deferredTax, netIncome,
+             cfo, cfi, cffExRevolver, revBalance, revInterest, revMovement, cash };
+  };
 
-    // Konvergenzprüfung gegen letzte Iteration
-    const delta = newRevBalance.reduce((m, v, i) => Math.max(m, Math.abs(v - revolverBalance[i])), 0);
-    revolverBalance = newRevBalance;
-    revolverInterest = newRevInterest;
-    revolverMovement = newRevMovement;
-    closingCash = newClosingCash;
-    if (delta <= eps) {
-      converged = true;
-      break;
-    }
+  let res = iterate(revolverInterest);
+  for (let it = 0; it < maxIter; it++) {
+    iterations = it + 1;
+    const delta = res.revBalance.reduce((m, v, i) => Math.max(m, Math.abs(v - revolverBalance[i])), 0);
+    revolverBalance = res.revBalance;
+    if (delta <= eps) { converged = true; break; }
+    res = iterate(res.revInterest);
   }
+  revolverInterest = res.revInterest;
+  revolverMovement = res.revMovement;
+  closingCash = res.cash;
 
   // --- 6) Statements zusammensetzen ----------------------------------------
-  const interestTotal = addArr(addArr(debt.interest, revolverInterest), workingCapital.advanceCost);
-  const pbt = subArr(ebit, interestTotal);
-  const taxableFiscal = subArr(ebitFiscal, interestTotal);
-  const currentTax = annualCurrentTax(taxableFiscal);
-  const deferredTax = depFiscal.map((df, i) => (df - depCommercial[i]) * taxRate[i]);
+  /** Die Werte kommen aus DEMSELBEN Durchgang, der auch die Kasse erzeugt hat.
+   *  Vorher wurden Ergebnis und Steuer nach dem Schleifenende noch einmal neu
+   *  gerechnet — mit dem frischen Revolverzins, waehrend closingCash noch auf dem
+   *  vorherigen beruhte. Der Bilanz-Check verglich damit eine Aktiv- und eine
+   *  Passivseite aus zwei verschiedenen Zinsstaenden. Bei Konvergenz lag die
+   *  Differenz unter der Toleranz und war unsichtbar; bei Nichtkonvergenz nicht. */
+  const { interestTotal, pbt, currentTax, deferredTax, netIncome, cfo, cfi, cffExRevolver } = res;
   const totalTax = addArr(currentTax, deferredTax);
-  const netIncome = subArr(pbt, totalTax);
 
   // Retained Earnings Rollforward
   const retainedEarnings = zeros(n);
@@ -1903,6 +2038,30 @@ export function computeModel(
 
   const negCash = closingCash.map((v) => (v < 0 ? -v : 0));
   checks.push(buildCheck('no_negative_cash', 'Keine negative Kasse', negCash, 0, 'error'));
+
+  /** Die Probe, die ein Finanzierer als erste rechnet:
+   *      CFO + CFI + CFF + Anfangsbestand  ==  Endbestand
+   *  Sie schlug vorher fehl, weil das USt-Timing ausserhalb der drei Bloecke direkt
+   *  in die Kasse lief. Seit die USt im operativen Cashflow steckt, geht sie auf —
+   *  und der Check sorgt dafuer, dass sie es bleibt. */
+  const cffTotal = addArr(cffExRevolver, revolverMovement);
+  const cfTie = closingCash.map((v, i) => {
+    const prev = i === 0 ? openingCash : closingCash[i - 1];
+    return v - (prev + cfo[i] + cfi[i] + cffTotal[i]);
+  });
+  checks.push(buildCheck('cashflow_ties', 'Kapitalflussrechnung geht auf (CFO+CFI+CFF = ΔKasse)', cfTie, eps, 'error'));
+
+  /** Verfallener Verlustvortrag. Kein Fehler — eine Tatsache, die man kennen will:
+   *  jeder verfallene Euro ist Steuerschild, das nie genutzt wurde. Wer das sieht,
+   *  kann Investitionen oder Ergebnisse zeitlich anders legen. */
+  checks.push({
+    id: 'loss_carry_expired',
+    label: `Verlustvortrag ungenutzt verfallen (${state.tax.lossCarryforwardYears ?? 5}-Jahres-Frist, RO Art. 31)`,
+    passed: lossCarryExpired <= eps,
+    maxDeviation: lossCarryExpired,
+    offendingPeriods: [],
+    severity: 'warning',
+  });
 
   const reCheck = retainedEarnings.map((v, i) => {
     const prev = i === 0 ? (state.openingBalance?.retainedEarnings ?? 0) : retainedEarnings[i - 1];
@@ -2102,19 +2261,20 @@ export function computeModel(
       customerAdvanceMovement: makeLine('cf.advance', 'davon: Anzahlungen Abnehmer (Zufluss/Verrechnung)', 'money', workingCapital.advanceMovement),
       bioAssetMovement: makeLine('cf.bio', 'davon: Aufbau/Auflösung Feldbestand', 'money',
         bioAssets.map((v, i) => v - (i === 0 ? 0 : bioAssets[i - 1]))),
-      cfo: makeLine('cf.cfo', 'Operativer Cashflow', 'money',
-        subArr(addArr(addArr(netIncome, depCommercial), deferredTax), addArr(wcChange, disposalGainLoss))),
+      // EINE Formel: dieselbe Reihe, die auch die Kasse erzeugt hat (s. iterate()).
+      cfo: makeLine('cf.cfo', 'Operativer Cashflow', 'money', cfo),
       capex: makeLine('cf.capex', '− CapEx', 'money', scaleArr(capexOut, -1)),
-      cfi: makeLine('cf.cfi', 'Investiver Cashflow', 'money', addArr(scaleArr(capexOut, -1), disposalProceeds)),
+      cfi: makeLine('cf.cfi', 'Investiver Cashflow', 'money', cfi),
       disposalProceeds: makeLine('cf.disposal', '+ Verkaufserlös Ausmusterung', 'money', disposalProceeds),
       debtDrawdowns: makeLine('cf.draw', 'Kreditaufnahme', 'money', debt.drawdowns),
       debtRepayments: makeLine('cf.repay', 'Tilgung', 'money', scaleArr(debt.repayments, -1)),
       revolverMovement: makeLine('cf.revolver', 'Revolver-Bewegung', 'money', revolverMovement),
       equityMovement: makeLine('cf.equity', 'Eigenkapitalbewegung', 'money', zeros(n)),
       interestPaid: makeLine('cf.interest', 'Gezahlte Zinsen', 'money', scaleArr(interestTotal, -1)),
-      vatCashFlow: makeLine('cf.vat', 'USt/TVA-Timing (Vorsteuer/Zahllast/Erstattung)', 'money', vat.vatCashFlow),
+      // Nachrichtlich („davon"): steckt bereits im operativen Cashflow — nicht zusätzlich addieren.
+      vatCashFlow: makeLine('cf.vat', 'davon: USt/TVA-Timing (Vorsteuer/Zahllast/Erstattung)', 'money', vat.vatCashFlow),
       cff: makeLine('cf.cff', 'Finanzierungs-Cashflow', 'money',
-        addArr(subArr(subArr(debt.drawdowns, debt.repayments), debt.balloon), revolverMovement)),
+        addArr(cffExRevolver, revolverMovement)),
       netCashFlow: makeLine('cf.net', 'Netto-Cashflow', 'money',
         closingCash.map((v, i) => v - (i === 0 ? openingCash : closingCash[i - 1]))),
       closingCash: makeLine('cf.closing', 'Endbestand Kasse', 'money', closingCash),

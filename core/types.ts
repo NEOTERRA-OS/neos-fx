@@ -457,6 +457,10 @@ export interface TaxPolicy {
   corporateTaxRateKey: string;        // Assumption-Key, Rate
   /** Verlustvortrag zulassen. */
   lossCarryforward: boolean;
+  /** Vortragsdauer in Jahren. RO seit Legea 296/2023: fuenf aufeinanderfolgende
+   *  Jahre (vorher sieben), zusaetzlich zur 70-%-Grenze je Jahr. Fehlt der Wert,
+   *  gilt 5 — das ist die geltende Rechtslage, nicht 'unbegrenzt'. */
+  lossCarryforwardYears?: number;
 }
 
 /** USt-/TVA-Behandlung eines Umsatzstroms (RO Cod Fiscal). */
