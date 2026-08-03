@@ -683,8 +683,24 @@ export interface ModelState {
    *  vorgehalten wird. Fehlt der Wert, gilt die Summe der cropPlans. */
   rotationAreaHa?: number;
 
+  /** Eigenkapitalzufuehrungen (Investor, Gesellschaftereinlage, Kapitalerhoehung).
+   *  Bis 03.08.2026 gab es das nicht: `cf.equity` stand fest auf null und
+   *  `shareCapital` war ueber alle Perioden konstant. Ein Investorenszenario liess
+   *  sich damit ueberhaupt nicht rechnen — jede Finanzierungsluecke fiel dem
+   *  Revolver zu, egal wieviel Eigenkapital in Wahrheit hereinkaeme. */
+  equityInjections?: EquityInjection[];
+
   /** Eröffnungsbilanz (Periode -1), damit die Bilanz einen Startpunkt hat. */
   openingBalance: OpeningBalance;
+}
+
+/** Eine Eigenkapitalzufuehrung in einer bestimmten Periode. */
+export interface EquityInjection {
+  /** Periodenindex (0-basiert). */
+  period: PeriodIndex;
+  /** Betrag in CENT. Negativ = Ausschuettung/Kapitalherabsetzung. */
+  amountCent: Money;
+  label?: string;
 }
 
 /** Eine Wirtsgruppe mit gemeinsamer Anbaupause. */

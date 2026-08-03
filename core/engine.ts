@@ -1884,6 +1884,14 @@ export function computeModel(
   const minCash = state.revolver.minCashTarget ?? 0;
   const openingCash = state.openingBalance?.cash ?? 0;
 
+  /** Eigenkapitalzufuehrungen je Periode. Sie wirken wie Kreditaufnahmen auf die
+   *  Kasse, aber ohne Zins und ohne Tilgung — und sie erhoehen das gezeichnete
+   *  Kapital statt der Verbindlichkeiten. */
+  const equityIn = zeros(n);
+  for (const e of state.equityInjections ?? []) {
+    if (e.period >= 0 && e.period < n) equityIn[e.period] += e.amountCent;
+  }
+
   /** Ein Durchgang der Fixpunktschleife. Bewusst als Funktion, damit es **eine**
    *  Formel je Groesse gibt. Vorher stand die CFO-Formel zweimal im Code — einmal
    *  hier, einmal beim Zusammensetzen der Statements — und die beiden Fassungen
@@ -1918,7 +1926,7 @@ export function computeModel(
     // CFI = −CapEx + Verkaufserlöse aus Ausmusterung
     const cfi = addArr(scaleArr(capexOut, -1), disposalProceeds);
     // CFF ohne Revolver = Drawdowns − Tilgung − Restwert-Ballon
-    const cffExRevolver = subArr(subArr(debt.drawdowns, debt.repayments), debt.balloon);
+    const cffExRevolver = addArr(subArr(subArr(debt.drawdowns, debt.repayments), debt.balloon), equityIn);
 
     const revBalance = zeros(n);
     const revInterest = zeros(n);
@@ -2016,7 +2024,11 @@ export function computeModel(
   // Aktivierung zahlungsneutral bleibt: der höhere Jahresüberschuss vor der Ernte wird
   // durch die Bestandsbildung im ΔWC genau ausgeglichen.
   const bioAssets = workingCapital.bioAssets;
-  const shareCapital = new Array(n).fill(state.openingBalance?.shareCapital ?? 0);
+  const shareCapital = zeros(n);
+  {
+    let sc = state.openingBalance?.shareCapital ?? 0;
+    for (let p = 0; p < n; p++) { sc += equityIn[p]; shareCapital[p] = sc; }
+  }
 
   const totalAssets = addArr(
     addArr(addArr(addArr(closingCash, receivables), addArr(inventory, bioAssets)),
@@ -2298,7 +2310,7 @@ export function computeModel(
       debtDrawdowns: makeLine('cf.draw', 'Kreditaufnahme', 'money', debt.drawdowns),
       debtRepayments: makeLine('cf.repay', 'Tilgung', 'money', scaleArr(debt.repayments, -1)),
       revolverMovement: makeLine('cf.revolver', 'Revolver-Bewegung', 'money', revolverMovement),
-      equityMovement: makeLine('cf.equity', 'Eigenkapitalbewegung', 'money', zeros(n)),
+      equityMovement: makeLine('cf.equity', 'Eigenkapitalbewegung', 'money', equityIn),
       interestPaid: makeLine('cf.interest', 'Gezahlte Zinsen', 'money', scaleArr(interestTotal, -1)),
       // Nachrichtlich („davon"): steckt bereits im operativen Cashflow — nicht zusätzlich addieren.
       vatCashFlow: makeLine('cf.vat', 'davon: USt/TVA-Timing (Vorsteuer/Zahllast/Erstattung)', 'money', vat.vatCashFlow),
