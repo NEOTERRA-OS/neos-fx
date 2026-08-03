@@ -3076,6 +3076,18 @@ const CAPEX_PLAN_SEED: CapexPlanItem[] = [
   //  Temperaturen des Schüttlagers nicht, sie versüßen und werden beim Frittieren
   //  dunkel. Die Pommespartie liegt im belüfteten Schüttlager.
   //
+  //  INVESTITIONSFOERDERUNG (PNS DR-16, "Investitii in sectorul legume si/sau cartofi"):
+  //  Der Satz betraegt maximal 65 % der foerderfaehigen Kosten — klingt nach 17 Mio EUR
+  //  auf ein 27-Mio-Programm. Bindend ist aber nicht der Satz, sondern der DECKEL:
+  //  hoechstens 2,0 Mio EUR nicht rueckzahlbar je Projekt. Auf dieses Vorhaben sind das
+  //  effektiv 7,4 %, nicht 65 % und erst recht nicht die 40 %, die die Oberflaeche
+  //  bisher behauptet hat. Dieselbe Struktur wie beim Knoblauchprogramm: der Satz ist
+  //  grosszuegig, der Deckel macht ihn auf Betriebsgroesse klein.
+  //  Gebucht auf die Gebaeudehuelle (36 % von 5,5 Mio EUR = der Deckel), weil Bau
+  //  eindeutig foerderfaehig ist. ACHTUNG: das Antragsfenster 2026 lief vom 19.01. bis
+  //  20.03.2026 und ist geschlossen. Fuer einen Baubeginn 2029 braucht es einen
+  //  spaeteren Aufruf — der Zuschuss steht damit unter Vorbehalt.
+  //
   //  Referenz: bei VIA Agro steht ein Lager mit 80.000 t. Als Größenordnung für
   //  Baukosten je Tonne ist das der belastbarste Vergleich in der Region — ob
   //  Mitnutzung eine Alternative zum Eigenbau ist, ist offen und nicht bewertet.
@@ -3093,7 +3105,8 @@ const CAPEX_PLAN_SEED: CapexPlanItem[] = [
   cp("lg-bulk", "lager", "Schüttlager Kartoffel, belüftet (ambient)", "bau", "perTonne", 20000, "t", 160, 22, { ...bench(120, 200), jahr: 2 }),
   cp("lg-cool", "lager", "Kühl-/CA-Lager Kartoffel", "technik", "perTonne", 20000, "t", 320, 20, { ...bench(250, 550), jahr: 5 }),
   cp("lg-cure", "lager", "Zwiebel-Trocknung / Curing", "technik", "perTonne", 12000, "t", 200, 20, { ...bench(150, 250), jahr: 4 }),
-  cp("lg-shell", "lager", "Gebäudehülle Lager (Stahl, isoliert)", "bau", "perM2", 11000, "m²", 500, 25, { ...bench(350, 800), jahr: 2 }),
+  cp("lg-shell", "lager", "Gebäudehülle Lager (Stahl, isoliert)", "bau", "perM2", 11000, "m²", 500, 25, { ...bench(350, 800), jahr: 2, subventionPct: 0.36,
+    quelle: "PNS DR-16 (AFIR)", notiz: "Zuschuss gedeckelt auf 2,0 Mio EUR je Projekt — 36 % der Huelle entsprechen genau diesem Deckel. Siehe Kommentar oben." }),
   // — Packhaus / Aufbereitungslinien (assetClass buildings, kurze AfA) —
   cp("pk-line", "packhaus", "Verpackungslinie Kartoffel (20 t/h)", "technik", "perStueck", 2, "Linie", 1200000, 10, { ...bench(500000, 2000000), jahr: 6, quelle: "LONKIA 2026" }),
   cp("pk-optic", "packhaus", "Optische Sortierung / Grading", "technik", "perStueck", 1, "Modul", 150000, 10, { ...bench(80000, 250000), jahr: 6 }),

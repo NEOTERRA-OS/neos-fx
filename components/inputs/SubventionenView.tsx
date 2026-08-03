@@ -92,7 +92,7 @@ export function SubventionenView() {
           <span className="caption text-[10.5px] text-nx-text-muted">Σ {fmtMoney(grandAnnual)}{t(" €/Jahr · Auszahlung Vorschuss (Okt) + Rest (Dez) → Cashflow")}</span>
         </div>
         <div className="px-4 py-2 text-[12px] text-nx-text-secondary">
-          {t("Volle CAP-Struktur, editierbar & erweiterbar. Die ")}<b>{t("VCP / gekoppelte Stützung")}</b>{t(" ist kulturspezifisch aufgeschlüsselt. Sätze sind belastbare Defaults (PNS/APIA) — je Programm anpassbar. Das ")}<b>{t("Auszahlungsprofil")}</b>{t(" (Vorschuss %/Monat + Rest) steuert das Cashflow-Timing. Die ")}<b>{t("Investitionsförderung (AFIR/PNS ~40 %)")}</b>{t(" ist als CAPEX-Zuschuss modelliert (Maschinen/Beregnung/Lager) — nicht hier, um Doppelzählung zu vermeiden.")}
+          {t("Volle CAP-Struktur, editierbar & erweiterbar. Die ")}<b>{t("VCP / gekoppelte Stützung")}</b>{t(" ist kulturspezifisch aufgeschlüsselt. Sätze sind belastbare Defaults (PNS/APIA) — je Programm anpassbar. Das ")}<b>{t("Auszahlungsprofil")}</b>{t(" (Vorschuss %/Monat + Rest) steuert das Cashflow-Timing. Die ")}<b>{t("Investitionsförderung (PNS DR-16)")}</b>{t(" ist als CAPEX-Zuschuss im Lager-Detailregister modelliert — nicht hier, um Doppelzählung zu vermeiden. Der Satz beträgt bis zu 65 %, gedeckelt auf 2,0 Mio € je Projekt; auf das Lagerprogramm sind das effektiv rund 7 %. Maschinen und Beregnung tragen derzeit keinen Zuschuss.")}
         </div>
       </div>
 
