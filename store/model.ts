@@ -30,6 +30,7 @@
  *  Quelle: NEOS-FX-Kostenkalkulation-Referenz.md, Abschnitte A–F.
  * ============================================================================
  */
+import { buildFelder, buildBeregnungseinheiten, buildSchlaege } from "./schlaege";
 import type {
   ModelState,
   Assumption,
@@ -5947,6 +5948,37 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   const crops: Crop[] = domain.catalog.map((c) => ({ id: c.cropId, name: c.name, type: c.type }));
 
   // Parzellen: eine je Anbauplan-Zeile.
+  /* FLAECHENIDENTITAET — Felder, Beregnungseinheiten, Schlaege.
+   *  Vorlaeufig: Groesse und Lage sind geschaetzt, die IDs sind es nicht. Der
+   *  Uebergang auf die echten Felder ist spaeter eine einmalige Zuordnungstabelle. */
+  const flaeche = (() => {
+    const areasMY = cropAreasMemo(domain).areas;
+    const jahre = Math.max(1, domain.growth?.years ?? 1);
+    /* Der Feldbestand umfasst die ROTATIONSFLAECHE, nicht nur die eigene.
+     *  Das ist der Punkt, den erst die Schlagsicht zeigt: wenn die Kartoffel nur
+     *  ueber NEOTERRAs eigene 3.834 ha rotiert, belegt sie dort 65 % und die
+     *  Vierjahrespause ist nicht einzuhalten — auch dann nicht, wenn der Anteil an
+     *  der abgestimmten Rotationsflaeche korrekt 25 % betraegt.
+     *  Die Fruchtfolge geht nur auf, wenn die Flaechen zwischen beiden Betrieben
+     *  jaehrlich WECHSELN: ein gemeinsamer Pool von 10.000 ha, in dem NEOTERRA
+     *  3.834 ha bewirtschaftet — aber nicht jedes Jahr dieselben.
+     *  Genau das ist der Inhalt der "engen Abstimmung" mit dem Partnerbetrieb. */
+    const maxHa = Math.max(...ROTATION_TOTAL_HA.slice(0, jahre));
+    const felder = buildFelder(maxHa);
+    const beregnungseinheiten = buildBeregnungseinheiten(felder);
+    const zweitnutzung = new Set(domain.anbauplan.filter((e) => e.zweitnutzung).map((e) => e.cropId));
+    const { schlaege } = buildSchlaege(felder, {
+      areas: areasMY, zweitnutzung, jahre,
+      wirtsgruppen: [
+        { id: "kartoffel", pauseYears: KARTOFFEL_PAUSE_JAHRE, cropIds: ["kartoffel_pommes", "kartoffel_chips"] },
+        { id: "alliaceen", pauseYears: 5, cropIds: ["knoblauch", "zwiebel_moehre"] },
+        { id: "apiaceen", pauseYears: 5, cropIds: ["knollensellerie", "zwiebel_moehre"] },
+        { id: "solanaceen", pauseYears: 4, cropIds: ["tomate"] },
+      ],
+    });
+    return { felder, beregnungseinheiten, schlaege };
+  })();
+
   const parcels: Parcel[] = domain.anbauplan.filter((a) => !a.zweitnutzung).map((a) => {
     const cat = domain.catalog.find((c) => c.cropId === a.cropId);
     return { id: `parcel-${a.id}`, farmId, name: `${cat?.name ?? a.cropId} · ${a.areaHa} ha`, areaHa: a.areaHa };
@@ -6926,6 +6958,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     //  Anbauplan fehlen — sonst misst die Regel gegen eine zu kleine Flaeche und
     //  meldet einen Verstoss, den es nicht gibt.
     rotationAreaHa: ROTATION_TOTAL_HA.reduce((a, b) => a + b, 0),
+    ...flaeche,
     rotationRules: [
       {
         id: "kartoffel",

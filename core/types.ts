@@ -690,8 +690,64 @@ export interface ModelState {
    *  Revolver zu, egal wieviel Eigenkapital in Wahrheit hereinkaeme. */
   equityInjections?: EquityInjection[];
 
+  /** Felder — die DAUERHAFTE Identitaet der Flaeche. Feldnummer und Feldgrenze
+   *  aendern sich nicht, wenn die Fruchtfolge wechselt oder ein Pachtvertrag neu
+   *  geschrieben wird. Daran haengt alles Langlebige: Bodenproben, Nematoden-
+   *  befunde, Anbaupausen, Ertragshistorie. Geometrie darf fehlen, die ID nie. */
+  felder?: Feld[];
+  /** Beregnungseinheiten (Pivot oder Linear) — eigene Nummerierung ueber den
+   *  Feldern. Ein Linear kann mehrere Felder bedienen, ein Feld kann von mehreren
+   *  Einheiten bedient werden. Deshalb n:m und nicht 1:1. */
+  beregnungseinheiten?: Beregnungseinheit[];
+  /** Schlaege — die JAHRESEINHEIT: Feld x Jahr x Kultur x Sorte. Zwei Sorten auf
+   *  einem Feld sind zwei Schlaege, weil sie unterschiedlich abreifen und damit
+   *  unterschiedliche Rode- und Sikkationstermine brauchen. Der Arbeitsauftrag
+   *  "roden" zeigt auf den Schlag, "spritzen" darf auf das Feld zeigen. */
+  schlaege?: Schlag[];
+
   /** Eröffnungsbilanz (Periode -1), damit die Bilanz einen Startpunkt hat. */
   openingBalance: OpeningBalance;
+}
+
+/** Ein Feld — dauerhafte Flaecheneinheit. */
+export interface Feld {
+  /** Unveraenderlich. Wird NIE aus etwas abgeleitet, das sich aendern kann —
+   *  insbesondere nicht aus dem Anbauplan. Genau das war der Fehler der frueheren
+   *  Pseudo-Parzellen (`parcel-${anbauplan.id}`): eine Planaenderung erzeugte eine
+   *  neue Parzelle, und alles, was daran hing, verlor seinen Bezug. */
+  id: string;
+  /** Anzeigename bzw. Feldnummer des Betriebs. Darf sich aendern, die id nicht. */
+  nummer: string;
+  areaHa: number;
+  /** Feldgrenze als GeoJSON. Fehlt, solange nicht vermessen — das ist zulaessig. */
+  geometry?: unknown;
+  /** Standort/Betriebsstaette. */
+  farmId?: string;
+  /** true, solange Groesse und Lage geschaetzt sind. Faellt weg, sobald vermessen. */
+  vorlaeufig?: boolean;
+}
+
+/** Eine Beregnungseinheit — Pivot oder Linear. */
+export interface Beregnungseinheit {
+  id: string;
+  nummer: string;
+  typ: 'pivot' | 'linear';
+  areaHa: number;
+  /** Bediente Felder. Ein Linear bedient regelmaessig mehrere. */
+  feldIds: string[];
+  vorlaeufig?: boolean;
+}
+
+/** Ein Schlag — Feld x Jahr x Kultur x Sorte. Die Einheit des Arbeitsauftrags. */
+export interface Schlag {
+  id: string;
+  feldId: string;
+  /** Planjahr, 0-basiert ab Modellstart. */
+  jahr: number;
+  cropId: string;
+  /** Sorte. Mehrere Sorten auf einem Feld ergeben mehrere Schlaege. */
+  sorte?: string;
+  areaHa: number;
 }
 
 /** Eine Eigenkapitalzufuehrung in einer bestimmten Periode. */
