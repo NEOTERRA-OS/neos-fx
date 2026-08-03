@@ -1369,6 +1369,11 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("tco.res_trail", "tco.res_trail", "Restwert-Quote gezogene Maschinen (nach Haltedauer)", "percent", 0.55),
   A("tco.res_self", "tco.res_self", "Restwert-Quote Selbstfahrer (nach Haltedauer)", "percent", 0.45),
   A("tco.hold_years", "tco.hold_years", "Haltedauer / Tauschzyklus (Jahre)", "years", 6),
+  // Kalkulatorischer Zins auf das in der Maschine gebundene Kapital. Er ersetzt die
+  //  Faustregel „Zins = 0,30 × AfA", die im Seed stand: die ergab je nach Maschine 3,0 bis
+  //  9,1 % auf das durchschnittlich gebundene Kapital, ohne dass irgendwo stand, warum.
+  //  5 % ist der Satz, mit dem das Modell auch die Investitionskredite rechnet.
+  A("tco.calc_interest", "tco.calc_interest", "Kalkulatorischer Zins auf gebundenes Maschinenkapital", "percent", 0.05),
   // Ersatzinvestitionen: Tauschzyklus je Maschine = min(hold_years, replace_hours / Bh je Jahr).
   A("capex.replace_hours", "capex.replace_hours", "Tauschzyklus — Betriebsstunden-Kappung (Bh)", "hours", 6000),
   // Bilanzielle AfA-Dauer der Maschinen (Standard). Länger als der Tauschzyklus ⇒ Buchverlust bei Tausch.
@@ -2393,6 +2398,82 @@ const FIELD_MACHINES: MachineType[] = SPEC.map((s) => ({
   activeWhen: s.activeWhen,
   tractorId: s.tractorId,
 }));
+
+/* --------------------------------------------------------------------------
+ * KALKULATORISCHE STUNDENSÄTZE — an den Preis gebunden statt danebengeschrieben.
+ *
+ * Die Sätze `afa/zins/vers/rep/schmier` standen als feste Zahlen neben dem
+ * Neupreis im SPEC. Sechs der dreizehn Feldmaschinen treffen damit die Formel
+ * `Preis × (1 − Restwert) / (Nutzung × h/Jahr)` auf den Cent — sieben nicht:
+ *
+ *     transport  +200 %   ·  saatbett  +129 %  ·  pflug     +100 %
+ *     streuer     +65 %   ·  onepass    +50 %  ·  tompflanz  +14 %
+ *     roder_ropa  −11 %
+ *
+ * Das ist kein Streit über die richtige Zahl, sondern der Abdruck einer
+ * Pflegelücke: wer den Listenpreis anfasst — und `mprice.*` ist ausdrücklich
+ * editierbar —, bewegt den CAPEX und die Bilanz-AfA, aber nicht diese Sätze.
+ * Beim Mähdrescher lässt sich das nachrechnen: sein Preis wurde auf das reale
+ * JD-Angebot (858.778 €) gehoben, sein AfA-Satz blieb auf dem Stand von 400.000 €.
+ *
+ * Bezugsgröße ist der LISTENPREIS, nicht der Netto-Einkauf. Das ist Absicht und
+ * unterscheidet zwei Fragen, die im Modell ohnehin getrennt laufen:
+ *
+ *   kalkulatorisch  Was kostet mich die Stunde, wenn ich die Maschine
+ *                   wiederbeschaffen müsste? → Liste. Treibt den Vergleich
+ *                   kaufen ↔ mieten ↔ Lohn und den Mietsatz.
+ *   bilanziell      Was habe ich bezahlt? → Liste × (1 − Rabatt). Treibt CAPEX,
+ *                   AfA und die Bilanz. Läuft unverändert über `deriveCapex`.
+ *
+ * Versicherung, Reparatur und Schmierstoff bleiben, was sie immer waren: ein
+ * Prozentsatz vom Neuwert je Jahr. Der Prozentsatz wird EINMAL aus dem Seed
+ * abgeleitet, damit sich am Base Case nichts bewegt — er folgt danach dem Preis.
+ * ------------------------------------------------------------------------ */
+export type StundensatzBasis = {
+  /** Versicherung, Reparatur, Schmierstoff als Anteil des Neuwerts JE JAHR. */
+  versPctYear: number; repPctYear: number; lubePctYear: number;
+};
+const RATE_BASIS: Record<string, StundensatzBasis> = Object.fromEntries(
+  SPEC.filter((s) => s.neupreis > 0 && s.hJ > 0).map((s) => [s.id, {
+    versPctYear: (s.vers * s.hJ) / s.neupreis,
+    repPctYear: (s.rep * s.hJ) / s.neupreis,
+    lubePctYear: (s.schmier * s.hJ) / s.neupreis,
+  }]),
+);
+
+export type Stundensaetze = {
+  afaCent: number; zinsCent: number; versCent: number; repCent: number; lubeCent: number;
+  /** Summe der fünf — die Vollkosten der Maschinenstunde ohne Diesel und Fahrer. */
+  summeCent: number;
+};
+
+/** Kalkulatorische Stundensätze einer Maschine, aus Listenpreis, Restwert,
+ *  Nutzungsdauer, Referenzstunden und dem kalkulatorischen Zins. */
+export function machineRatesPerHour(domain: Domain, m: MachineType, scenarioId: string): Stundensaetze {
+  const h = m.refHoursPerYear ?? 0;
+  const n = m.nutzungYears ?? 0;
+  const preis = m.unitPriceKey ? resolveScalar(domain, m.unitPriceKey, scenarioId) : 0;
+  // Ohne Preis, Nutzungsdauer oder Referenzstunden bleibt es bei dem, was im Katalog
+  //  steht — das betrifft die CAPEX-only-Träger (Schlepper ohne eigenen Arbeitsgang).
+  if (!preis || !h || !n) {
+    const a = m.afaPerHourCent ?? 0, z = m.interestPerHourCent ?? 0, v = m.insurancePerHourCent ?? 0,
+      r = m.repairPerHourCent ?? 0, l = m.lubePerHourCent ?? 0;
+    return { afaCent: a, zinsCent: z, versCent: v, repCent: r, lubeCent: l, summeCent: a + z + v + r + l };
+  }
+  const rw = m.restwertPct ?? 0;
+  const i = resolveScalar(domain, "tco.calc_interest", scenarioId) || 0.05;
+  const b = RATE_BASIS[m.id];
+  const afaCent = Math.round((preis * (1 - rw)) / (n * h));
+  // Kalkulatorischer Zins auf das DURCHSCHNITTLICH gebundene Kapital: über die
+  //  Nutzungsdauer sinkt der Buchwert von Preis auf Restwert, im Mittel also (1+rw)/2.
+  const zinsCent = Math.round((preis * (1 + rw) / 2 * i) / h);
+  const proz = (pct: number | undefined) => Math.round(((pct ?? 0) * preis) / h);
+  const versCent = b ? proz(b.versPctYear) : (m.insurancePerHourCent ?? 0);
+  const repCent = b ? proz(b.repPctYear) : (m.repairPerHourCent ?? 0);
+  const lubeCent = b ? proz(b.lubePctYear) : (m.lubePerHourCent ?? 0);
+  return { afaCent, zinsCent, versCent, repCent, lubeCent,
+    summeCent: afaCent + zinsCent + versCent + repCent + lubeCent };
+}
 
 // BESTAND = 0 (Entscheidung 31.07.2026): NEOTERRA startet 2027 ohne eigene Technik. Vorher trug
 // das Register 18 Einheiten aus dem Kombimodell — die CAPEX kapitalisierte dann den GANZEN Park
@@ -3922,6 +4003,33 @@ export function resolveScalar(domain: Domain, key: string, scenarioId: string): 
  *  Quelle der Arbeitsgänge: domain.arbeitsgaenge (editierbar).
  * ------------------------------------------------------------------------ */
 /** Maschinen-Betriebskosten je ha in CENT (Σ passes/C_eff × operating€/h). */
+/**
+ * Gemieteter Anteil einer Maschinenklasse (0…1).
+ *
+ * Spiegelt die Klemmung aus `deriveCapex`: gemietet wird, was über den eigenen
+ * Bestand hinausgeht, höchstens die benötigte Flotte. Der CAPEX rechnet mit
+ * genau diesem Anteil (`rf`) — die Betriebskosten müssen es auch, sonst zahlt
+ * der Betrieb Versicherung und Reparatur für Maschinen, die ihm nicht gehören.
+ */
+const _mietMemo = new WeakMap<object, Map<string, number>>();
+export function mietAnteilOf(domain: Domain, machineId: string, scenarioId: string): number {
+  let per = _mietMemo.get(domain as object);
+  if (!per) { per = new Map(); _mietMemo.set(domain as object, per); }
+  const key = `${scenarioId}::${machineId}`;
+  const cached = per.get(key);
+  if (cached !== undefined) return cached;
+  const m = domain.machineCatalog.find((x) => x.id === machineId);
+  let anteil = 0;
+  if (m && (m.rentedUnits ?? 0) > 0) {
+    const count = m.mode === "fixedFleet" ? machineFleetCount(domain, m, scenarioId) : 0;
+    const owned = Math.max(0, Math.round(m.ownedUnits ?? 0));
+    const gemietet = Math.max(0, Math.min(Math.round(m.rentedUnits ?? 0), Math.max(0, count - owned)));
+    anteil = count > 0 ? gemietet / count : 0;
+  }
+  per.set(key, anteil);
+  return anteil;
+}
+
 export function machineOpCostPerHaCent(domain: Domain, cropId: string, scenarioId: string, y = 0): number {
   const dieselPriceCent = resolveScalar(domain, "price.diesel_l", scenarioId);
   const bf = sprayBoomFactor(domain, scenarioId); // 48-m-Paket: breiteres Gestänge → weniger Spritz-Std/ha
@@ -3939,8 +4047,17 @@ export function machineOpCostPerHaCent(domain: Domain, cropId: string, scenarioI
     // Spritze: effektive C_eff skaliert mit der Gestängebreite (36 m → 48 m = +33 % ha/h).
     const cEff = m.id === "spritze14" ? m.cEff * bf : m.cEff;
     const fremd = lohn.has(g.m);
+    /* GEMIETET zählt hier genauso wie fremdvergeben — für Versicherung, Reparatur und
+     *  Schmierstoff. Sie stecken bereits im Mietsatz (`machineRentPerHourCent`), der als
+     *  `opex.machine_rent` gebucht wird; wer sie hier nochmal ansetzt, zahlt sie zweimal.
+     *  Genau das tat das Modell: „mieten" war dadurch strukturell teurer als „kaufen", und
+     *  der empfohlene Weg im Maschinenpark war systematisch gegen die Miete verzerrt.
+     *  Der DIESEL bleibt: gemietet wird die Maschine, nicht die Dienstleistung — Kraftstoff
+     *  und Fahrer stellt der Betrieb. Das ist der Unterschied zur Lohnarbeit. */
+    const miete = mietAnteilOf(domain, g.m, scenarioId);
+    const r = machineRatesPerHour(domain, m, scenarioId);
     const opPerHourCent =
-      (fremd ? 0 : (m.insurancePerHourCent ?? 0) + (m.repairPerHourCent ?? 0) + (m.lubePerHourCent ?? 0)) +
+      (fremd ? 0 : (1 - miete) * (r.versCent + r.repCent + r.lubeCent)) +
       (fremd && dieselAuchWeg.has(g.m) ? 0 : (m.dieselLPerHour ?? 0) * dieselPriceCent);
     cent += (g.passes / cEff) * opPerHourCent;
   }
@@ -3957,7 +4074,9 @@ export function machineAfaZinsPerHaCent(domain: Domain, cropId: string, scenario
   for (const g of gaenge) {
     const m = byId.get(g.m);
     if (!m || !m.cEff || lohn.has(g.m)) continue;
-    const afaZinsPerHourCent = (m.afaPerHourCent ?? 0) + (m.interestPerHourCent ?? 0);
+    // Gemietete Einheiten binden kein eigenes Kapital — weder AfA noch kalkulatorischer Zins.
+    const r = machineRatesPerHour(domain, m, scenarioId);
+    const afaZinsPerHourCent = (1 - mietAnteilOf(domain, g.m, scenarioId)) * (r.afaCent + r.zinsCent);
     cent += (g.passes / m.cEff) * afaZinsPerHourCent;
   }
   return cent; // CENT/ha
@@ -4078,7 +4197,7 @@ export function deriveCropMassnahmen(domain: Domain, cropId: string, scenarioId:
     const m = byId.get(g.m); if (!m) return { maschineCent: 0, dieselLHa: 0, hours: 0 };
     const cEff = (g.m === "spritze14" ? (m.cEff ?? 0) * bf : (m.cEff ?? 0)) || 1;
     const hours = g.passes / cEff;
-    const rate = (m.afaPerHourCent ?? 0) + (m.interestPerHourCent ?? 0) + (m.insurancePerHourCent ?? 0) + (m.repairPerHourCent ?? 0) + (m.lubePerHourCent ?? 0) + (m.dieselLPerHour ?? 0) * dieselPrice;
+    const rate = machineRatesPerHour(domain, m, scenarioId).summeCent + (m.dieselLPerHour ?? 0) * dieselPrice;
     return { maschineCent: Math.round(hours * rate), dieselLHa: (m.dieselLPerHour ?? 0) * hours, hours };
   };
   const isFertigation = (label: string) => /fertigation/i.test(label);
@@ -5681,6 +5800,11 @@ export type MaschinenPfad = {
   fixPerYear: number; varPerHour: number;
   /** Ist die Klasse aktuell vollständig fremdvergeben? */
   gemietet: boolean;
+  /** Gibt es für diese Klasse überhaupt hinterlegte Lohnsätze? Fehlen sie, bliebe ein
+   *  Klick auf „Lohn" wirkungslos: `setMachineOutsourced` schaltet nur VORHANDENE
+   *  Einträge scharf, es legt keine an. Ein Knopf, der nichts tut, ist schlimmer als
+   *  ein Knopf, der fehlt — deshalb steht das hier und die Ansicht sperrt ihn. */
+  lohnMoeglich: boolean;
   /** Gepoolte Zugklasse — keine eigene Flächenleistung, Bedarf aus den Anbaugeräten. */
   istZug: boolean;
 };
@@ -5731,7 +5855,8 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
     // Reparatur, Schmierstoff und Diesel je STUNDE. Genau diese Trennung macht sichtbar, warum
     // eine Maschine im Anlaufjahr auf wenig Fläche unwirtschaftlich ist und später nicht mehr.
     const refH = spec.refHoursPerYear ?? 0;
-    const fixPerYear = (((spec.afaPerHourCent ?? 0) + (spec.interestPerHourCent ?? 0) + (spec.insurancePerHourCent ?? 0)) / 100) * refH;
+    const satz = machineRatesPerHour(domain, spec, scenarioId);
+    const fixPerYear = ((satz.afaCent + satz.zinsCent + satz.versCent) / 100) * refH;
     // FAHRER GEHÖRT DAZU. Der Lohnunternehmer stellt Maschine UND Fahrer — die Eigenkosten
     // enthielten bisher nur die Maschine. Ohne diese Zeile sieht Selbstmechanisierung
     // systematisch zu billig aus, und zwar genau um den Posten, den man bei Fremdvergabe
@@ -5739,7 +5864,7 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
     // bei 143,3 Monatsstunden (die Kalibrierung, aus der auch das „7 €/h" im Label stammt).
     const fahrerEurH = (domain.assumptions["pers.stamm.gross"]
       ? resolveScalar(domain, "pers.stamm.gross", scenarioId) / 100 : 0) / 143.3;
-    const varPerHour = ((spec.repairPerHourCent ?? 0) + (spec.lubePerHourCent ?? 0)) / 100
+    const varPerHour = (satz.repCent + satz.lubeCent) / 100
       + (spec.dieselLPerHour ?? 0) * dieselEur + fahrerEurH;
     const ownPerHa = units.map((n, y) => (n > 0 && servedHa[y] > 0 ? (n * fixPerYear + hours[y] * varPerHour) / servedHa[y] : null));
 
@@ -5752,6 +5877,10 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
 
     const relevant = (domain.lohnarbeit ?? []).filter((e) => e.machineId === spec.id && crops.includes(e.cropId));
     const imLohn = !istZug && relevant.length > 0 && relevant.every((e) => e.active);
+    /* Ohne Eintrag in der Lohnsatz-Tabelle gibt es nichts scharfzuschalten. Das ist keine
+     *  theoretische Lage: kommt eine neue Wertkultur mit eigener Erntetechnik dazu, ohne
+     *  dass jemand die Sätze pflegt, wäre der Knopf still wirkungslos. */
+    const lohnMoeglich = !istZug && relevant.length > 0;
     const inMiete = (spec.rentedUnits ?? 0) > 0;
     const beschaffung: "kauf" | "miete" | "lohn" = imLohn ? "lohn" : inMiete ? "miete" : "kauf";
     const gemietet = imLohn || inMiete;
@@ -5771,7 +5900,7 @@ export function deriveMaschinenpark(domain: Domain, scenarioId: string, years: n
       feldTage: feldTageOf(domain, spec.id), capPerUnitHours: cap,
       preisCent: machineUnitPriceCent(domain, spec, scenarioId),
       units, hours, servedHa, utilPct, ownPerHa,
-      rentPerHa: istZug ? null : rentPerHa, mietePerHa, rentPerHour, beschaffung,
+      rentPerHa: istZug ? null : rentPerHa, mietePerHa, rentPerHour, beschaffung, lohnMoeglich,
       fixPerYear, varPerHour, gemietet,
     });
   }
@@ -5907,9 +6036,7 @@ export function personalFteOfYear(domain: Domain, key: string, y: number, scenar
 export function machineRentPerHourCent(domain: Domain, spec: MachineType, scenarioId: string): number {
   const markup = domain.assumptions["machine.rent_markup"]
     ? resolveScalar(domain, "machine.rent_markup", scenarioId) : 0.15;
-  const stundenkosten = (spec.afaPerHourCent ?? 0) + (spec.interestPerHourCent ?? 0)
-    + (spec.insurancePerHourCent ?? 0) + (spec.repairPerHourCent ?? 0) + (spec.lubePerHourCent ?? 0);
-  return stundenkosten * (1 + markup);
+  return machineRatesPerHour(domain, spec, scenarioId).summeCent * (1 + markup);
 }
 
 /** Betriebsstunden einer Klasse im Planjahr y — Zugmaschinen aus den Stunden ihrer Geräte. */
@@ -6712,7 +6839,10 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     let c = 0;
     for (const m of domain.machineCatalog) {
       if (!((m.rentedUnits ?? 0) > 0)) continue;
-      c += machineOrTractorHoursOfYear(domain, m.id, y) * machineRentPerHourCent(domain, m, scenarioId);
+      // Nur der GEMIETETE Flottenanteil zahlt Miete — der eigene Bestand nicht.
+      //  Derselbe Anteil, mit dem `deriveCapex` den aktivierten Betrag kürzt.
+      c += mietAnteilOf(domain, m.id, scenarioId)
+        * machineOrTractorHoursOfYear(domain, m.id, y) * machineRentPerHourCent(domain, m, scenarioId);
     }
     return c;
   };

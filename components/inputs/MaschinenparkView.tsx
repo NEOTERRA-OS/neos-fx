@@ -268,10 +268,11 @@ export function MaschinenparkView() {
                             ? [["kauf", t("kaufen")], ["miete", t("mieten")]]
                             : [["kauf", t("kaufen")], ["miete", t("mieten")], ["lohn", t("Lohn")]]
                           ).map(([wahl, label]) => (
-                            <button key={wahl} disabled={readOnly}
+                            <button key={wahl} disabled={readOnly || (wahl === "lohn" && !m.lohnMoeglich)}
                               title={wahl === "kauf" ? t("Eigenmechanisierung: Investition, Abschreibung, eigener Fahrer.")
                                 : wahl === "miete" ? t("Maschinenmiete: nur das Gerät, je Betriebsstunde. Fahrer und Diesel stellt der Betrieb.")
-                                : t("Lohnarbeit: Maschine UND Fahrer des Lohnunternehmers, je Hektar, exklusive Diesel.")}
+                                : m.lohnMoeglich ? t("Lohnarbeit: Maschine UND Fahrer des Lohnunternehmers, je Hektar, exklusive Diesel.")
+                                : t("Für diese Klasse ist kein Lohnsatz hinterlegt — die Vergabe ließe sich nicht bewerten.")}
                               className="px-2 text-[10.5px] font-semibold"
                               style={{
                                 height: 24,
@@ -279,6 +280,8 @@ export function MaschinenparkView() {
                                   ? (wahl === "kauf" ? "var(--nx-green)" : wahl === "miete" ? "var(--nx-warning)" : "var(--nx-locate)")
                                   : "var(--nx-surface)",
                                 color: m.beschaffung === wahl ? "#fff" : "var(--nx-text-secondary)",
+                                opacity: wahl === "lohn" && !m.lohnMoeglich ? 0.4 : 1,
+                                cursor: wahl === "lohn" && !m.lohnMoeglich ? "not-allowed" : undefined,
                               }}
                               onClick={() => patch((d) => {
                                 // Die Wege schliessen sich aus: erst beide Flaggen loeschen, dann setzen.
