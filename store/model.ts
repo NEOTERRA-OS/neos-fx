@@ -1585,7 +1585,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   //  Entscheidung 31.07.2026 (Benedikt): erst einmal komplett raus — der Lagerbau ist im
   //  Detail zu analysieren. Die vollständige Lagermechanik (Dienstleistungsmodell,
   //  Spitzenbelegung, Break-even-Gebühr) bleibt im Modell und ist mit einer 1 wieder scharf.
-  A("store.active", "store.active", "Lager/Packhaus aktiv (1) oder komplett aus (0)", "flag", 0),
+  A("store.active", "store.active", "Lager/Packhaus aktiv (1) oder komplett aus (0)", "flag", 1),
   // Die beiden Bauteile werden EINZELN entschieden (Beschluss 31.07.2026): Hülle und Technik
   //  sind getrennte Investitionen mit getrennter Nutzungsdauer, getrennter Steuerwirkung
   //  (Art. 22 Reinvestitionsbefreiung greift auf Technik, nicht auf Gebäude) und getrennter
@@ -2993,16 +2993,32 @@ const CAPEX_PLAN_SEED: CapexPlanItem[] = [
   cp("bw-power", "bewaesserung", "Elektrifizierung / MS-Anschluss / Trafo", "infrastruktur", "fix", 1, "pauschal", 250000, 18, { notiz: "größter Unsicherheitsposten — mit Angebot kalibrieren" }),
   cp("bw-scada", "bewaesserung", "SCADA / Fernsteuerung", "elektronik", "perStueck", 6, "Stück", 1500, 6, { ...bench(500, 2000) }),
   // — Lager (Kartoffel + Zwiebel/Möhre; Tomate NICHT) (assetClass buildings) —
-  cp("lg-bulk", "lager", "Schüttlager Kartoffel, belüftet (ambient)", "bau", "perTonne", 24000, "t", 160, 22, { ...bench(120, 200) }),
-  cp("lg-cool", "lager", "Kühl-/CA-Lager Kartoffel", "technik", "perTonne", 12000, "t", 320, 20, { ...bench(250, 550) }),
-  cp("lg-cure", "lager", "Zwiebel-Trocknung / Curing", "technik", "perTonne", 6000, "t", 200, 20, { ...bench(150, 250) }),
-  cp("lg-shell", "lager", "Gebäudehülle Lager (Stahl, isoliert)", "bau", "perM2", 4500, "m²", 500, 25, { ...bench(350, 800) }),
+  // MENGEN AUF DAS ZIELBILD 2035 (Entscheidung Betrieb 03.08.2026: mit eigenem Lager).
+  //  Erntemenge 2035: Kartoffel 115.500 t, Zwiebel/Möhre 25.700 t, Sellerie 4.200 t,
+  //  Süßkartoffel 1.500 t, Knoblauch 450 t. Eingelagert wird NICHT alles — die
+  //  Hauptkultur geht ab Feld zum Verarbeiter, die Zweitkultur und die Gemüseschiene
+  //  ins Lager. Angesetzt sind rund 40 % der Kartoffel und die Lagerkulturen voll.
+  //  BAUABSCHNITTE (`jahr`): der Lagerbau folgt dem Kartoffelhochlauf, er geht ihm
+  //  nicht voraus. Ohne Staffelung fiel das gesamte Programm — rund 27 Mio EUR —
+  //  im Jahr 2028 an, in dem der Betrieb 670 ha bewirtschaftet. Die Kasse stand
+  //  danach sieben Jahre auf null und der Revolver war durchgezogen.
+  //  Die hier gesetzten Abschnitte sind ein PLATZHALTER fuer die echte
+  //  Projektplanung: Huelle und Schuettlager 2029, Curing 2031, Kuehllager 2032,
+  //  Packhaus 2033/34. Sobald der Bauzeitenplan steht, gehoert er hierher.
+  //
+  //  Diese Zahlen sind PROJEKTPLANUNG und laufen bewusst getrennt von der Automatik:
+  //  ein Lager wird gebaut, wie es gebaut wird, nicht wie eine Formel es ausrechnet.
+  //  Gegen stilles Auseinanderlaufen schützt der Check `capex_plan_drift` (s. u.).
+  cp("lg-bulk", "lager", "Schüttlager Kartoffel, belüftet (ambient)", "bau", "perTonne", 46000, "t", 160, 22, { ...bench(120, 200), jahr: 2 }),
+  cp("lg-cool", "lager", "Kühl-/CA-Lager Kartoffel", "technik", "perTonne", 24000, "t", 320, 20, { ...bench(250, 550), jahr: 5 }),
+  cp("lg-cure", "lager", "Zwiebel-Trocknung / Curing", "technik", "perTonne", 12000, "t", 200, 20, { ...bench(150, 250), jahr: 4 }),
+  cp("lg-shell", "lager", "Gebäudehülle Lager (Stahl, isoliert)", "bau", "perM2", 12000, "m²", 500, 25, { ...bench(350, 800), jahr: 2 }),
   // — Packhaus / Aufbereitungslinien (assetClass buildings, kurze AfA) —
-  cp("pk-line", "packhaus", "Verpackungslinie Kartoffel (20 t/h)", "technik", "perStueck", 1, "Linie", 1200000, 10, { ...bench(500000, 2000000), quelle: "LONKIA 2026" }),
-  cp("pk-optic", "packhaus", "Optische Sortierung / Grading", "technik", "perStueck", 1, "Modul", 150000, 10, { ...bench(80000, 250000) }),
-  cp("pk-wash", "packhaus", "Annahme / Waschen / Wasseraufbereitung", "technik", "perStueck", 1, "Modul", 80000, 10, { ...bench(25000, 100000) }),
-  cp("pk-pal", "packhaus", "Palettierung (halbautomatisch)", "technik", "perStueck", 1, "Stück", 120000, 10, { ...bench(60000, 250000) }),
-  cp("pk-onion", "packhaus", "Verpackungslinie Zwiebel/Möhre", "technik", "perStueck", 1, "Linie", 400000, 10, { ...bench(200000, 800000) }),
+  cp("pk-line", "packhaus", "Verpackungslinie Kartoffel (20 t/h)", "technik", "perStueck", 2, "Linie", 1200000, 10, { ...bench(500000, 2000000), jahr: 6, quelle: "LONKIA 2026" }),
+  cp("pk-optic", "packhaus", "Optische Sortierung / Grading", "technik", "perStueck", 1, "Modul", 150000, 10, { ...bench(80000, 250000), jahr: 6 }),
+  cp("pk-wash", "packhaus", "Annahme / Waschen / Wasseraufbereitung", "technik", "perStueck", 1, "Modul", 80000, 10, { ...bench(25000, 100000), jahr: 6 }),
+  cp("pk-pal", "packhaus", "Palettierung (halbautomatisch)", "technik", "perStueck", 1, "Stück", 120000, 10, { ...bench(60000, 250000), jahr: 7 }),
+  cp("pk-onion", "packhaus", "Verpackungslinie Zwiebel/Möhre", "technik", "perStueck", 1, "Linie", 400000, 10, { ...bench(200000, 800000), jahr: 7 }),
   // — Maschinen & Fahrzeuge (Jahres-Planung): NUR für Positionen, die NICHT im Register/Bedarf−Bestand
   //  stehen — sonst Doppelzählung (LKW/Radlader etc. existieren dort bereits). IoT/FMS lebt HIER
   //  (aus dem Maschinenkatalog hierher verschoben; Block ist per Default AKTIV, damit es zählt).
@@ -3600,7 +3616,11 @@ export const SEED: Domain = {
   capexPlan: CAPEX_PLAN_SEED,
   // maschinen-Block per Default AKTIV (trägt IoT/FMS, das aus dem Katalog hierher gezogen wurde);
   //  Infrastruktur-Blöcke inaktiv → deren Auto-Blöcke laufen, Detailzeilen sind reine Planung.
-  capexPlanActive: { maschinen: true },
+  // LAGER UND PACKHAUS SCHARF (Entscheidung Betrieb 03.08.2026). Damit laeuft die
+  //  Investitionsplanung fuer beide Bloecke ueber das Detailregister — als eigenes
+  //  Projekt mit eigenen Mengen, Preisen, Foerderquoten und Finanzierung — statt
+  //  ueber die flaechengetriebene Automatik.
+  capexPlanActive: { maschinen: true, lager: true, packhaus: true },
   // Fahrgassen-Ökonomie (Neoterra-Kartoffelplanung): 40 Kreispivots Ø 40 ha (25–60 ha).
   //  Kartoffel 75-cm-Reihen, Pflanzer 4 R = 3,0 m → gültige Spritzbreiten = Vielfache von 3 m.
   //  Fahrgassen-Schema: 2 ausgesparte Reihen je Spritzbreite (Radstand 2,25 m = 3 Reihen, 2 Dämme
