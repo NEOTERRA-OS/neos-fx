@@ -2051,6 +2051,35 @@ export function computeModel(
   });
   checks.push(buildCheck('cashflow_ties', 'Kapitalflussrechnung geht auf (CFO+CFI+CFF = ΔKasse)', cfTie, eps, 'error'));
 
+  /** FRUCHTFOLGE. Bei einer Anbaupause von p Jahren darf eine Wirtsgruppe
+   *  hoechstens 1/p der Rotationsflaeche belegen — sonst steht sie frueher wieder
+   *  auf derselben Flaeche, als der Boden es traegt.
+   *
+   *  Vorher gab es dafuer zwei handgeschriebene Sonderfaelle im Composer: einen
+   *  Kartoffel-Cap, der nur im ramp-Zweig griff (und damit nie, weil der
+   *  Skalierungspfad ueber path laeuft), und einen Doldenblueter-Guard, der
+   *  tatsaechlich lief. Ergebnis: die Kartoffel belegte 42,8 % statt 25 %, ohne
+   *  dass irgendetwas warnte. Diese Pruefung ist die gemeinsame Stelle, die
+   *  gefehlt hat — datengetrieben, nicht je Kultur ausprogrammiert. */
+  for (const rule of state.rotationRules ?? []) {
+    const gesamtHa = state.rotationAreaHa ?? state.cropPlans.reduce((sum, p) => sum + p.areaHa, 0);
+    if (gesamtHa <= 0) continue;
+    const gruppeHa = state.cropPlans.reduce(
+      (sum, p) => sum + p.areaHa * (rule.cropWeights[p.cropId] ?? 0), 0);
+    const maxShare = rule.maxShare ?? 1 / Math.max(1, rule.pauseYears);
+    const anteil = gruppeHa / gesamtHa;
+    const ueberhangHa = Math.max(0, gruppeHa - maxShare * gesamtHa);
+    checks.push({
+      id: `rotation_${rule.id}`,
+      label: `Fruchtfolge ${rule.label}: ${(anteil * 100).toFixed(1)} % der Rotationsfläche `
+        + `(zulässig ${(maxShare * 100).toFixed(1)} % bei ${rule.pauseYears} Jahren Anbaupause)`,
+      passed: ueberhangHa < 0.5,
+      maxDeviation: ueberhangHa,
+      offendingPeriods: [],
+      severity: 'error',
+    });
+  }
+
   /** Verfallener Verlustvortrag. Kein Fehler — eine Tatsache, die man kennen will:
    *  jeder verfallene Euro ist Steuerschild, das nie genutzt wurde. Wer das sieht,
    *  kann Investitionen oder Ergebnisse zeitlich anders legen. */

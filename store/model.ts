@@ -851,10 +851,61 @@ export function skalierungPolicy(stage: Stage = 1): Record<string, CropPolicy> {
   return out;
 }
 
-/** Σ Skalierungspfad je Planjahr (ha) — die bewirtschaftete Fläche der NEOTERRA-Variante.
- *  Es gibt keinen Ackerbau-Residualblock mehr: die Betriebsfläche IST die Summe der Kulturpfade. */
-export const SKALIERUNG_TOTAL_HA: number[] = Array.from({ length: N_YEARS }, (_, y) =>
+/** Σ Wertkulturen je Planjahr (ha). */
+export const WERTKULTUR_TOTAL_HA: number[] = Array.from({ length: N_YEARS }, (_, y) =>
   Object.values(SKALIERUNG_HA).reduce((s, path) => s + (path[Math.min(y, path.length - 1)] ?? 0), 0));
+
+/* --------------------------------------------------------------------------
+ * ROTATIONSFLÄCHE — die Kartoffel bestimmt sie, nicht umgekehrt.
+ *
+ * Befund Deep Review 03.08.2026: der Kartoffel-shareCap (25 %, aus der
+ * 4-Jahres-Anbaupause) war toter Code — er griff nur im Zweig `mode: "ramp"`,
+ * während der Skalierungspfad über `mode: "path"` läuft und ausdrücklich Vorrang
+ * hat. Tatsächlich belegte die Kartoffel 42,8 % der Fläche (1.000 von 2.334 ha).
+ *
+ * Ursache: die Pfade waren auf 4.000 ha beregnete Fläche kalibriert. Am
+ * 31.07.2026 entfiel der Ackerbau-Residualblock, die Betriebsfläche wurde zur
+ * Summe der Wertkulturen — 2.334 ha. Die Kartoffelzahl blieb.
+ *
+ * Entscheidung Benedikt 03.08.2026: **Rotationsfläche ausweiten**, Kartoffel
+ * bleibt bei 1.000 ha.
+ *
+ * Präzisierung desselben Tages: NEOTERRA baut **nur Wertkulturen und
+ * Zwischenfrüchte** (Sudangras u. a.). Die Bruchkulturen der Rotation — Getreide,
+ * Ölsaaten — bewirtschaftet ein **anderer Betrieb**; die Rotation wird zwischen
+ * beiden eng abgestimmt.
+ *
+ * Daraus folgt für das Modell zweierlei:
+ *   • Die Rotationsfläche ist eine **Nebenbedingung, keine Kostenposition**.
+ *     NEOTERRA pachtet, bewirtschaftet und mechanisiert nur die Wertkulturen.
+ *     Pacht, Maschinen, Personal und CAPEX hängen deshalb weiter an
+ *     WERTKULTUR_TOTAL_HA und ausdrücklich nicht an ROTATION_TOTAL_HA.
+ *   • ROTATION_TOTAL_HA ist die **Bezugsgröße der Fruchtfolgeprüfung**: die
+ *     gemeinsam abgestimmte Fläche, auf der sich die Kartoffel bewegen kann.
+ *     Gegen sie wird der 25-%-Anteil gemessen, nicht gegen die eigene Fläche.
+ *
+ * Die zuvor gerechnete Belastung von −0,90 Mio €/a entfällt damit: sie unterstellte,
+ * NEOTERRA trage die 1.666 ha Bruchkultur selbst. Tut es nicht.
+ * ------------------------------------------------------------------------ */
+
+/** Anbaupause der Kartoffel-Wirtsgruppe. Daraus folgt der Höchstanteil 1/4. */
+export const KARTOFFEL_PAUSE_JAHRE = 4;
+
+/** Rotationsfläche je Planjahr: so groß, dass die Kartoffel ihre Pause einhält. */
+export const ROTATION_TOTAL_HA: number[] = Array.from({ length: N_YEARS }, (_, y) => {
+  const kart = (SKALIERUNG_HA.kartoffel_pommes[y] ?? 0) + (SKALIERUNG_HA.kartoffel_chips[y] ?? 0);
+  return Math.max(kart * KARTOFFEL_PAUSE_JAHRE, WERTKULTUR_TOTAL_HA[y]);
+});
+
+/** Fläche, welche die Bruchkulturen des Partnerbetriebs tragen — Rotationsfläche
+ *  minus Wertkulturen. Planungsgröße für die Abstimmung, keine NEOTERRA-Kosten. */
+export const BREAK_TOTAL_HA: number[] = ROTATION_TOTAL_HA.map(
+  (r, y) => Math.max(0, r - WERTKULTUR_TOTAL_HA[y]));
+
+/** Σ bewirtschaftete Fläche je Planjahr = die Wertkulturen. Bewusst NICHT die
+ *  Rotationsfläche: an dieser Zahl hängen Pacht, Personal, Maschinen und CAPEX,
+ *  und NEOTERRA bewirtschaftet nur die Wertkulturen. */
+export const SKALIERUNG_TOTAL_HA: number[] = WERTKULTUR_TOTAL_HA.slice();
 
 const TIMELINE: Timeline = {
   baseGranularity: "month",
@@ -923,8 +974,10 @@ export function effectiveGrowth(gp: GrowthPlan | undefined): GrowthPlan | undefi
 export type ReplCfg = { cycleYears?: number; afaYears?: number; hoursPerYear?: number; enabled?: boolean };
 const GROWTH: GrowthPlan = {
   years: N_YEARS,
-  // NEOTERRA-SOLO: die bewirtschaftete Fläche IST der Skalierungspfad der Wertkulturen —
-  //  300 ha (2027) → 2.334 ha (2032+). Alles beregnet; es gibt keinen unberegneten Block mehr.
+  // NEOTERRA-SOLO: die BEWIRTSCHAFTETE Fläche ist die Summe der Wertkulturen —
+  //  300 ha (2027) → 2.334 ha (2032+). Die Rotationsfläche ist mit 4.000 ha größer,
+  //  die Differenz bewirtschaftet aber der Partnerbetrieb; sie kostet hier weder
+  //  Pacht noch Technik. Siehe ROTATION_TOTAL_HA.
   //  Stufe "s3b" heißt hier nur: Kurven werden VERBATIM übernommen (kein s1-Flach, kein s2-Ausbau);
   //  Flächenzukauf/Akquisitionen sind bewusst leer — gewachsen wird über die Kulturen, nicht über Land.
   areaByYear: SKALIERUNG_TOTAL_HA.slice(),
@@ -2006,7 +2059,16 @@ export const STORAGE_CROP_IDS: string[] = ["kartoffel_pommes", "kartoffel_chips"
  *  Annahmen sind unverändert da und jederzeit reaktivierbar. Sie erscheinen nur nicht mehr in
  *  Anbauplan, Maßnahmen, Kalkulation, Contribution und Produktkatalog — dort würden sie eine
  *  Betriebsstruktur zeigen, die das Solo-Modell nicht mehr hat. */
-const CATALOG: CatalogEntry[] = CROP_IDS.filter((cropId) => VALUE_CROP_IDS.includes(cropId)).map((cropId) => ({
+/** Bruchkulturen der Rotation. Sie belegen Flaeche und kosten Pacht, aber sie
+ *  erscheinen NICHT im Arbeitskatalog: NEOS FX rechnet nur Wertkulturen, und fuer
+ *  Cash Crops wird keine eigene Technik vorgehalten (Vorgabe Betrieb 03.08.2026).
+ *  Ihre Bestellung laeuft ueber Lohnarbeit — sie duerfen deshalb weder in die
+ *  Maschinenbemessung noch in den CAPEX eingehen. */
+export const ROTATION_CROP_IDS: string[] = ["weizen", "gerste_zw", "sonnenblume", "soja_luzerne", "mais"];
+
+const CATALOG: CatalogEntry[] = CROP_IDS
+  .filter((cropId) => VALUE_CROP_IDS.includes(cropId))
+  .map((cropId) => ({
   cropId,
   name: CROP_NAME[cropId],
   type: "annual",
@@ -2500,6 +2562,9 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
     plantingPeriod: CROP_CAL[cropId].plant,
     harvestPeriods: CROP_CAL[cropId].harvest.slice(),
   });
+  // NUR Wertkulturen. Die Bruchkulturen der Rotation stehen bewusst nicht hier:
+  //  der Anbauplan treibt Maschinenbemessung, CAPEX, Parzellen und Kulturplaene —
+  //  und fuer Cash Crops haelt der Betrieb keine eigene Technik vor.
   return (Object.keys(SKALIERUNG_HA) as CropId[])
     .map((cid) => mk(cid, Math.round((SKALIERUNG_HA[cid]?.[0] ?? 0) * sf)));
 }
@@ -6714,6 +6779,46 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     personnel: domain.personnel,
     holding: domain.holding,
     openingBalance: domain.openingBalance,
+    /** FRUCHTFOLGE — die gemeinsame Stelle, an der Anbaupausen durchgesetzt werden.
+     *  Konvention: `pauseYears` ist die Laenge der Rotation, der Hoechstanteil also
+     *  1/pauseYears. Vier Jahre Kartoffelpause heissen: Kartoffel auf jedem Schlag
+     *  jedes vierte Jahr, also hoechstens ein Viertel der Flaeche.
+     *
+     *  Bei den Alliaceen und Apiaceen steht ein strengerer Anteil, weil die
+     *  Dauerstadien laenger leben als die Rotation: Sclerotium cepivorum bleibt
+     *  ueber 15 Jahre keimfaehig, Sclerotinia-Sklerotien jahrelang. Fuenf Jahre
+     *  Pause heissen dort: Rueckkehr im sechsten Jahr, also ein Sechstel.
+     *  Beide Gruppen teilen sich die Pause ueber zwei Kulturen hinweg —
+     *  Knoblauch und Zwiebel sind beide Alliaceen, Sellerie und Moehre beide
+     *  Apiaceen (NEOS Crops, Entscheidung 2026-08-03). */
+    // Bezugsflaeche: die ROTATIONSflaeche ueber alle Planjahre, nicht die Summe der
+    //  Wertkulturen. Die Bruchkulturen gehoeren zur Rotation, auch wenn sie im
+    //  Anbauplan fehlen — sonst misst die Regel gegen eine zu kleine Flaeche und
+    //  meldet einen Verstoss, den es nicht gibt.
+    rotationAreaHa: ROTATION_TOTAL_HA.reduce((a, b) => a + b, 0),
+    rotationRules: [
+      {
+        id: "kartoffel",
+        label: "Kartoffel",
+        cropWeights: { kartoffel_pommes: 1, kartoffel_chips: 1 },
+        pauseYears: KARTOFFEL_PAUSE_JAHRE,
+      },
+      {
+        id: "alliaceen",
+        label: "Alliaceen (Zwiebel + Knoblauch)",
+        // zwiebel_moehre ist eine Mischposition; nur der Zwiebelanteil zaehlt.
+        cropWeights: { zwiebel_moehre: 0.5, knoblauch: 1 },
+        pauseYears: 5,
+        maxShare: 1 / 6,
+      },
+      {
+        id: "apiaceen",
+        label: "Apiaceen (Möhre + Knollensellerie)",
+        cropWeights: { zwiebel_moehre: 0.5, knollensellerie: 1 },
+        pauseYears: 5,
+        maxShare: 1 / 6,
+      },
+    ],
   };
 }
 

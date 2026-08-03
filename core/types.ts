@@ -670,8 +670,33 @@ export interface ModelState {
   /** Holding-Ebene. Optional; GESONDERT gerechnet (computeHolding), nicht in OpCo-OpEx. */
   holding?: HoldingPlan;
 
+  /** Fruchtfolgeregeln. Eine Regel je Wirtsgruppe, die sich eine Anbaupause teilt.
+   *  Bewusst generisch und datengetrieben: vorher gab es zwei handgeschriebene
+   *  Sonderfaelle im Composer (ein Kartoffel-Cap, der nie griff, und ein
+   *  Doldenblueter-Guard, der griff), aber keine Stelle, an der Fruchtfolge
+   *  ueberhaupt durchgesetzt wurde. */
+  rotationRules?: RotationRule[];
+  /** Bezugsflaeche der Fruchtfolgeregeln (ha, summiert ueber alle Planjahre).
+   *  Bewusst NICHT die Summe der cropPlans: die Rotationsflaeche ist groesser als
+   *  die Flaeche der Wertkulturen, weil die Bruchkulturen dazugehoeren — sie
+   *  erscheinen nur nicht im Anbauplan, weil fuer sie keine eigene Technik
+   *  vorgehalten wird. Fehlt der Wert, gilt die Summe der cropPlans. */
+  rotationAreaHa?: number;
+
   /** Eröffnungsbilanz (Periode -1), damit die Bilanz einen Startpunkt hat. */
   openingBalance: OpeningBalance;
+}
+
+/** Eine Wirtsgruppe mit gemeinsamer Anbaupause. */
+export interface RotationRule {
+  id: string;                         // "kartoffel", "alliaceen", "apiaceen"
+  label: string;
+  /** Kulturen der Gruppe. Gewicht 1 = zaehlt voll; 0.5 = zaehlt halb (Mischposition). */
+  cropWeights: Record<string /* cropId */, number>;
+  /** Anbaupause in Jahren. Daraus folgt der Hoechstanteil 1/(pause). */
+  pauseYears: number;
+  /** Optional abweichender Hoechstanteil, falls er nicht 1/pauseYears ist. */
+  maxShare?: number;
 }
 
 export interface OpeningBalance {
