@@ -251,6 +251,12 @@ export type AnbauEntry = {
   /** Wasserregime des Eintrags: beregnet (Default) vs. unberegnete Trockenrotation.
    *  Steuert die Zwei-Pool-Flächenskalierung (irrigated → areaByYear, dryland → total − areaByYear). */
   pool?: "irrigated" | "dryland";
+  /** ZWEITNUTZUNG derselben Fläche im selben Jahr (Zwischenfrucht nach der Hauptkultur).
+   *  Solche Zeilen tragen Kosten, Betriebsmittel und Maschinenstunden, aber KEINE Fläche:
+   *  sie gehen nicht in Pacht, Flächenbilanz, Beregnungs-CAPEX oder Parzellen ein.
+   *  Ohne dieses Flag würde dieselbe Hektarfläche doppelt gezählt — bei 3.834 ha wären
+   *  das 2,9 Mio EUR Pacht im Jahr, die es nicht gibt. */
+  zweitnutzung?: boolean;
   /** Gesellschaft, der diese Kultur zugeordnet ist (Entity-Split). Fehlt → aus Value/Cash abgeleitet
    *  (Value Crops → NEOTERRA-OpCo, Cash/Trockenrotation → Isolde). Referenziert Entity.id. */
   entityId?: string;
@@ -450,7 +456,9 @@ export const DOLDEN_CAP_DEFAULT = 0.20;
 export function deriveCropAreasMY(domain: Domain): { years: number; irrHa: number[]; areas: Record<string, number[]> } {
   const years = Math.max(1, domain.growth?.years ?? 1);
   const gEff = effectiveGrowth(domain.growth);
-  const baseArea = domain.anbauplan.filter((a) => a.pool !== "dryland").reduce((s, a) => s + a.areaHa, 0) || 1;
+  // Zweitnutzung (Zwischenfrucht) zaehlt NICHT zur Flaeche — sonst waere die
+  //  Bezugsgroesse der gesamten Skalierung doppelt so gross wie der Betrieb.
+  const baseArea = domain.anbauplan.filter((a) => a.pool !== "dryland" && !a.zweitnutzung).reduce((s, a) => s + a.areaHa, 0) || 1;
   const irrHa = Array.from({ length: years }, (_, y) => {
     const a = gEff?.areaByYear?.[y];
     return a && a > 0 ? a : baseArea;
@@ -486,7 +494,10 @@ export function deriveCropAreasMY(domain: Domain): { years: number; irrHa: numbe
       const p = pol[id];
       if (p?.mode !== "path" || !p.haByYear?.length || !areas[id]) continue;
       const ha = p.haByYear[Math.min(y, p.haByYear.length - 1)] ?? 0;
-      areas[id][y] += ha; fixed += ha;
+      areas[id][y] += ha;
+      // Zweitnutzung belegt keine Rotationsflaeche — sie steht auf dem Hektar der
+      //  Hauptkultur. Sie darf deshalb nicht gegen irrHa konkurrieren.
+      if (!domain.anbauplan.some((e) => e.cropId === id && e.zweitnutzung)) fixed += ha;
     }
     // (2) ramp — Kartoffel-Gruppe gemeinsam unter shareCap, so schnell wie erlaubt Richtung Σ targets
     const rampIds = domain.anbauplan.map((e) => e.cropId).filter((id, i, arr) => arr.indexOf(id) === i && pol[id]?.mode === "ramp");
@@ -511,11 +522,12 @@ export function deriveCropAreasMY(domain: Domain): { years: number; irrHa: numbe
     //  (Σ je Jahr bleibt IMMER = beregnete Fläche, keine Phantom-Hektar).
     if (fixed > irrHa[y] && fixed > 0) {
       const k = irrHa[y] / fixed;
-      for (const id of Object.keys(areas)) if (!dryIds.has(id)) areas[id][y] *= k;
+      const zwfIds = new Set(domain.anbauplan.filter((e) => e.zweitnutzung).map((e) => e.cropId));
+      for (const id of Object.keys(areas)) if (!dryIds.has(id) && !zwfIds.has(id)) areas[id][y] *= k;
       fixed = irrHa[y];
     }
     // (3) Residual proportional auf scale-Kulturen (nur beregnet — Dryland getrennt, s. u.)
-    const scaleEntries = domain.anbauplan.filter((e) => e.pool !== "dryland" && (!pol[e.cropId] || pol[e.cropId].mode === "scale"));
+    const scaleEntries = domain.anbauplan.filter((e) => e.pool !== "dryland" && !e.zweitnutzung && (!pol[e.cropId] || pol[e.cropId].mode === "scale"));
     const scaleBase = scaleEntries.reduce((s, e) => s + e.areaHa, 0) || 1;
     const residual = Math.max(0, irrHa[y] - fixed);
     for (const e of scaleEntries) areas[e.cropId][y] += residual * (e.areaHa / scaleBase);
@@ -864,6 +876,8 @@ export function skalierungPolicy(stage: Stage = 1): Record<string, CropPolicy> {
   const out: Record<string, CropPolicy> = {};
   for (const [id, path] of Object.entries(SKALIERUNG_HA))
     out[id] = { mode: "path", haByYear: path.map((h) => Math.round(h * sf)) };
+  // Zwischenfrucht: eigener Pfad, aber als Zweitnutzung ohne Flächenwirkung (s. AnbauEntry).
+  out.zwischenfrucht = { mode: "path", haByYear: ZWISCHENFRUCHT_HA.map((h) => Math.round(h * sf)) };
   return out;
 }
 
@@ -922,6 +936,29 @@ export const BREAK_TOTAL_HA: number[] = ROTATION_TOTAL_HA.map(
  *  Rotationsfläche: an dieser Zahl hängen Pacht, Personal, Maschinen und CAPEX,
  *  und NEOTERRA bewirtschaftet nur die Wertkulturen. */
 export const SKALIERUNG_TOTAL_HA: number[] = WERTKULTUR_TOTAL_HA.slice();
+
+/* --------------------------------------------------------------------------
+ * ZWISCHENFRUCHT (Sudangras u. a.) — ZWEITNUTZUNG, keine zusätzliche Fläche.
+ *
+ * Entscheidung Betrieb 03.08.2026: Zwischenfrüchte komplett abbilden, aber nur
+ * auf den eigenen Flächen. Der Partnerbetrieb bestellt seine Rotationsfläche
+ * selbst.
+ *
+ * Der entscheidende Punkt ist, was eine Zwischenfrucht NICHT ist: zusätzliche
+ * Fläche. Sie steht auf demselben Hektar wie die Hauptkultur, nur später im
+ * Jahr. Trüge man sie wie eine normale Kultur ein, zählte dieselbe Fläche
+ * doppelt — bei 3.834 ha wären das rund 2,9 Mio EUR Pacht im Jahr, die es nicht
+ * gibt. Deshalb das Flag `zweitnutzung` auf der Anbauplanzeile: Kosten,
+ * Betriebsmittel und Maschinenstunden ja, Fläche und Pacht nein.
+ *
+ * Die Fläche folgt den Kulturen, die den Schlag früh genug räumen: Kartoffel
+ * (Juli), Knoblauch (Juli), Zwiebel/Möhre (August). Tomate, Sellerie und
+ * Süßkartoffel ernten erst im September/Oktober — dahinter läuft keine
+ * Zwischenfrucht mehr auf.
+ * ------------------------------------------------------------------------ */
+const ZWF_VORFRUECHTE = ["kartoffel_pommes", "kartoffel_chips", "knoblauch", "zwiebel_moehre"];
+export const ZWISCHENFRUCHT_HA: number[] = Array.from({ length: N_YEARS }, (_, y) =>
+  ZWF_VORFRUECHTE.reduce((sum, id) => sum + (SKALIERUNG_HA[id]?.[y] ?? 0), 0));
 
 const TIMELINE: Timeline = {
   baseGranularity: "month",
@@ -1027,7 +1064,11 @@ type CropId =
   | "weizen_dry" | "gerste_dry" | "raps_dry"
   // Sonnenblume (rain-fed Break Crop, Süd-Dolj): trockentolerant, tiefwurzelnd, niedriger N-Bedarf.
   //  Eigene lange Anbaupause (Sclerotinia/Phomopsis/Orobanche) → Kandidat der Trockenrotation.
-  | "sonnenblume";
+  | "sonnenblume"
+  // ZWISCHENFRUCHT (Sudangras u. a.) — ZWEITNUTZUNG derselben Fläche im selben Jahr,
+  //  keine zusätzliche Fläche. Sie kostet Saatgut, Überfahrten und Beregnung, trägt
+  //  aber keinen Marktertrag. Siehe `zweitnutzung` in AnbauEntry.
+  | "zwischenfrucht";
 
 /** Kultur-Kalender (Monatsindex 0 = Jan). WINTERUNGEN saisonal korrekt: Aussaat im HERBST
  *  (Saatgut-/Herbstkosten Sep/Okt — konsistent mit SOW_MONTH des Maßnahmenkatalogs), Düngung/
@@ -1050,9 +1091,12 @@ export const CROP_CAL: Record<CropId, { plant: number; harvest: number[]; dueng?
   gerste_dry:        { plant: 9, harvest: [6], dueng: 1, psm: 3 },
   raps_dry:          { plant: 8, harvest: [6], dueng: 1, psm: 2 },
   sonnenblume:       { plant: 3, harvest: [8], dueng: 3, psm: 4 },  // Sommerung: Saat Apr · Ernte Sep, rain-fed
+  // Zwischenfrucht: Saat nach der Hauptkultur (Aug), Einarbeitung vor dem Winter (Nov).
+  zwischenfrucht:    { plant: 7, harvest: [10], dueng: 7, bereg: 8 },
 };
 
 export const CROP_NAME: Record<CropId, string> = {
+  zwischenfrucht: "Zwischenfrucht (Sudangras u. a.)",
   weizen: "Winterweizen",
   gerste_zw: "Wintergerste + Doppel-Soja",
   soja_luzerne: "Soja / Luzerne",
@@ -1076,6 +1120,10 @@ export const CROP_NAME: Record<CropId, string> = {
  * [Saatgut/Pflanzgut, Düngung, Pflanzenschutz, Beregnung(Wasser+Energie), Material/Lager, Handarbeit]
  */
 const AGRO_COSTS: Record<CropId, [number, number, number, number, number, number]> = {
+  // Zwischenfrucht: Saatgut, eine N-Startgabe, Beregnung zum Auflauf. Kein PSM,
+  //  keine Handarbeit, kein Material — sie wird eingearbeitet, nicht geerntet.
+  zwischenfrucht:    [110,  75,   0, 140,   0,   0], // Σ 325
+
   weizen:            [ 99, 288, 210, 300,   0,  60], // Σ 957
   gerste_zw:         [ 95, 258, 180, 280,   0,  70], // Σ 883
   soja_luzerne:      [180, 190, 130, 320,   0, 120], // Σ 940
@@ -1106,6 +1154,7 @@ const PACHT_PER_HA = 750;                 // EUR/ha (Referenzwert fuer die Vollk
  *  Der Ausreisser ist beseitigt, gespeicherte Staende werden in migrateDomain umgestellt. */
 const PACHT_PER_HA_CENT = PACHT_PER_HA * 100;
 const OVERHEAD_PER_HA: Record<CropId, number> = {
+  zwischenfrucht: 0,   // kein eigener Gemeinkostenblock — die Flaeche traegt ihn ueber die Hauptkultur
   weizen: 150, gerste_zw: 140, soja_luzerne: 130, winterraps: 140, mais: 150, tomate: 680,
   kartoffel_pommes: 410, kartoffel_chips: 470, zwiebel_moehre: 300,
   suesskartoffel: 380, knoblauch: 350, knollensellerie: 320,
@@ -1114,6 +1163,7 @@ const OVERHEAD_PER_HA: Record<CropId, number> = {
 /** Beregnung-Pivot AfA/Wartung je ha (Referenz A, §3-Fixblock) — nur für die analytische
  *  Vollkosten-Sicht (deriveContribution). Im 3-Statement steckt die Beregnung in der CAPEX-AfA. */
 const BEREGNUNG_PIVOT_PER_HA: Record<CropId, number> = {
+  zwischenfrucht: 0,   // Pivot-AfA haengt an der Hauptkultur, nicht doppelt
   weizen: 250, gerste_zw: 250, soja_luzerne: 250, winterraps: 250, mais: 300, tomate: 600,
   kartoffel_pommes: 450, kartoffel_chips: 450, zwiebel_moehre: 300,
   suesskartoffel: 400, knoblauch: 250, knollensellerie: 350,
@@ -1122,6 +1172,7 @@ const BEREGNUNG_PIVOT_PER_HA: Record<CropId, number> = {
 /** Personal (Maschinenbetrieb) €/ha je Kultur (Referenz A / §3). Nur für die Vollkosten-Sicht;
  *  im 3-Statement ist Personal über das FTE-Modell (computePersonnel) abgebildet. CENT/ha. */
 const PERSONNEL_MASCH_PER_HA_CENT: Record<CropId, number> = {
+  zwischenfrucht: 640,
   weizen: 1220, gerste_zw: 1281, soja_luzerne: 1022, winterraps: 1150, mais: 1300, tomate: 13471,
   kartoffel_pommes: 6719, kartoffel_chips: 6719, zwiebel_moehre: 11026,
   suesskartoffel: 8500, knoblauch: 9500, knollensellerie: 9800,
@@ -1134,6 +1185,12 @@ const PERSONNEL_MASCH_PER_HA_CENT: Record<CropId, number> = {
  * hier NICHT als COGS-Lohn (keine Doppelzählung).
  */
 const ARBEITSGAENGE: Record<CropId, Arbeitsgang[]> = {
+  // Zwischenfrucht: Stoppel, Saat, Beregnung zum Auflauf, Einarbeitung. Vier Überfahrten,
+  //  alle mit vorhandener Technik — es kommt keine Maschine dazu, nur Stunden.
+  zwischenfrucht: [
+    { m: "saatbett", passes: 1 }, { m: "gem_saat", passes: 1 },
+    { m: "streuer", passes: 1 }, { m: "pflug", passes: 1 },
+  ],
   weizen: [
     { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "drille", passes: 1 },
     { m: "streuer", passes: 3 }, { m: "spritze14", passes: 4 }, { m: "maehdr", passes: 1 }, { m: "transport", passes: 1 },
@@ -1431,6 +1488,12 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("yield.suesskartoffel", "yield.suesskartoffel", "Ertrag Süßkartoffel", "tonne_per_ha", 25, 32, 18),
   A("price.suesskartoffel", "price.suesskartoffel", "Preis Süßkartoffel (Großhandel, Importparität)", "money_per_tonne", 70000, 85000, 55000),
   A("loss.suesskartoffel", "loss.suesskartoffel", "Verlust Süßkartoffel (Curing/Sortierung)", "percent", 0.10),
+  // Zwischenfrucht: KEIN Marktertrag. Der Nutzen ist Bodenstruktur, Nematodenreduktion
+  //  und N-Bindung — er zeigt sich in den Folgekulturen, nicht in einer eigenen Erlöszeile.
+  A("yield.zwischenfrucht", "yield.zwischenfrucht", "Ertrag Zwischenfrucht (kein Marktertrag)", "tonne_per_ha", 0),
+  A("price.zwischenfrucht", "price.zwischenfrucht", "Preis Zwischenfrucht (kein Verkauf)", "money_per_tonne", 0),
+  A("loss.zwischenfrucht", "loss.zwischenfrucht", "Verlust Zwischenfrucht", "percent", 0),
+  A("qual.zwischenfrucht", "qual.zwischenfrucht", "Qualitätserfüllung Zwischenfrucht", "percent", 1),
   A("yield.knoblauch", "yield.knoblauch", "Ertrag Knoblauch (bewässert)", "tonne_per_ha", 9, 11, 7),
   A("price.knoblauch", "price.knoblauch", "Preis Knoblauch (Erzeuger RO)", "money_per_tonne", 250000, 287500, 212500),
   A("loss.knoblauch", "loss.knoblauch", "Verlust Knoblauch (Trocknung/Putzen)", "percent", 0.08),
@@ -1803,6 +1866,7 @@ const clampP = (p: number): number => Math.max(0, Math.min(N - 1, p));
 type Gabe = { label: string; n?: number; p?: number; k?: number; s?: number; fert?: boolean; unterfuss?: boolean };
 /** Düngeprogramm je Kultur — Gaben mit Nährstoffmengen kg/ha (BBCH/Applikation im Label). */
 const DUENGUNG_PROGRAM: Record<CropId, Gabe[]> = {
+  zwischenfrucht:   [{ label: "N-Start zur Saat (Strohzehrung ausgleichen)", n: 30 }],
   weizen:           [{ label: "Grund P/K (BBCH 00, Streuer)", p: 70, k: 90 }, { label: "N1 Andüngung + S (BBCH 25–30)", n: 60, s: 25 }, { label: "N2 Schossen (BBCH 31–32)", n: 70 }, { label: "N3 Ähre/Qualität (BBCH 37–49)", n: 45 }],
   gerste_zw:        [{ label: "Grund P/K (Streuer)", p: 60, k: 80 }, { label: "N1 + S (BBCH 25–30)", n: 60, s: 20 }, { label: "N2 (BBCH 31–32)", n: 60 }, { label: "N3 (BBCH 39–49)", n: 45 }],
   soja_luzerne:     [{ label: "Grund P/K (Streuer; N-Fixierer)", p: 70, k: 140 }, { label: "Start-N + Rhizobium", n: 30 }],
@@ -1824,6 +1888,7 @@ const DUENGUNG_PROGRAM: Record<CropId, Gabe[]> = {
  *  passes = Spritz-Überfahrten des Blocks (Default 1; 0 = Tankmischung mit vorherigem Block
  *  bzw. nur anteilig eingepreist → keine eigene Überfahrt). SSOT für die Spritzen-Passes! */
 const PSM_PROGRAM: Record<CropId, { label: string; eurHa: number; passes?: number }[]> = {
+  zwischenfrucht:   [],   // kein Pflanzenschutz — die Zwischenfrucht steht kurz und wird eingearbeitet
   weizen:           [{ label: "H Herbst (BBCH 11–13)", eurHa: 55 }, { label: "WR + H (BBCH 30–31)", eurHa: 50 }, { label: "F Fahnenblatt (BBCH 37–39)", eurHa: 55 }, { label: "F + I Blüte (BBCH 61–65)", eurHa: 50 }],
   gerste_zw:        [{ label: "H Herbst (BBCH 12–13)", eurHa: 50 }, { label: "T1 GS 30–32: Fungizid (Fluxapyroxad+Prothioconazol) + WR — Netzflecken/Rhynchosporium (~60%)", eurHa: 60 }, { label: "T2 GS 45–49: Fungizid Ramularia (Prothioconazol+Folpet-Multisite) (~40%)", eurHa: 48 }, { label: "Soja H (BBCH 12–14)", eurHa: 18 }, { label: "Soja F + I (BBCH 61–65)", eurHa: 12 }],
   soja_luzerne:     [{ label: "H Vorauflauf (BBCH 00–09)", eurHa: 60 }, { label: "H Nachauflauf (BBCH 13–15)", eurHa: 45 }, { label: "F + I Blüte (BBCH 61–71)", eurHa: 25 }],
@@ -2007,6 +2072,7 @@ export function deriveMassnahmenChecks(domain: Domain): CheckResult[] {
 
 /** Phase 5 — Saatgut/Pflanzgut: Menge/ha (natürliche Einheit) × Preis-Assumption seed.<crop>. */
 const SEED_PROGRAM: Record<CropId, { qty: number; unit: string }> = {
+  zwischenfrucht: { qty: 35, unit: "kg" },
   weizen: { qty: 220, unit: "kg" }, gerste_zw: { qty: 180, unit: "kg" }, soja_luzerne: { qty: 75, unit: "kg" },
   winterraps: { qty: 1.8, unit: "Einh." }, mais: { qty: 1.0, unit: "Einh." }, tomate: { qty: 25, unit: "×1000 Pfl." },
   kartoffel_pommes: { qty: 2.8, unit: "t" }, kartoffel_chips: { qty: 3.0, unit: "t" }, zwiebel_moehre: { qty: 1, unit: "ha-Satz" },
@@ -2017,6 +2083,7 @@ const SEED_PROGRAM: Record<CropId, { qty: number; unit: string }> = {
 };
 /** Phase 5 — Bewässerungsnorm mm/ha je Kultur (Süd-Oltenien; Weizen/Mais belegt, übrige abgeleitet). */
 const BEWAESSERUNG_MM: Record<CropId, number> = {
+  zwischenfrucht: 138,   // Auflaufberegnung; ohne sie keimt Sudangras im August nicht
   weizen: 175, gerste_zw: 110, soja_luzerne: 150, winterraps: 130, mais: 200,
   tomate: 550, kartoffel_pommes: 380, kartoffel_chips: 380, zwiebel_moehre: 330,
   suesskartoffel: 300, knoblauch: 150, knollensellerie: 350,
@@ -2083,7 +2150,7 @@ export const STORAGE_CROP_IDS: string[] = ["kartoffel_pommes", "kartoffel_chips"
 export const ROTATION_CROP_IDS: string[] = ["weizen", "gerste_zw", "sonnenblume", "soja_luzerne", "mais"];
 
 const CATALOG: CatalogEntry[] = CROP_IDS
-  .filter((cropId) => VALUE_CROP_IDS.includes(cropId))
+  .filter((cropId) => VALUE_CROP_IDS.includes(cropId) || cropId === "zwischenfrucht")
   .map((cropId) => ({
   cropId,
   name: CROP_NAME[cropId],
@@ -2581,8 +2648,12 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
   // NUR Wertkulturen. Die Bruchkulturen der Rotation stehen bewusst nicht hier:
   //  der Anbauplan treibt Maschinenbemessung, CAPEX, Parzellen und Kulturplaene —
   //  und fuer Cash Crops haelt der Betrieb keine eigene Technik vor.
-  return (Object.keys(SKALIERUNG_HA) as CropId[])
+  const wert = (Object.keys(SKALIERUNG_HA) as CropId[])
     .map((cid) => mk(cid, Math.round((SKALIERUNG_HA[cid]?.[0] ?? 0) * sf)));
+  // Zwischenfrucht als ZWEITNUTZUNG: kostet, fährt Maschinenstunden, belegt aber
+  //  keine eigene Fläche — sonst zählte derselbe Hektar zweimal.
+  const zwf = mk("zwischenfrucht" as CropId, Math.round((ZWISCHENFRUCHT_HA[0] ?? 0) * sf));
+  return [...wert, { ...zwf, zweitnutzung: true }];
 }
 
 /** Forward-Migration gespeicherter Domänen (Cloud-AUTOSAVE / JSON-Import), die VOR der
@@ -2995,9 +3066,19 @@ const CAPEX_PLAN_SEED: CapexPlanItem[] = [
   // — Lager (Kartoffel + Zwiebel/Möhre; Tomate NICHT) (assetClass buildings) —
   // MENGEN AUF DAS ZIELBILD 2035 (Entscheidung Betrieb 03.08.2026: mit eigenem Lager).
   //  Erntemenge 2035: Kartoffel 115.500 t, Zwiebel/Möhre 25.700 t, Sellerie 4.200 t,
-  //  Süßkartoffel 1.500 t, Knoblauch 450 t. Eingelagert wird NICHT alles — die
-  //  Hauptkultur geht ab Feld zum Verarbeiter, die Zweitkultur und die Gemüseschiene
-  //  ins Lager. Angesetzt sind rund 40 % der Kartoffel und die Lagerkulturen voll.
+  //  Süßkartoffel 1.500 t, Knoblauch 450 t.
+  //
+  //  EINGELAGERT WIRD NICHT DIE GANZE WARE (Vorgabe Betrieb 03.08.2026):
+  //    Chips   20.000 t von 50.000 t  — Rest geht ab Feld zum Verarbeiter
+  //    Pommes  20.000 t von 65.500 t  — dito
+  //    zusammen 40.000 t Kartoffel, dazu die Gemüseschiene.
+  //  Die Chipspartie liegt im Kühl-/CA-Lager: Chipskartoffeln vertragen die tiefen
+  //  Temperaturen des Schüttlagers nicht, sie versüßen und werden beim Frittieren
+  //  dunkel. Die Pommespartie liegt im belüfteten Schüttlager.
+  //
+  //  Referenz: bei VIA Agro steht ein Lager mit 80.000 t. Als Größenordnung für
+  //  Baukosten je Tonne ist das der belastbarste Vergleich in der Region — ob
+  //  Mitnutzung eine Alternative zum Eigenbau ist, ist offen und nicht bewertet.
   //  BAUABSCHNITTE (`jahr`): der Lagerbau folgt dem Kartoffelhochlauf, er geht ihm
   //  nicht voraus. Ohne Staffelung fiel das gesamte Programm — rund 27 Mio EUR —
   //  im Jahr 2028 an, in dem der Betrieb 670 ha bewirtschaftet. Die Kasse stand
@@ -3009,10 +3090,10 @@ const CAPEX_PLAN_SEED: CapexPlanItem[] = [
   //  Diese Zahlen sind PROJEKTPLANUNG und laufen bewusst getrennt von der Automatik:
   //  ein Lager wird gebaut, wie es gebaut wird, nicht wie eine Formel es ausrechnet.
   //  Gegen stilles Auseinanderlaufen schützt der Check `capex_plan_drift` (s. u.).
-  cp("lg-bulk", "lager", "Schüttlager Kartoffel, belüftet (ambient)", "bau", "perTonne", 46000, "t", 160, 22, { ...bench(120, 200), jahr: 2 }),
-  cp("lg-cool", "lager", "Kühl-/CA-Lager Kartoffel", "technik", "perTonne", 24000, "t", 320, 20, { ...bench(250, 550), jahr: 5 }),
+  cp("lg-bulk", "lager", "Schüttlager Kartoffel, belüftet (ambient)", "bau", "perTonne", 20000, "t", 160, 22, { ...bench(120, 200), jahr: 2 }),
+  cp("lg-cool", "lager", "Kühl-/CA-Lager Kartoffel", "technik", "perTonne", 20000, "t", 320, 20, { ...bench(250, 550), jahr: 5 }),
   cp("lg-cure", "lager", "Zwiebel-Trocknung / Curing", "technik", "perTonne", 12000, "t", 200, 20, { ...bench(150, 250), jahr: 4 }),
-  cp("lg-shell", "lager", "Gebäudehülle Lager (Stahl, isoliert)", "bau", "perM2", 12000, "m²", 500, 25, { ...bench(350, 800), jahr: 2 }),
+  cp("lg-shell", "lager", "Gebäudehülle Lager (Stahl, isoliert)", "bau", "perM2", 11000, "m²", 500, 25, { ...bench(350, 800), jahr: 2 }),
   // — Packhaus / Aufbereitungslinien (assetClass buildings, kurze AfA) —
   cp("pk-line", "packhaus", "Verpackungslinie Kartoffel (20 t/h)", "technik", "perStueck", 2, "Linie", 1200000, 10, { ...bench(500000, 2000000), jahr: 6, quelle: "LONKIA 2026" }),
   cp("pk-optic", "packhaus", "Optische Sortierung / Grading", "technik", "perStueck", 1, "Modul", 150000, 10, { ...bench(80000, 250000), jahr: 6 }),
@@ -4541,7 +4622,7 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
     for (const a of domain.anbauplan) {
       if (drv.kind === "crops" && !drv.ids.includes(a.cropId)) continue;
       if (drv.kind === "valueCrops" && !VALUE_CROP_IDS.includes(a.cropId)) continue;
-      if (drv.kind === "irrigated" && a.pool === "dryland") continue;
+      if (drv.kind === "irrigated" && (a.pool === "dryland" || a.zweitnutzung)) continue;
       if (drv.kind === "crop" && a.cropId !== drv.cropId) continue;
       const yk = yieldKeyOf(a.cropId);
       if (yk) t += a.areaHa * resolveScalar(domain, yk, scenarioId) * (drv.kind === "crops" ? storeShare(a.cropId) : 1);
@@ -4553,7 +4634,7 @@ export function deriveCapex(domain: Domain, scenarioId: string): DerivedCapex[] 
     for (const a of domain.anbauplan) {
       if (drv.kind === "crops" && !drv.ids.includes(a.cropId)) continue;
       if (drv.kind === "valueCrops" && !VALUE_CROP_IDS.includes(a.cropId)) continue;
-      if (drv.kind === "irrigated" && a.pool === "dryland") continue;
+      if (drv.kind === "irrigated" && (a.pool === "dryland" || a.zweitnutzung)) continue;
       if (drv.kind === "crop" && a.cropId !== drv.cropId) continue;
       ha += a.areaHa;
     }
@@ -5853,7 +5934,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   const crops: Crop[] = domain.catalog.map((c) => ({ id: c.cropId, name: c.name, type: c.type }));
 
   // Parzellen: eine je Anbauplan-Zeile.
-  const parcels: Parcel[] = domain.anbauplan.map((a) => {
+  const parcels: Parcel[] = domain.anbauplan.filter((a) => !a.zweitnutzung).map((a) => {
     const cat = domain.catalog.find((c) => c.cropId === a.cropId);
     return { id: `parcel-${a.id}`, farmId, name: `${cat?.name ?? a.cropId} · ${a.areaHa} ha`, areaHa: a.areaHa };
   });
