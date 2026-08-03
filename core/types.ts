@@ -676,6 +676,12 @@ export interface ModelState {
    *  Doldenblueter-Guard, der griff), aber keine Stelle, an der Fruchtfolge
    *  ueberhaupt durchgesetzt wurde. */
   rotationRules?: RotationRule[];
+  /** Bezugsflaeche der Fruchtfolgeregeln (ha, summiert ueber alle Planjahre).
+   *  Bewusst NICHT die Summe der cropPlans: die Rotationsflaeche ist groesser als
+   *  die Flaeche der Wertkulturen, weil die Bruchkulturen dazugehoeren — sie
+   *  erscheinen nur nicht im Anbauplan, weil fuer sie keine eigene Technik
+   *  vorgehalten wird. Fehlt der Wert, gilt die Summe der cropPlans. */
+  rotationAreaHa?: number;
 
   /** Eröffnungsbilanz (Periode -1), damit die Bilanz einen Startpunkt hat. */
   openingBalance: OpeningBalance;

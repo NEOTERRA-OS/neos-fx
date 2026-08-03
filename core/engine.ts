@@ -2062,7 +2062,7 @@ export function computeModel(
    *  dass irgendetwas warnte. Diese Pruefung ist die gemeinsame Stelle, die
    *  gefehlt hat — datengetrieben, nicht je Kultur ausprogrammiert. */
   for (const rule of state.rotationRules ?? []) {
-    const gesamtHa = state.cropPlans.reduce((sum, p) => sum + p.areaHa, 0);
+    const gesamtHa = state.rotationAreaHa ?? state.cropPlans.reduce((sum, p) => sum + p.areaHa, 0);
     if (gesamtHa <= 0) continue;
     const gruppeHa = state.cropPlans.reduce(
       (sum, p) => sum + p.areaHa * (rule.cropWeights[p.cropId] ?? 0), 0);

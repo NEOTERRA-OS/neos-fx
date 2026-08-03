@@ -1,55 +1,40 @@
-# Offener Befund: CAPEX-Sturz beim Wechsel der Kulturzusammensetzung
+# Geschlossen: der CAPEX-Sturz beim Wechsel der Kulturzusammensetzung
 
-Stand 03.08.2026 · Zweig `rotation-4000ha` gegen `main`
+Stand 03.08.2026 · aufgeloest
 
-## Was gemessen ist
+## Was passiert war
 
-|  | `main` (2.334 ha) | `rotation-4000ha` (4.000 ha) | Differenz |
-|---|---:|---:|---:|
-| Maschinen-Vintage-Positionen | 728 | 670 | −58 |
-| Maschinen-Vintage-Betrag | 28.185 kEUR | 16.569 kEUR | **−11.616 kEUR** |
-| CAPEX gesamt | 28.739 kEUR | 17.072 kEUR | −11.667 kEUR |
-| **Flottengroesse** | **26 Einheiten** | **26 Einheiten** | **0** |
+Der erste Entwurf der Rotationsaenderung hat die Bruchkulturen in
+`domain.anbauplan` und in den `CATALOG` aufgenommen. Der Anbauplan treibt aber
+die Maschinenbemessung, den CAPEX, die Parzellen und die Kulturplaene — die
+Bruchkulturen zogen damit eine eigene Technikausstattung nach sich und
+verschoben zugleich die Bemessungsbasis der Vintage-Ketten.
 
-Die Richtung ist falsch: mehr Flaeche muss mehr CAPEX bedeuten, nicht 41 % weniger.
+Ergebnis: 670 statt 728 Vintage-Positionen und 16.569 statt 28.185 kEUR, obwohl
+die Flotte mit 26 Einheiten identisch blieb und die Wertkulturflaechen je Jahr
+sich nicht geaendert hatten.
 
-## Was daraus folgt
+## Warum es kein Modellfehler war
 
-Der Maschinenbedarf ist **nicht** die Ursache — `machineFleetCount` liefert auf
-beiden Staenden dieselben 26 Einheiten. Dieselbe Flotte erzeugt unterschiedlich
-viele Vintage-Ketten mit unterschiedlichen Betraegen.
+Vorgabe Betrieb 03.08.2026: **NEOTERRA baut nur Wertkulturen und
+Zwischenfruechte.** Die Bruchkulturen der Rotation bewirtschaftet ein anderer
+Betrieb; die Rotation wird zwischen beiden eng abgestimmt.
 
-Die Positionen fallen um 8 %, der Betrag um 41 %. Es sind also nicht nur weniger
-Ersatzkaeufe, sondern auch andere Einzelbetraege.
+Damit gehoeren die Bruchkulturen ueberhaupt nicht in den Anbauplan. Die
+Rotationsflaeche ist eine **Nebenbedingung, keine Kostenposition**.
 
-## Wo es sitzt
+## Was jetzt gilt
 
-`store/model.ts`, `mkChain()` in `deriveCapex` (um Zeile 6558):
+- `SKALIERUNG_TOTAL_HA` = Wertkulturen (300 -> 2.334 ha). Pacht, Personal,
+  Maschinen und CAPEX haengen daran — unveraendert.
+- `ROTATION_TOTAL_HA` = 4 x Kartoffelflaeche (1.200 -> 4.000 ha). Ausschliesslich
+  Bezugsgroesse der Fruchtfolgepruefung, ueber `ModelState.rotationAreaHa`.
+- `BREAK_TOTAL_HA` = Flaeche des Partnerbetriebs. Planungsgroesse fuer die
+  Abstimmung, keine NEOTERRA-Zahl.
 
-```ts
-capexMY.push({
-  ...ci, id: `${ci.id}-c${py}-${age}-${capexMY.length}`,
-  amount: Math.round(netCent * inf), ...
-});
-```
+**CAPEX exakt 28.739 kEUR in 735 Positionen — identisch mit main.** Alle 28 Tests
+gruen, Golden Files unveraendert. Das ist der Beleg: die Aenderung ist
+finanziell wirkungslos und rein struktureller Natur.
 
-Zwei Dinge stehen hier zusammen, die nicht zusammengehoeren:
-
-1. Die **ID traegt `capexMY.length`** — einen Zaehler ueber das Array, in das
-   gerade geschrieben wird. Damit haengt die Identitaet einer
-   Investitionsposition von der Reihenfolge und Anzahl aller anderen ab. Das ist
-   dieselbe Fehlerklasse wie die `measureId`, die das Deep Review als Hindernis
-   fuer die NEOS-Farm-Kopplung benannt hat.
-2. `startY` (= Bedarfsjahr) und `netCent` bestimmen Kettenlaenge und Betrag.
-   Beide haengen ueber `cropAreasMemo` an der Kulturzusammensetzung.
-
-## Naechster Schritt, konkret
-
-`mkChain` je Maschine instrumentieren und `startY`, `netCent`, `firstDispAge`,
-`C`, `L` auf beiden Zweigen ausgeben und diffen. Ein Lauf genuegt, um zu
-entscheiden, ob die Kettenverkuerzung sachlich richtig ist (spaeteres
-Bedarfsjahr) oder ein Artefakt der positionsabhaengigen Buchfuehrung.
-
-**Bis dahin bleiben die Golden Files rot.** Ein Ergebnis, das niemand erklaeren
-kann, wird nicht zum neuen Sollwert erklaert — das ist der Zweck, zu dem sie
-gebaut wurden.
+Die frueher gerechnete Belastung von -0,90 Mio EUR/a entfaellt. Sie unterstellte,
+NEOTERRA trage die 1.666 ha Bruchkultur selbst.

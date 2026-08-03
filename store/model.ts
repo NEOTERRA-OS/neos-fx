@@ -848,10 +848,6 @@ export function skalierungPolicy(stage: Stage = 1): Record<string, CropPolicy> {
   const out: Record<string, CropPolicy> = {};
   for (const [id, path] of Object.entries(SKALIERUNG_HA))
     out[id] = { mode: "path", haByYear: path.map((h) => Math.round(h * sf)) };
-  // Bruchkulturen: ebenfalls expliziter Pfad. Sie sind kein Residual, das
-  // uebrigbleibt — sie sind die Flaeche, welche die Fruchtfolge verlangt.
-  for (const [id, path] of Object.entries(BREAK_HA))
-    out[id] = { mode: "path", haByYear: path.map((h) => Math.round(h * sf)) };
   return out;
 }
 
@@ -872,14 +868,24 @@ export const WERTKULTUR_TOTAL_HA: number[] = Array.from({ length: N_YEARS }, (_,
  * Summe der Wertkulturen — 2.334 ha. Die Kartoffelzahl blieb.
  *
  * Entscheidung Benedikt 03.08.2026: **Rotationsfläche ausweiten**, Kartoffel
- * bleibt bei 1.000 ha. Gerechnet gegen die Alternative:
- *   Ausweiten auf 4.000 ha   1.666 ha Bruchkulturen à 211 €/ha DB III
- *                            gegen 750 €/ha Pacht  →  −0,90 Mio €/a
- *   Kartoffel auf 583 ha     417 ha à 5.879 €/ha DB III weg,
- *                            ersetzt durch 211 €/ha  →  −2,36 Mio €/a
- * Ausweiten ist um den Faktor 2,6 günstiger. Es ist trotzdem kein Gratismittel:
- * die Bruchkulturen tragen ihre eigene Pacht nicht. Sie sind der Preis der
- * Fruchtfolge, und der gehört sichtbar in die GuV — nicht wegdefiniert.
+ * bleibt bei 1.000 ha.
+ *
+ * Präzisierung desselben Tages: NEOTERRA baut **nur Wertkulturen und
+ * Zwischenfrüchte** (Sudangras u. a.). Die Bruchkulturen der Rotation — Getreide,
+ * Ölsaaten — bewirtschaftet ein **anderer Betrieb**; die Rotation wird zwischen
+ * beiden eng abgestimmt.
+ *
+ * Daraus folgt für das Modell zweierlei:
+ *   • Die Rotationsfläche ist eine **Nebenbedingung, keine Kostenposition**.
+ *     NEOTERRA pachtet, bewirtschaftet und mechanisiert nur die Wertkulturen.
+ *     Pacht, Maschinen, Personal und CAPEX hängen deshalb weiter an
+ *     WERTKULTUR_TOTAL_HA und ausdrücklich nicht an ROTATION_TOTAL_HA.
+ *   • ROTATION_TOTAL_HA ist die **Bezugsgröße der Fruchtfolgeprüfung**: die
+ *     gemeinsam abgestimmte Fläche, auf der sich die Kartoffel bewegen kann.
+ *     Gegen sie wird der 25-%-Anteil gemessen, nicht gegen die eigene Fläche.
+ *
+ * Die zuvor gerechnete Belastung von −0,90 Mio €/a entfällt damit: sie unterstellte,
+ * NEOTERRA trage die 1.666 ha Bruchkultur selbst. Tut es nicht.
  * ------------------------------------------------------------------------ */
 
 /** Anbaupause der Kartoffel-Wirtsgruppe. Daraus folgt der Höchstanteil 1/4. */
@@ -891,26 +897,15 @@ export const ROTATION_TOTAL_HA: number[] = Array.from({ length: N_YEARS }, (_, y
   return Math.max(kart * KARTOFFEL_PAUSE_JAHRE, WERTKULTUR_TOTAL_HA[y]);
 });
 
-/** Restfläche, die Bruchkulturen tragen müssen (Rotationsfläche − Wertkulturen). */
+/** Fläche, welche die Bruchkulturen des Partnerbetriebs tragen — Rotationsfläche
+ *  minus Wertkulturen. Planungsgröße für die Abstimmung, keine NEOTERRA-Kosten. */
 export const BREAK_TOTAL_HA: number[] = ROTATION_TOTAL_HA.map(
   (r, y) => Math.max(0, r - WERTKULTUR_TOTAL_HA[y]));
 
-/** Mischung der Bruchkulturen. Anteile aus dem Anbaukompendium (NEOS Crops):
- *  Getreide trägt die Fläche, Sonnenblume und Soja brechen die Halmfrucht,
- *  Mais bleibt klein, weil er selbst beregnungsintensiv ist. */
-export const BREAK_MIX: Record<string, number> = {
-  weizen: 0.30, gerste_zw: 0.15, sonnenblume: 0.25, soja_luzerne: 0.20, mais: 0.10,
-};
-
-/** Bruchkulturen je Planjahr — die Mischung auf die Restfläche verteilt. */
-export const BREAK_HA: Record<string, number[]> = Object.fromEntries(
-  Object.entries(BREAK_MIX).map(([id, anteil]) => [
-    id, BREAK_TOTAL_HA.map((ha) => Math.round(ha * anteil)),
-  ]));
-
-/** Σ bewirtschaftete Fläche je Planjahr = Rotationsfläche.
- *  Das ist die Zahl, an der Pacht, Personal, Maschinen und Overhead hängen. */
-export const SKALIERUNG_TOTAL_HA: number[] = ROTATION_TOTAL_HA.slice();
+/** Σ bewirtschaftete Fläche je Planjahr = die Wertkulturen. Bewusst NICHT die
+ *  Rotationsfläche: an dieser Zahl hängen Pacht, Personal, Maschinen und CAPEX,
+ *  und NEOTERRA bewirtschaftet nur die Wertkulturen. */
+export const SKALIERUNG_TOTAL_HA: number[] = WERTKULTUR_TOTAL_HA.slice();
 
 const TIMELINE: Timeline = {
   baseGranularity: "month",
@@ -979,10 +974,10 @@ export function effectiveGrowth(gp: GrowthPlan | undefined): GrowthPlan | undefi
 export type ReplCfg = { cycleYears?: number; afaYears?: number; hoursPerYear?: number; enabled?: boolean };
 const GROWTH: GrowthPlan = {
   years: N_YEARS,
-  // NEOTERRA-SOLO: die bewirtschaftete Fläche ist die ROTATIONSFLÄCHE — nicht die
-  //  Summe der Wertkulturen. Sie folgt der Kartoffel-Anbaupause (4 Jahre ⇒ 4× die
-  //  Kartoffelfläche) und beträgt 1.200 ha (2027) → 4.000 ha (2031+). Die Differenz
-  //  zu den Wertkulturen tragen die Bruchkulturen (BREAK_HA).
+  // NEOTERRA-SOLO: die BEWIRTSCHAFTETE Fläche ist die Summe der Wertkulturen —
+  //  300 ha (2027) → 2.334 ha (2032+). Die Rotationsfläche ist mit 4.000 ha größer,
+  //  die Differenz bewirtschaftet aber der Partnerbetrieb; sie kostet hier weder
+  //  Pacht noch Technik. Siehe ROTATION_TOTAL_HA.
   //  Stufe "s3b" heißt hier nur: Kurven werden VERBATIM übernommen (kein s1-Flach, kein s2-Ausbau);
   //  Flächenzukauf/Akquisitionen sind bewusst leer — gewachsen wird über die Kulturen, nicht über Land.
   areaByYear: SKALIERUNG_TOTAL_HA.slice(),
@@ -2064,13 +2059,15 @@ export const STORAGE_CROP_IDS: string[] = ["kartoffel_pommes", "kartoffel_chips"
  *  Annahmen sind unverändert da und jederzeit reaktivierbar. Sie erscheinen nur nicht mehr in
  *  Anbauplan, Maßnahmen, Kalkulation, Contribution und Produktkatalog — dort würden sie eine
  *  Betriebsstruktur zeigen, die das Solo-Modell nicht mehr hat. */
-/** Bruchkulturen, die die Rotation tatsaechlich traegt (Teilmenge von BREAK_CROP_IDS).
- *  Sie kommen am 03.08.2026 zurueck in den Katalog, weil die Fruchtfolge sie verlangt:
- *  ohne sie belegt die Kartoffel 42,8 % statt 25 % der Flaeche. */
-export const ROTATION_CROP_IDS: string[] = Object.keys(BREAK_MIX);
+/** Bruchkulturen der Rotation. Sie belegen Flaeche und kosten Pacht, aber sie
+ *  erscheinen NICHT im Arbeitskatalog: NEOS FX rechnet nur Wertkulturen, und fuer
+ *  Cash Crops wird keine eigene Technik vorgehalten (Vorgabe Betrieb 03.08.2026).
+ *  Ihre Bestellung laeuft ueber Lohnarbeit — sie duerfen deshalb weder in die
+ *  Maschinenbemessung noch in den CAPEX eingehen. */
+export const ROTATION_CROP_IDS: string[] = ["weizen", "gerste_zw", "sonnenblume", "soja_luzerne", "mais"];
 
 const CATALOG: CatalogEntry[] = CROP_IDS
-  .filter((cropId) => VALUE_CROP_IDS.includes(cropId) || ROTATION_CROP_IDS.includes(cropId))
+  .filter((cropId) => VALUE_CROP_IDS.includes(cropId))
   .map((cropId) => ({
   cropId,
   name: CROP_NAME[cropId],
@@ -2565,12 +2562,11 @@ export function buildAnbauplan(stage: Stage): AnbauEntry[] {
     plantingPeriod: CROP_CAL[cropId].plant,
     harvestPeriods: CROP_CAL[cropId].harvest.slice(),
   });
-  const wert = (Object.keys(SKALIERUNG_HA) as CropId[])
+  // NUR Wertkulturen. Die Bruchkulturen der Rotation stehen bewusst nicht hier:
+  //  der Anbauplan treibt Maschinenbemessung, CAPEX, Parzellen und Kulturplaene —
+  //  und fuer Cash Crops haelt der Betrieb keine eigene Technik vor.
+  return (Object.keys(SKALIERUNG_HA) as CropId[])
     .map((cid) => mk(cid, Math.round((SKALIERUNG_HA[cid]?.[0] ?? 0) * sf)));
-  // Bruchkulturen der Rotation — ohne sie haelt die Kartoffel ihre Anbaupause nicht ein.
-  const bruch = (Object.keys(BREAK_HA) as CropId[])
-    .map((cid) => mk(cid, Math.round((BREAK_HA[cid]?.[0] ?? 0) * sf)));
-  return [...wert, ...bruch];
 }
 
 /** Forward-Migration gespeicherter Domänen (Cloud-AUTOSAVE / JSON-Import), die VOR der
@@ -6795,6 +6791,11 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
      *  Beide Gruppen teilen sich die Pause ueber zwei Kulturen hinweg —
      *  Knoblauch und Zwiebel sind beide Alliaceen, Sellerie und Moehre beide
      *  Apiaceen (NEOS Crops, Entscheidung 2026-08-03). */
+    // Bezugsflaeche: die ROTATIONSflaeche ueber alle Planjahre, nicht die Summe der
+    //  Wertkulturen. Die Bruchkulturen gehoeren zur Rotation, auch wenn sie im
+    //  Anbauplan fehlen — sonst misst die Regel gegen eine zu kleine Flaeche und
+    //  meldet einen Verstoss, den es nicht gibt.
+    rotationAreaHa: ROTATION_TOTAL_HA.reduce((a, b) => a + b, 0),
     rotationRules: [
       {
         id: "kartoffel",
