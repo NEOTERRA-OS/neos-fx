@@ -7,6 +7,7 @@ import {
   deriveMaschinenpark, setMachineOutsourced, setMachineRented, buildModelState, START_YEAR,
   type MaschinenPfad, type CapexPlanItem, type Domain,
 } from "../../store/model";
+import { machineIdOfCapex } from "../../store/capexId";
 import { NumberInput, TextInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { cropColor } from "./cropCalc";
@@ -101,7 +102,9 @@ export function MaschinenparkView() {
       if (c.assetClass !== "machinery") continue;
       const y = Math.max(0, Math.min(years - 1, Math.floor((c.purchasePeriod ?? 0) / 12)));
       jeJahr[y] += c.amount;
-      const mid = String(c.id).replace(/^cx-/, "").replace(/-(c\d+|y\d+).*$/, "");
+      // Zerlegt wird an derselben Stelle, die die ID gebaut hat (`store/capexId.ts`) —
+      //  nicht mit einer zweiten Regex, die beim naechsten Formatwechsel still danebengreift.
+      const mid = machineIdOfCapex(String(c.id));
       jeId[mid] = (jeId[mid] ?? 0) + c.amount;
     }
     return { jeJahr, jeId, summe: jeJahr.reduce((a, b) => a + b, 0) };

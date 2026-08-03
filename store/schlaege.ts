@@ -20,10 +20,13 @@
  *                       Feld kann von mehreren Einheiten bedient werden.
  *
  *   Schlag              Feld × Jahr × Kultur × Sorte. Zwei Sorten auf einem
- *                       Feld sind zwei Schläge: Markies und Frieslander reifen
- *                       unterschiedlich ab und brauchen getrennte Rode- und
- *                       Sikkationstermine. „Roden" zeigt auf den Schlag,
- *                       „spritzen" darf auf das Feld zeigen.
+ *                       Feld sind zwei Schläge: Markies als vorgezogene
+ *                       Hauptkultur und eine second early mit hoher TS (Sinora
+ *                       oder Quintera) reifen unterschiedlich ab und brauchen
+ *                       getrennte Rode- und Sikkationstermine. „Roden" zeigt
+ *                       auf den Schlag, „spritzen" darf auf das Feld zeigen.
+ *                       (Frieslander ist am 31.07.2026 ausgeschieden — kein
+ *                       aktiver Erhalter, Pflanzgut nicht beschaffbar.)
  *
  * VORLÄUFIG heißt: Größe und Lage sind geschätzt, die IDs sind es nicht. Wenn die
  * echten Felder vorliegen, ist der Übergang eine einmalige Zuordnungstabelle

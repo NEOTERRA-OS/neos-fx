@@ -53,8 +53,8 @@ export const FACHBEREICHE: Fachbereich[] = [
  * Bezugsebene je Fachbereich — Feld oder Schlag.
  *
  * „Roden" zeigt auf den Schlag, „spritzen" darf auf das Feld zeigen. Der
- * Unterschied ist nicht kosmetisch: Markies und Frieslander auf demselben Feld
- * sind zwei Schläge mit getrennten Rode- und Sikkationsterminen, aber EINER
+ * Unterschied ist nicht kosmetisch: Markies und eine second early auf demselben
+ * Feld sind zwei Schläge mit getrennten Rode- und Sikkationsterminen, aber EINER
  * Spritzüberfahrt. Wer die Ernte auf das Feld bucht, verliert die Sortentrennung;
  * wer die Spritzung auf den Schlag bucht, zählt die Überfahrt doppelt.
  */

@@ -35,6 +35,7 @@ import {
   measureIdForLine, measureIdForMachine, parseMeasureId, istAltId,
   BEZUG_JE_FACH, FACH_JE_OP, type Fachbereich,
 } from "./measureId";
+import { capexVintageId, machineIdOfCapex } from "./capexId";
 import type {
   ModelState,
   Assumption,
@@ -4391,7 +4392,7 @@ export function deriveAssumptionRegister(domain: Domain, scenarioId: string): As
  * „Kartoffel Pommes · 500 ha · Krautfäule-Serie" — das ist keine Aufgabe, sondern
  * eine Position. Jetzt hängt an der Maßnahme die Liste der Schläge mit ihren
  * Feldern, und der Fachbereich sagt, auf welcher Ebene der Auftrag entsteht:
- * die Rodung schlagscharf (Markies und Frieslander reifen getrennt ab), die
+ * die Rodung schlagscharf (Markies und die second early reifen getrennt ab), die
  * Spritzung darf aufs Feld.
  *
  * Der Kopfsatz bleibt EINE Zeile je Kultur × Maßnahme; die Auflösung auf ~15.000
@@ -7027,7 +7028,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
           // Gepachtete Flächen sind bereits beregnet: vor irrig.capex_from_year kein eigenes
           //  Beregnungs-CAPEX — auch nicht für den Bestand (die Pivots gehören dem Verpächter).
           if (isIrrig && y < irrigFromYear) continue;
-          capexMY.push({ ...ci, id: `${ci.id}-y${y}`, amount: Math.round(ci.amount * dVec[y] * iCap(y)),
+          capexMY.push({ ...ci, id: capexVintageId(ci.id, START_YEAR + y), amount: Math.round(ci.amount * dVec[y] * iCap(y)),
             salvageValue: ci.salvageValue != null ? Math.round(ci.salvageValue * dVec[y] * iCap(y)) : undefined,
             purchasePeriod: y * 12 });
         }
@@ -7044,7 +7045,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       //  Regel (Entscheidung 31.07.2026): Bedarfsmonat minus 1. Der Bedarfsmonat kommt aus
       //  der Arbeitsgang-Phase der Maschine über den Kulturkalender; ist keiner hinterlegt
       //  (Zugmaschinen, Logistik), bleibt es beim Januar, weil sie ganzjährig laufen.
-      const midK = ci.id.startsWith("cx-") ? ci.id.slice(3) : ci.id;
+      const midK = machineIdOfCapex(ci.id);
       const kaufMonat = (() => {
         const ph = MACHINE_PHASE[midK];
         if (!ph) return 0;
@@ -7061,21 +7062,25 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
         if (frueh > 12) return 0;
         return Math.max(0, Math.min(11, Math.round(frueh) - 2));   // Bedarfsmonat − 1, 0-basiert
       })();
-      const mkChain = (startY: number, netCent: number, resCent: number, firstDispAge: number) => {
-        let py = startY, age = firstDispAge, guard = 0;
+      /* Eine Kette ist durch ihren URSPRUNG bestimmt: Anschaffungsjahr und Kohorte.
+       *  Deshalb reicht `glied` als laufende Nummer INNERHALB der Kette — es braucht
+       *  keinen Blick auf das Zielarray mehr. Basisflotte und Ausbau-Jahrgänge
+       *  starten nie im selben Jahr in derselben Kohorte, also kollidiert nichts. */
+      const mkChain = (startY: number, kohorte: number, netCent: number, resCent: number, firstDispAge: number) => {
+        let py = startY, age = firstDispAge, guard = 0, glied = 0;
         while (py < years && guard++ < 40) {
           const dispY = py + age;
           const disposed = dispY < years;
           const inf = iCap(py); // CAPEX-Inflation je Anschaffungsjahr (auch revolvierende Ersatzkäufe)
           capexMY.push({
-            ...ci, id: `${ci.id}-c${py}-${age}-${capexMY.length}`, amount: Math.round(netCent * inf), salvageValue: 0,
+            ...ci, id: capexVintageId(ci.id, START_YEAR + startY, kohorte, glied), amount: Math.round(netCent * inf), salvageValue: 0,
             usefulLifeMonths: L, usefulLifeFiscalMonths: L, purchasePeriod: py * 12 + kaufMonat,
             disposalPeriod: disposed ? dispY * 12 : undefined,
             disposalProceedsCent: disposed ? Math.round(resCent * inf) : undefined,
             financingMode: py === startY ? ci.financingMode : "cash",   // Erstanschaffung finanziert, Ersatz aus Cash
           });
           if (!disposed) break;
-          py = dispY; age = C; // Folgetausche im Zyklus
+          py = dispY; age = C; glied += 1; // Folgetausche im Zyklus
         }
       };
       // BASISFLOTTE im BEDARFSJAHR, nicht pauschal im Startjahr.
@@ -7087,10 +7092,10 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       //  bedarfsJahrOf liefert das erste Jahr, in dem die Maschine wirklich gebraucht wird
       //  (Nutzer-Kultur hat Fläche und der Gang ist nicht fremdvergeben); ci.amount ist auf genau
       //  dieses Jahr bemessen (machineHoursPerYear). -1 = wird nie gebraucht ⇒ gar kein CAPEX.
-      const mid = ci.id.startsWith("cx-") ? ci.id.slice(3) : ci.id;
+      const mid = machineIdOfCapex(ci.id);
       const yStart = bedarfsJahrOf(domain, mid, years);
       if (yStart < 0) continue;
-      for (let k = 0; k < C; k++) mkChain(yStart, Math.round(ci.amount / C), Math.round((ci.salvageValue ?? 0) / C), C + k);
+      for (let k = 0; k < C; k++) mkChain(yStart, k, Math.round(ci.amount / C), Math.round((ci.salvageValue ?? 0) / C), C + k);
       // Ausbau-Zugänge NACH dem Bedarfsjahr. dMachOf ist auf dasselbe Jahr normiert und hat die
       //  davor aufgelaufenen Zugänge dort gebündelt — dieser Jahrgang steckt bereits in der
       //  Basisflotte oben und darf hier nicht noch einmal kommen (sonst doppelte Anschaffung).
@@ -7098,7 +7103,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       for (let v = yStart + 1; v < years; v++) {
         if (dM[v] <= 1e-9) continue;
         const addNet = ci.amount * dM[v], addRes = (ci.salvageValue ?? 0) * dM[v];
-        for (let k = 0; k < C; k++) mkChain(v, Math.round(addNet / C), Math.round(addRes / C), C + k);
+        for (let k = 0; k < C; k++) mkChain(v, k, Math.round(addNet / C), Math.round(addRes / C), C + k);
       }
     }
   }
@@ -7126,7 +7131,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       if (y < irrigFromYear) continue;   // bis dahin wird beregnete Fläche gepachtet, nicht gebaut
       const amt = Math.round(dOwn * perHa * iCap(y));
       capexMY.push({
-        id: `cx-irrig-y${y}`, name: `Beregnungsausbau (${Math.round(dOwn)} ha Pivot)`,
+        id: capexVintageId("cx-irrig", START_YEAR + y), name: `Beregnungsausbau (${Math.round(dOwn)} ha Pivot)`,
         assetClass: "irrigation", amount: amt, purchasePeriod: y * 12,
         usefulLifeMonths: 180, usefulLifeFiscalMonths: 180,
         financingMode: ltv > 0 ? "loan" : "cash",
@@ -7215,17 +7220,17 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       const L = Math.max(1, ss.holdYears) * 12;
       const salv = Math.round(price * ss.residPct);
       const mkSoil = (startY: number, rigs: number) => {
-        let py = startY, guard = 0;
+        let py = startY, guard = 0, glied = 0;
         while (py < years && guard++ < 40) {
           const disposed = py + ss.holdYears < years;
           const inf = iCap(py);
-          capexMY.push({ id: `cx-soil-c${py}-${capexMY.length}`, name: `Bodenprobenahme ${rigs} Rig(s)`, assetClass: "machinery",
+          capexMY.push({ id: capexVintageId("cx-soil", START_YEAR + startY, undefined, glied), name: `Bodenprobenahme ${rigs} Rig(s)`, assetClass: "machinery",
             amount: Math.round(rigs * price * inf), purchasePeriod: py * 12, usefulLifeMonths: L, usefulLifeFiscalMonths: L,
             salvageValue: 0, financingMode: "cash",
             disposalPeriod: disposed ? (py + ss.holdYears) * 12 : undefined,
             disposalProceedsCent: disposed ? Math.round(rigs * salv * inf) : undefined });
           if (!disposed) break;
-          py = py + ss.holdYears;
+          py = py + ss.holdYears; glied += 1;
         }
       };
       let prevRigs = 0;
@@ -7248,7 +7253,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     const addLease = (startY: number, annualPaymentCent: number, remTerm: number) => {
       if (annualPaymentCent <= 0 || remTerm <= 0) return;
       const pv = Math.round(annuityPV(annualPaymentCent, remTerm, r));
-      capexMY.push({ id: `cx-rou-pacht-y${startY}`, name: `ROU Pacht (${START_YEAR + startY})`, assetClass: "other",
+      capexMY.push({ id: capexVintageId("cx-rou-pacht", START_YEAR + startY), name: `ROU Pacht (${START_YEAR + startY})`, assetClass: "other",
         amount: pv, purchasePeriod: startY * 12, usefulLifeMonths: remTerm * 12, usefulLifeFiscalMonths: remTerm * 12, financingMode: "cash" });
       const payM = (pc16.payMonths && pc16.payMonths.length) ? pc16.payMonths.map((x) => x.month) : undefined;
       debtMY.push({ id: `debt-rou-pacht-y${startY}`, name: `Leasingverbindlichkeit Pacht ${START_YEAR + startY}`,
