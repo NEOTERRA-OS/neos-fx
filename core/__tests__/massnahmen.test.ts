@@ -16,7 +16,8 @@ import {
   SEED, VALUE_CROP_IDS, deriveCropMassnahmen, exportMassnahmenplan, migrateDomain,
   flaechenMemo, schlaegeOf, deriveWiedervorlage, deriveIstAbgleich, type Domain,
 } from "../../store/model";
-import { parseMeasureId, istAltId, BEZUG_JE_FACH } from "../../store/measureId";
+import { parseMeasureId, istAltId, BEZUG_JE_FACH, measureIdForLine } from "../../store/measureId";
+import { DUENGER_GABEN } from "../../store/duengerplan.generated";
 
 const SZ = SEED.baseScenarioId;
 const klon = (d: Domain): Domain => JSON.parse(JSON.stringify(d));
@@ -46,8 +47,22 @@ describe("Maßnahmen-IDs · positionsfrei und sprechend", () => {
       expect(p, r.measureId).not.toBeNull();
       expect(p!.fach).toBe(r.fachbereich);
       expect(r.bezug).toBe(BEZUG_JE_FACH[r.fachbereich]);
-      // Die ID darf keinen Index tragen — kein Segment, das nur aus Ziffern besteht.
-      expect(p!.slug.split("_").every((t) => !/^\d+$/.test(t)), r.measureId).toBe(true);
+      /* DIE ID DARF KEINEN INDEX TRAGEN. Bis 04.08.2026 stand hier ein
+       *  TEXTSTELLVERTRETER: kein Segment darf nur aus Ziffern bestehen — so
+       *  sieht eine Array-Position eben aus.
+       *
+       *  Der Stellvertreter ist zu grob geworden, seit die Düngung aus dem
+       *  Kompendium kommt. Dort heißen Gaben „Zn-Blattdüngung 1", „…2", „…3" —
+       *  die Ziffer ist Teil des FACHLICHEN Namens der Gabe, nicht ihre Stelle
+       *  in einer Liste. Sie zu verbieten hieße, den Namen zu verbieten.
+       *
+       *  Deshalb wird die Eigenschaft jetzt DIREKT geprüft: „Umstellen der
+       *  Reihenfolge ändert keine ID" (Test weiter unten). Das ist die Aussage,
+       *  die zählt; der Ziffern-Test war nur ihr Schatten. Für die
+       *  Maschinen- und PSM-Maßnahmen bleibt er als billige Zusatzprobe. */
+      if (r.fachbereich !== "DUENGUNG") {
+        expect(p!.slug.split("_").every((t) => !/^\d+$/.test(t)), r.measureId).toBe(true);
+      }
     }
   });
 
@@ -85,17 +100,48 @@ describe("Maßnahmen-IDs · positionsfrei und sprechend", () => {
     }
   });
 
-  it("gruppiert die Nährstoffzeilen EINER Gabe auf EINE ID", () => {
+  it("ändert keine ID, wenn die Reihenfolge des Düngerplans wechselt", () => {
+    /* DIE EIGENTLICHE ZUSICHERUNG, direkt geprüft statt über den Ziffern-Schatten.
+     *  Wer im Anbautelegramm eine Gabe einfügt, verschiebt alle folgenden — und
+     *  darf trotzdem keine einzige Rückmeldung verlieren. Der Test baut die
+     *  IDs aus der umgekehrten Reihenfolge und vergleicht die MENGE. */
+    const bauen = (gaben: typeof DUENGER_GABEN) => new Set(
+      gaben.filter((g) => g.cropId === "kartoffel_pommes")
+        .map((g) => measureIdForLine("kartoffel_pommes", "OP-DUENG", `${g.cfgId} ${g.kurz} ${g.massnahme}`)));
+    const vorwaerts = bauen(DUENGER_GABEN);
+    const rueckwaerts = bauen([...DUENGER_GABEN].reverse());
+    expect(vorwaerts.size).toBeGreaterThan(10);
+    expect([...rueckwaerts].sort()).toEqual([...vorwaerts].sort());
+  });
+
+  it("gibt jeder Gabe genau eine ID — eine Gabe ist ein Produkt", () => {
+    /* BIS 04.08.2026 stand hier das Gegenteil: mehrere Zeilen teilten sich eine
+     *  ID, weil eine Gabe je NÄHRSTOFF eine Zeile hatte („Grund P/K + Start-N"
+     *  war dreimal dieselbe Maßnahme, einmal für N, P₂O₅ und K₂O).
+     *
+     *  Mit dem produktscharfen Düngerplan aus dem Kompendium ist eine Gabe
+     *  ein PRODUKT mit einer Warenmenge, und die Nährstoffe sind ihr Ergebnis,
+     *  nicht ihre Eingabe. Damit ist jede Zeile eine eigene Maßnahme und trägt
+     *  eine eigene ID — was auch der Wirklichkeit näher ist: MAP, Kaliumsulfat
+     *  und Kieserit werden nacheinander gestreut, nicht gleichzeitig.
+     *
+     *  Was bleibt: KEINE ID zweimal. Genau das prüft dieser Test jetzt. */
     const dueng = SEED.catalog.find((c) => c.cropId === "kartoffel_pommes")!.ops.find((o) => o.code === "OP-DUENG")!;
     const proGabe = new Map<string, number>();
     for (const l of dueng.lines) proGabe.set(l.mid!, (proGabe.get(l.mid!) ?? 0) + 1);
-    // Grund P/K + Start-N sind drei Nährstoffzeilen, aber EINE Streuer-Überfahrt.
-    expect([...proGabe.values()].some((n) => n > 1)).toBe(true);
-    // Und genau so viele Maßnahmenzeilen, wie es Gaben gibt — nicht so viele wie Nährstoffe.
+    expect([...proGabe.values()].every((n) => n === 1)).toBe(true);
+    // So viele Maßnahmenzeilen, wie es Gaben gibt.
     const gaben = deriveCropMassnahmen(SEED, "kartoffel_pommes", SZ, 0).rows
       .filter((r) => r.opCode === "OP-DUENG");
     expect(gaben.length).toBe(proGabe.size);
     expect(gaben.every((g) => g.bm.length >= 1)).toBe(true);
+    /* Und jede trägt ein PRODUKT — das war der Punkt der Umstellung. Es steht in
+     *  der Betriebsmittelzeile, nicht im Maßnahmennamen: links steht, WAS getan
+     *  wird ("A8 N1 Grundgabe stabilisierter ASS"), rechts, WOMIT
+     *  ("Ammonsulfatsalpeter ASS 26 % N + 13 % S → 110 N · 65 SO₃"). Genau diese
+     *  Trennung hat in der Kultur-Kalkulation vorher gefehlt, weshalb dort
+     *  zweimal derselbe Text stand. */
+    expect(gaben.every((g) => g.bm.some((b) => /→|%/.test(b.label)))).toBe(true);
   });
 });
 

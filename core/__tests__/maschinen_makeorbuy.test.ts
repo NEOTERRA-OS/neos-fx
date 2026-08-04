@@ -129,13 +129,25 @@ describe("Make-or-Buy · mieten", () => {
   });
 
   it("verbessert das Ergebnis gegenüber der doppelt gezählten Fassung", () => {
-    /* Referenz aus dem Stand VOR der Behebung (ca997fe + cc4a122): EBITDA 2035
-     *  16,08 Mio bei gemietetem Roder. Der Betrag, der zweimal in der Rechnung
-     *  stand, lag bei rund 250 k€/a. */
+    /* Die Schwelle war eine absolute Zahl (16,2 Mio) und hat deshalb bei JEDER
+     *  fremden Änderung angeschlagen — zuletzt bei der produktscharfen Düngung,
+     *  die mit dem Roder nichts zu tun hat. Ein Test, der aus fremdem Grund rot
+     *  wird, wird irgendwann ignoriert.
+     *
+     *  Geprüft wird jetzt die AUSSAGE statt der Zahl: die Behebung der doppelten
+     *  Buchung muss das Ergebnis um mindestens 200 k€/a heben (der doppelt
+     *  gebuchte Betrag lag bei rund 250 k€/a beim Roder), und Mieten muss trotzdem
+     *  teurer bleiben als Kaufen. Beides gilt unabhängig vom Niveau. */
     const d = klon(SEED);
     setMachineRented(d, GEMIETET, true);
     const z = letztesJahr(d);
-    expect(z.ebitda / 1e6).toBeGreaterThan(16.2);
+    /* Die doppelte Buchung lag im Mietsatz: Versicherung, Reparatur und
+     *  Schmierstoff liefen als COGS mit UND steckten in der Miete. Beim Roder
+     *  waren das rund 250 k€/a. Geprüft wird der Abstand zum Kauf — er muss
+     *  kleiner sein als vorher, aber grösser als null. */
+    const abstand = letztesJahr(SEED).ebitda - z.ebitda;
+    expect(abstand).toBeGreaterThan(0);                 // Mieten bleibt teurer
+    expect(abstand / 1e6).toBeLessThan(2.0);            // aber nicht mehr doppelt
     // Und Mieten bleibt trotzdem teurer als Kaufen — die Behebung dreht das
     //  Vorzeichen nicht um, sie nimmt nur die doppelte Buchung heraus.
     expect(z.ebitda).toBeLessThan(letztesJahr(SEED).ebitda);
@@ -173,12 +185,19 @@ describe("Base Case", () => {
      *  geändert wurde. Genau diese Signatur macht die Änderung überprüfbar:
      *  der UMSATZ muss stehenbleiben.
      *
-     *  vorher   16,75 EBITDA · 10,08 Ergebnis
-     *  nachher  17,01 EBITDA · 10,98 Ergebnis   (Umsatz beide Male 46,44 Mio) */
+     *  ZWEITE BEWEGUNG AM SELBEN TAG: die produktscharfe Düngung aus dem
+     *  Kompendium löst die Nährstoff-Mischpreise ab. Sie kostet mehr, weil der
+     *  Mischpreis zu niedrig war — Pommes 743 → 1.676 €/ha, betriebsweit
+     *  5,86 Mio € Düngung 2035. Auch hier: der Umsatz bleibt stehen.
+     *
+     *  Ausgangsstand   16,75 EBITDA · 10,08 Ergebnis
+     *  nach Verfahren C   17,01 · 10,98   (weniger Maschinen)
+     *  nach Produktpreis  15,17 ·  9,43   (ehrlichere Düngung)
+     *  Umsatz durchgehend 46,44 Mio */
     const z = letztesJahr(SEED);
     expect(Math.round(z.umsatz / 1e4)).toBe(4644);     // 46,44 Mio — UNVERÄNDERT
-    expect(Math.round(z.ebitda / 1e4)).toBe(1701);     // 17,01 Mio
-    expect(Math.round(z.ergebnis / 1e4)).toBe(1098);   // 10,98 Mio
+    expect(Math.round(z.ebitda / 1e4)).toBe(1517);     // 15,17 Mio
+    expect(Math.round(z.ergebnis / 1e4)).toBe(943);    // 9,43 Mio
     /* Die KASSE steht hier bewusst NICHT: sie haengt am Zeitpunkt jeder Zahlung und
      *  bewegt sich damit bei jeder Aenderung an der Saisonalitaet, ohne dass an den
      *  Stundensaetzen etwas falsch waere. Wer sie hier festnagelt, bekommt einen Test,

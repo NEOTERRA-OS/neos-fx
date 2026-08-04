@@ -80,6 +80,7 @@ import type {
 } from "../core/types";
 export type { OfftakeContract, HarvestAdvancePolicy } from "../core/types";
 import { DEFAULT_PRODUCTS, type CatalogProduct } from "./productCatalog";
+import { DUENGER_GABEN, DUENGER_PRODUKTE } from "./duengerplan.generated";
 export type { CatalogProduct } from "./productCatalog";
 
 /* --------------------------------------------------------------------------
@@ -1477,6 +1478,16 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("fert.n_fert", "fert.n_fert", "Düngerpreis N Fertigation (Kalksalpeter) €/kg", "money", 200),
   A("fert.p_fert", "fert.p_fert", "Düngerpreis P₂O₅ Fertigation (MAP) €/kg", "money", 180),
   A("fert.k_fert", "fert.k_fert", "Düngerpreis K₂O Fertigation (Kaliumnitrat) €/kg", "money", 240),
+  /* PRODUKTPREISE aus dem Kompendium (`dist/fx/duenger_plan.ts`). Sie sind hier
+   *  EDITIERBAR — ein eingeholtes Angebot schlägt die EU-Referenz —, aber ihr
+   *  Startwert und ihr Belegstatus kommen aus der Wissensbasis. Wer eine dieser
+   *  Zahlen dauerhaft ändern will, ändert sie dort und exportiert neu.
+   *  Die Nährstoff-Mischpreise darüber gelten weiterhin für die Kulturen OHNE
+   *  produktscharfen Plan; sie stehen bewusst daneben statt gelöscht, damit der
+   *  Unterschied sichtbar bleibt. */
+  ...DUENGER_PRODUKTE.map((pr) =>
+    A(duengerPreisKey(pr.kurz), duengerPreisKey(pr.kurz),
+      `Düngerpreis ${pr.name} €/kg Ware`, "money", pr.preisCentKg)),
   // Phase 5 — Saatgut/Pflanzgut €/Einheit (CENT), je Kultur natürliche Einheit (kg / Einh. / t / 1000 Pfl.).
   A("seed.weizen", "seed.weizen", "Saatgut Winterweizen €/kg", "money", 55),
   A("seed.gerste_zw", "seed.gerste_zw", "Saatgut Wintergerste €/kg", "money", 53),
@@ -2139,6 +2150,60 @@ const BEWAESSERUNG_MM: Record<CropId, number> = {
   weizen_dry: 0, gerste_dry: 0, raps_dry: 0, sonnenblume: 0,
 };
 
+/* --------------------------------------------------------------------------
+ * DUENGUNG AUF PRODUKTEBENE — abgeloest vom Naehrstoff-Mischpreis, 04.08.2026.
+ *
+ * Bis heute rechnete FX jede Gabe als Naehrstoffmenge x Mischpreis: 100 kg
+ * P2O5 x 1,35 EUR. Das hat zwei Fehler, die beide unsichtbar waren.
+ *
+ * DER PREIS. `fert.n` = 1,30 EUR/kg N ist die "Mischkalkulation KAS/Harnstoff".
+ * Die Anbautelegramme fahren aber Calciumnitrat, und das kostet 3,16 EUR/kg N —
+ * es wird wegen des CALCIUMS gefahren, nicht wegen des Stickstoffs. Der
+ * Mischpreis kann diesen Grund nicht kennen und rechnet die Gabe zum Preis des
+ * billigsten N-Traegers. Gemessen am 03.08.2026: Weisskohl 842 EUR/ha zu wenig,
+ * Zwiebel 236, Chips 124 — Getreide umgekehrt 172 zu viel.
+ *
+ * DIE BEGLEITNAEHRSTOFFE. Wer 100 kg P2O5 als MAP 12-52-0 duengt, bringt
+ * 23 kg N mit. Das Mengengeruest zaehlte nur die N-Gaben und kam auf 215 kg
+ * N/ha, der produktscharfe Plan auf 254. Wer nach der Nitratrichtlinie
+ * bilanziert, rechnet die Gesamtzufuhr — die Differenz von 39 kg ist genau das
+ * N aus MAP und Calciumnitrat. Ohne Produkte laesst sich die Frage nicht einmal
+ * stellen.
+ *
+ * Der Plan kommt aus dem KOMPENDIUM (`make plans` → `dist/fx/duenger_plan.ts`)
+ * und wird hier nur gelesen. Das ist die Eigentumsgrenze: Betriebsmittel gehoeren
+ * dem Kompendium, Finanzierung und Aggregation gehoeren FX. Kulturen ohne Plan
+ * rechnen unveraendert ueber den Mischpreis — sichtbar an der fehlenden
+ * Produktangabe in der Zeile, nicht still.
+ * ------------------------------------------------------------------------ */
+const DUENGER_PREIS = new Map(DUENGER_PRODUKTE.map((p) => [p.kurz, p]));
+
+/** Kulturen, deren Duengung produktscharf aus dem Kompendium kommt. */
+export const DUENGERPLAN_KULTUREN = new Set(DUENGER_GABEN.map((g) => g.cropId));
+
+/** Annahme-Schluessel des Produktpreises. Er ist EDITIERBAR — ein Angebot
+ *  schlaegt die EU-Referenz —, aber sein Startwert kommt aus dem Kompendium.
+ *  Bewusst eine FUNKTIONSDEKLARATION und keine Pfeilfunktion: die Annahmeliste
+ *  weiter oben ruft sie beim Modulaufbau auf, und nur die Deklaration wird
+ *  gehoben. */
+export function duengerPreisKey(kurz: string): string {
+  return `fert.prod.${kurz.toLowerCase()}`;
+}
+
+/** Naehrstoffzufuhr einer Kultur je Hektar, produktscharf summiert.
+ *  DAS ist die Zahl fuer die Nitratrichtlinie — sie zaehlt die Begleitnaehrstoffe
+ *  mit, die das Mengengeruest uebersieht. */
+export function naehrstoffZufuhr(cropId: string): { n: number; p2o5: number; k2o: number; mgo: number; cao: number; so3: number } {
+  const z = { n: 0, p2o5: 0, k2o: 0, mgo: 0, cao: 0, so3: 0 };
+  for (const g of DUENGER_GABEN) {
+    if (g.cropId !== cropId) continue;
+    z.n += g.n * g.anteil; z.p2o5 += g.p2o5 * g.anteil; z.k2o += g.k2o * g.anteil;
+    z.mgo += g.mgo * g.anteil; z.cao += g.cao * g.anteil; z.so3 += g.so3 * g.anteil;
+  }
+  for (const k of Object.keys(z) as (keyof typeof z)[]) z[k] = Math.round(z[k] * 10) / 10;
+  return z;
+}
+
 function buildCropOps(cropId: CropId): OpSeed[] {
   const cal = CROP_CAL[cropId];
   const c = AGRO_COSTS[cropId];
@@ -2148,6 +2213,44 @@ function buildCropOps(cropId: CropId): OpSeed[] {
   // Phase 4: je Gabe eine Zeile JE NÄHRSTOFF (Menge kg × Preis-Assumption fert.*) → Menge × Preis transparent.
   //  Alle Zeilen EINER Gabe teilen sich eine stabile Maßnahmen-ID (mid) für den FMS-Abgleich.
   const duengLines: OpLineSeed[] = [];
+  /* Produktscharfer Plan, wenn es einen gibt: eine Zeile je GABE, Menge in
+   *  kg WARE, Preis je kg Ware. Die Naehrstoffe stehen im Label — sie sind das
+   *  Ergebnis der Produktwahl, nicht ihre Eingabe. */
+  const plan = DUENGER_GABEN.filter((g) => g.cropId === cropId);
+  if (plan.length) {
+    for (const g of plan) {
+      const naehr = [
+        g.n ? `${fmt1(g.n * g.anteil)} N` : "", g.p2o5 ? `${fmt1(g.p2o5 * g.anteil)} P₂O₅` : "",
+        g.k2o ? `${fmt1(g.k2o * g.anteil)} K₂O` : "", g.mgo ? `${fmt1(g.mgo * g.anteil)} MgO` : "",
+        g.cao ? `${fmt1(g.cao * g.anteil)} CaO` : "", g.so3 ? `${fmt1(g.so3 * g.anteil)} SO₃` : "",
+        g.mikro ? `${fmt1((g.mikroKgHa ?? 0) * g.anteil)} ${g.mikro}` : "",
+      ].filter(Boolean).join(" · ");
+      const prod = DUENGER_PREIS.get(g.kurz);
+      const label = `${g.massnahme} · ${prod?.name ?? g.kurz}${naehr ? ` → ${naehr}` : ""}`;
+      duengLines.push({
+        ...L(label, "fertilizer", Math.round(g.wareKgHa * g.anteil * 10) / 10,
+             duengerPreisKey(g.kurz), "kg Ware/ha"),
+        /* DIE ID TRAEGT cfgId, NUMMER UND PRODUKT — in dieser Reihenfolge.
+         *  Aufgefallen bei der Probe: eine Grunddüngung "P/K/Mg/S" besteht aus
+         *  DREI Gaben mit derselben Nummer und demselben Text — MAP, SOP,
+         *  Kieserit. Und bei der Mischposition Zwiebel/Möhre tragen beide
+         *  Konfigurationen eigene Nummern, die sich überschneiden. Aus
+         *  `${nr} ${massnahme}` wurden so vier Zeilen mit EINER ID.
+         *  Der Slug kappt bei 44 Zeichen, deshalb steht das Unterscheidende
+         *  vorne: was hinten abgeschnitten wird, darf nicht das sein, was die
+         *  Zeilen trennt.
+         *
+         *  Die Gaben-NUMMER steht bewusst NICHT darin. Sie ist die Zeilennummer
+         *  im Anbautelegramm — also eine Position, und Positionen gehoeren nach
+         *  der Regel dieses Modells in keine ID. Wer eine Gabe im Telegramm
+         *  einfuegt, verschiebt alle folgenden Nummern und haette sonst jede
+         *  Rueckmeldung dahinter verloren. Der Test in `massnahmen.test.ts`
+         *  faengt genau das ab — er hat diesen Einbau korrigiert. */
+        mid: measureIdForLine(cropId, "OP-DUENG", `${g.cfgId} ${g.kurz} ${g.massnahme}`),
+      });
+    }
+    return bauOps(cropId, cal, c, seed, mm, duengLines);
+  }
   DUENGUNG_PROGRAM[cropId].forEach((g) => {
     const kN = g.fert ? "fert.n_fert" : "fert.n";
     const kP = g.fert ? "fert.p_fert" : "fert.p";
@@ -2161,6 +2264,17 @@ function buildCropOps(cropId: CropId): OpSeed[] {
     if (g.s) duengLines.push({ ...L(`${g.label} · S`, "fertilizer", g.s, "fert.s", "kg S/ha"), mid });
   });
   // PSM: je Überfahrt Mittelkosten €/ha (editierbar). Wirkstoffe im Label (EU/RO zugelassen 2025/26).
+  return bauOps(cropId, cal, c, seed, mm, duengLines);
+}
+
+/** Ein Nachkommastelle, ohne Locale — die Zahl steht in einem Label, nicht in einer Spalte. */
+const fmt1 = (v: number) => (Math.round(v * 10) / 10).toString().replace(".", ",");
+
+/** Die sechs Bloecke einer Kultur. Ausgelagert, damit der produktscharfe und der
+ *  Mischpreis-Pfad garantiert dieselbe Struktur liefern — sonst waere der
+ *  Unterschied zwischen ihnen mehr als nur die Duengezeile. */
+function bauOps(cropId: CropId, cal: typeof CROP_CAL[CropId], c: readonly number[],
+                seed: { qty: number; unit: string }, mm: number, duengLines: OpLineSeed[]): OpSeed[] {
   const psmLines: OpLineSeed[] = PSM_PROGRAM[cropId].map((p) =>
     ({ ...L(p.label, "crop_protection", p.eurHa, "psm.per_euro", "€/ha (Mittel)"), passes: p.passes ?? 1, mid: measureIdForLine(cropId, "OP-PSM", p.label) }));
   return [

@@ -140,6 +140,13 @@ export function slugify(label: string): string {
   // Multiplizität (12×, 2x) — sie ist ein Parameter der Maßnahme, nicht ihr Name.
   //  Kein `\b` hinter dem ×: zwischen „×" und Leerzeichen steht keine Wortgrenze.
   s = s.replace(/(^|[^A-Za-z0-9])\d+\s*[×xX](?![A-Za-z0-9])/g, "$1 ");
+  /* PROZENTANGABEN bleiben, werden aber an ihre Zahl gebunden: "30 %" wird zu
+   *  "30PCT" statt zu einem alleinstehenden Zifferntoken. Der Unterschied ist
+   *  nicht kosmetisch — die Regel dieses Modells verbietet Segmente, die nur aus
+   *  Ziffern bestehen, weil genau so eine Array-Position aussieht. Eine Teilgabe
+   *  "K-Gabe Fruehjahr 30 %" muss sich aber von "45 %" unterscheiden lassen.
+   *  Also binden statt streichen. */
+  s = s.replace(/(\d+)\s*%/g, "$1PCT");
   s = s.split("").map((ch) => TRANSLIT[ch] ?? ch).join("");
   // Restliche Diakritika (é, ă, ș, î …) über die Unicode-Zerlegung entfernen.
   s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
