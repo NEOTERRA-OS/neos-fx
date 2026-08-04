@@ -2847,18 +2847,38 @@ const FIELD_MACHINES: MachineType[] = SPEC.map((s) => ({
  * nicht das Ergebnis, weil dieselben Stunden mit denselben Maschinen gefahren
  * werden. Sie wirkt erst, wenn ein Preis sich ändert. Dann aber automatisch.
  *
- * Bezugsgröße ist der LISTENPREIS, nicht der Netto-Einkauf. Das ist Absicht und
- * unterscheidet zwei Fragen, die im Modell ohnehin getrennt laufen:
+ * BEZUGSGRÖSSE IST DER NETTO-EINKAUF — Entscheidung NEOTERRA vom 04.08.2026,
+ * „alles netto, auch die Maschinenstunden". Bis dahin rechnete die Stunde auf
+ * dem LISTENPREIS, mit dem Argument, kalkulatorisch gehe es um die
+ * Wiederbeschaffung. Das ist eine vertretbare Lehrmeinung, aber sie war im
+ * Modell inkonsistent: CAPEX, AfA und Bilanz liefen längst auf Liste × (1 −
+ * Rabatt), und die Rabatte sind hier nicht klein — die realen JD-Angebote vom
+ * 23.07.2026 nennen 24,9 bis 35,0 %. Derselbe Traktor kostete in der
+ * Ergebnisrechnung 341 k€ und im Stundensatz 524 k€.
  *
- *   kalkulatorisch  Was kostet mich die Stunde, wenn ich die Maschine
- *                   wiederbeschaffen müsste? → Liste. Treibt den Vergleich
- *                   kaufen ↔ mieten ↔ Lohn und den Mietsatz.
- *   bilanziell      Was habe ich bezahlt? → Liste × (1 − Rabatt). Treibt CAPEX,
- *                   AfA und die Bilanz. Läuft unverändert über `deriveCapex`.
+ * WAS AUF NETTO UMGESTELLT IST, und warum genau diese zwei:
  *
- * Versicherung, Reparatur und Schmierstoff bleiben, was sie immer waren: ein
- * Prozentsatz vom Neuwert je Jahr. Der Prozentsatz wird EINMAL aus dem Seed
- * abgeleitet, damit sich am Base Case nichts bewegt — er folgt danach dem Preis.
+ *   AfA/h    (Netto-Einkauf − Restwert) ÷ (Nutzungsdauer × h/Jahr).
+ *            Abschreibung verteilt, was BEZAHLT wurde. Ein Rabatt senkt den
+ *            Kaufpreis, also die Abschreibung. Unstrittig.
+ *   Zins/h   Kalkulatorischer Zins auf das DURCHSCHNITTLICH GEBUNDENE Kapital.
+ *            Gebunden ist der bezahlte Betrag, nicht der Listenpreis — Zinsen
+ *            auf einen Rabatt zahlt niemand.
+ *
+ * DER RESTWERT BLEIBT EIN PROZENTSATZ DER LISTE. Das ist kein Versehen: der
+ * Wiederverkaufswert einer Maschine bemisst sich am Neuwert der Klasse, nicht
+ * an dem, was der Vorbesitzer ausgehandelt hat. Das Feld heißt deshalb
+ * `residualPctList`. In Euro bleibt der Restwert also stehen, während der
+ * Anschaffungswert fällt — die abzuschreibende Differenz schrumpft doppelt.
+ *
+ * WAS NICHT AUF NETTO UMGESTELLT IST, und das ist die eine bewusste Ausnahme:
+ * VERSICHERUNG, REPARATUR und SCHMIERSTOFF laufen weiter auf dem Listen-/
+ * Neuwert. Eine Kaskoprämie richtet sich nach dem Wiederbeschaffungswert des
+ * Gerätes, und ein Getriebeschaden kostet dasselbe, ob beim Kauf 20 % oder
+ * 35 % Rabatt herausgehandelt wurden. Diese drei Sätze am Rabatt zu senken
+ * hieße zu behaupten, gut verhandelte Maschinen gingen seltener kaputt. Wer
+ * das anders will, ändert `RATE_BASIS_NETTO` auf `true` — die Stelle ist
+ * markiert, damit die Entscheidung eine Zeile bleibt und keine Suche.
  * ------------------------------------------------------------------------ */
 export type StundensatzBasis = {
   /** Versicherung, Reparatur, Schmierstoff als Anteil des Neuwerts JE JAHR. */
@@ -2894,11 +2914,24 @@ export function machineRatesPerHour(domain: Domain, m: MachineType, scenarioId: 
   const rw = m.restwertPct ?? 0;
   const i = resolveScalar(domain, "tco.calc_interest", scenarioId) || 0.05;
   const b = RATE_BASIS[m.id];
-  const afaCent = Math.round((preis * (1 - rw)) / (n * h));
-  // Kalkulatorischer Zins auf das DURCHSCHNITTLICH gebundene Kapital: über die
-  //  Nutzungsdauer sinkt der Buchwert von Preis auf Restwert, im Mittel also (1+rw)/2.
-  const zinsCent = Math.round((preis * (1 + rw) / 2 * i) / h);
-  const proz = (pct: number | undefined) => Math.round(((pct ?? 0) * preis) / h);
+  /* NETTO-EINKAUF: derselbe Rabatt, den auch `deriveCapex` rechnet — der
+   *  maschinenspezifische aus dem realen Angebot, sonst der globale Default.
+   *  Beide Stellen MÜSSEN dieselbe Zahl nehmen, sonst schreibt die Bilanz
+   *  einen anderen Wert ab, als der Stundensatz verrechnet. */
+  const disc = Math.max(0, Math.min(0.9, m.discountPct ?? resolveScalar(domain, "tco.discount", scenarioId) ?? 0));
+  const netto = preis * (1 - disc);
+  // Restwert in EURO, bemessen am Listenpreis (siehe Kopfkommentar) — nicht am Netto.
+  const restwertCent = preis * rw;
+  const afaCent = Math.round(Math.max(0, netto - restwertCent) / (n * h));
+  /* Kalkulatorischer Zins auf das DURCHSCHNITTLICH gebundene Kapital: über die
+   *  Nutzungsdauer sinkt der Buchwert vom Netto-Einkauf auf den Restwert, im
+   *  Mittel also (netto + restwert) / 2. */
+  const zinsCent = Math.round((((netto + restwertCent) / 2) * i) / h);
+  /* DIE EINE AUSNAHME. Versicherung, Reparatur und Schmierstoff bemessen sich
+   *  am Neuwert, nicht am ausgehandelten Preis — siehe Kopfkommentar. */
+  const RATE_BASIS_NETTO = false;
+  const basisVRS = RATE_BASIS_NETTO ? netto : preis;
+  const proz = (pct: number | undefined) => Math.round(((pct ?? 0) * basisVRS) / h);
   const versCent = b ? proz(b.versPctYear) : (m.insurancePerHourCent ?? 0);
   const repCent = b ? proz(b.repPctYear) : (m.repairPerHourCent ?? 0);
   const lubeCent = b ? proz(b.lubePctYear) : (m.lubePerHourCent ?? 0);

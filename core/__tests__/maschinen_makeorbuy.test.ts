@@ -33,13 +33,28 @@ const letztesJahr = (d: Domain) => {
 };
 const maschine = (d: Domain, id: string) => d.machineCatalog.find((m) => m.id === id)!;
 
+/* NETTO-EINKAUF — dieselbe Rechnung wie im Modell (Entscheidung 04.08.2026).
+ *  Der Rabatt kommt aus dem realen Angebot, wo es eins gibt, sonst aus
+ *  `tco.discount`. Der Restwert bleibt ein Prozentsatz der LISTE: er bemisst
+ *  sich am Neuwert der Klasse, nicht am ausgehandelten Preis. */
+const netto = (d: Domain, m: { unitPriceKey?: string; discountPct?: number }) => {
+  const liste = resolveScalar(d, m.unitPriceKey!, SZ);
+  const disc = m.discountPct ?? resolveScalar(d, "tco.discount", SZ) ?? 0;
+  return liste * (1 - disc);
+};
+const restwert = (d: Domain, m: { unitPriceKey?: string; restwertPct?: number }) =>
+  resolveScalar(d, m.unitPriceKey!, SZ) * (m.restwertPct ?? 0);
+
 describe("Stundensätze · an den Preis gebunden", () => {
   it("rechnet die AfA je Stunde aus Preis, Restwert, Nutzungsdauer und Referenzstunden", () => {
     for (const m of SEED.machineCatalog) {
       if (!m.refHoursPerYear || !m.nutzungYears || !m.unitPriceKey) continue;
       const preis = resolveScalar(SEED, m.unitPriceKey, SZ);
       if (!preis) continue;
-      const soll = Math.round((preis * (1 - (m.restwertPct ?? 0))) / (m.nutzungYears * m.refHoursPerYear));
+      /* NETTO-EINKAUF minus Restwert, verteilt auf Nutzungsdauer × Jahresstunden.
+       *  Bis 04.08.2026 stand hier die LISTE — der Rabatt (20 bis 35 %) fiel
+       *  unter den Tisch, obwohl CAPEX und Bilanz ihn längst rechneten. */
+      const soll = Math.round(Math.max(0, netto(SEED, m) - restwert(SEED, m)) / (m.nutzungYears * m.refHoursPerYear));
       expect(machineRatesPerHour(SEED, m, SZ).afaCent, m.id).toBe(soll);
     }
   });
@@ -72,11 +87,60 @@ describe("Stundensätze · an den Preis gebunden", () => {
       if (!m.refHoursPerYear || !m.nutzungYears || !m.unitPriceKey) continue;
       const preis = resolveScalar(SEED, m.unitPriceKey, SZ);
       if (!preis) continue;
-      const soll = Math.round((preis * (1 - (m.restwertPct ?? 0))) / (m.nutzungYears * m.refHoursPerYear));
+      const soll = Math.round(Math.max(0, netto(SEED, m) - restwert(SEED, m)) / (m.nutzungYears * m.refHoursPerYear));
       const ist = machineRatesPerHour(SEED, m, SZ).afaCent;
       if (ist !== soll) ohneFormel.push(`${m.id}: ${ist} statt ${soll}`);
     }
     expect(ohneFormel).toEqual([]);
+  });
+
+  it("nimmt für Stundensatz und Bilanz DENSELBEN Rabatt", () => {
+    /* DAS WAR DIE EIGENTLICHE INKONSISTENZ, und sie stand jahrelang als
+     *  bewusste Entscheidung im Kommentar: CAPEX, AfA und Bilanz rechneten auf
+     *  Liste × (1 − Rabatt), der Stundensatz auf die volle Liste. Begründet war
+     *  das mit „kalkulatorisch geht es um die Wiederbeschaffung" — eine
+     *  vertretbare Lehrmeinung, aber im selben Modell zwei Anschaffungswerte
+     *  für dieselbe Maschine. Bei den realen JD-Angeboten (24,9 bis 35,0 %
+     *  Rabatt) kostete derselbe Traktor in der Ergebnisrechnung 341 k€ und im
+     *  Stundensatz 524 k€.
+     *
+     *  NEOTERRA hat am 04.08.2026 entschieden: netto, auch die Maschinenstunden.
+     *  Geprüft wird die Kopplung — nicht ein Rabattsatz, sondern dass beide
+     *  Seiten aus derselben Quelle lesen. Ein maschinenspezifischer Rabatt aus
+     *  einem echten Angebot schlägt dabei den globalen Default, und zwar hier
+     *  wie dort. */
+    const d = klon(SEED);
+    const m = maschine(d, "roder_ropa");
+    const vorher = machineRatesPerHour(d, m, SZ).afaCent;
+    // Rabatt von 20 auf 40 % → der Netto-Einkauf halbiert sich beinahe, die AfA folgt.
+    setScenarioConst(d, "tco.discount", SZ, 0.4);
+    const nachher = machineRatesPerHour(d, maschine(d, "roder_ropa"), SZ).afaCent;
+    expect(nachher).toBeLessThan(vorher);
+    // Und der maschinenspezifische Rabatt schlägt den globalen — wie in deriveCapex.
+    const eigen = klon(d);
+    maschine(eigen, "roder_ropa").discountPct = 0;
+    expect(machineRatesPerHour(eigen, maschine(eigen, "roder_ropa"), SZ).afaCent).toBeGreaterThan(nachher);
+  });
+
+  it("lässt Versicherung, Reparatur und Schmierstoff AM NEUWERT — die eine Ausnahme", () => {
+    /* Eine Kaskoprämie richtet sich nach dem Wiederbeschaffungswert des
+     *  Gerätes, und ein Getriebeschaden kostet dasselbe, ob beim Kauf 20 % oder
+     *  35 % Rabatt herausgehandelt wurden. Diese drei Sätze am Rabatt zu senken
+     *  hieße zu behaupten, gut verhandelte Maschinen gingen seltener kaputt.
+     *
+     *  Der Test hält die Ausnahme fest, damit sie eine ENTSCHEIDUNG bleibt und
+     *  nicht als Flüchtigkeitsfehler gelesen wird: ändert man den Rabatt, darf
+     *  sich der Betriebskostenteil des Stundensatzes NICHT bewegen. */
+    const d = klon(SEED);
+    const vorher = machineRatesPerHour(d, maschine(d, "roder_ropa"), SZ);
+    setScenarioConst(d, "tco.discount", SZ, 0.4);
+    const nachher = machineRatesPerHour(d, maschine(d, "roder_ropa"), SZ);
+    expect(nachher.versCent).toBe(vorher.versCent);
+    expect(nachher.repCent).toBe(vorher.repCent);
+    expect(nachher.lubeCent).toBe(vorher.lubeCent);
+    // Der Kapitalteil bewegt sich dagegen sehr wohl — sonst wäre nichts umgestellt.
+    expect(nachher.afaCent).toBeLessThan(vorher.afaCent);
+    expect(nachher.zinsCent).toBeLessThan(vorher.zinsCent);
   });
 
   it("hält den Zug JD 8R 410 — bestätigt am 04.08.2026 gegen die 340-PS-Klasse", () => {
@@ -125,8 +189,10 @@ describe("Stundensätze · an den Preis gebunden", () => {
     const m = maschine(SEED, "roder_ropa");
     const i = resolveScalar(SEED, "tco.calc_interest", SZ);
     expect(i).toBeGreaterThan(0);
-    const soll = Math.round(
-      (resolveScalar(SEED, m.unitPriceKey!, SZ) * (1 + (m.restwertPct ?? 0)) / 2 * i) / m.refHoursPerYear!);
+    /* Zins auf das DURCHSCHNITTLICH gebundene Kapital: der Buchwert sinkt vom
+     *  NETTO-Einkauf auf den Restwert, im Mittel also (netto + restwert) / 2.
+     *  Zinsen auf einen Rabatt zahlt niemand. */
+    const soll = Math.round((((netto(SEED, m) + restwert(SEED, m)) / 2) * i) / m.refHoursPerYear!);
     expect(machineRatesPerHour(SEED, m, SZ).zinsCent).toBe(soll);
     const d = klon(SEED);
     setScenarioConst(d, "tco.calc_interest", SZ, i * 2);
@@ -257,7 +323,17 @@ describe("Base Case", () => {
      *  nach Produktpreis  15,17 ·  9,43   (ehrlichere Düngung)
      *  nach Pflanzgut     15,78 ·  9,95   (Kompendiumsmenge)
      *  nach Netto-Norm    15,66 ·  9,84   (Beregnung aus dem Kompendium)
-     *  Umsatz durchgehend 46,44 Mio — in ALLEN fünf Ständen */
+     *  Umsatz durchgehend 46,44 Mio — in ALLEN fünf Ständen
+     *
+     *  DIE UMSTELLUNG DER STUNDENSÄTZE AUF NETTO-EINKAUF (04.08.2026, abends)
+     *  bewegt diese Zeile NICHT, und das ist kein Zufall, sondern die
+     *  Drei-Statement-Logik: Abschreibung und Zins einer Maschine stehen in der
+     *  GuV genau EINMAL — über `deriveCapex` und die Finanzierung. Der
+     *  Stundensatz verteilt dieselben Beträge auf Hektar, damit man sie je
+     *  Kultur sieht; er darf sie nicht ein zweites Mal buchen. Die Umstellung
+     *  wirkt deshalb auf die ANALYTIK — Maßnahmenkette €/ha, Deckungsbeitrag,
+     *  kaufen ↔ mieten ↔ Lohn, Mietsatz — und nicht auf das Ergebnis. Wer sie
+     *  im EBITDA sucht, hat die Buchung zweimal. */
     const z = letztesJahr(SEED);
     expect(Math.round(z.umsatz / 1e4)).toBe(4644);     // 46,44 Mio — UNVERÄNDERT
     expect(Math.round(z.ebitda / 1e4)).toBe(1566);     // 15,66 Mio
