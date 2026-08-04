@@ -18,6 +18,8 @@ import { FinanzierungView } from "../inputs/FinanzierungView";
 import { SubventionenView } from "../inputs/SubventionenView";
 import { EroeffnungsbilanzView } from "../inputs/EroeffnungsbilanzView";
 import { AnnahmenView } from "../inputs/AnnahmenView";
+import { WiedervorlageView } from "../inputs/WiedervorlageView";
+import { IstAbgleichView } from "../inputs/IstAbgleichView";
 import { ScenarioStudioView } from "../inputs/ScenarioStudioView";
 import { HoldingView } from "../inputs/HoldingView";
 import { BewertungView } from "../inputs/BewertungView";
@@ -119,7 +121,10 @@ export function AppShell() {
   // mit Vorjahresvergleich und Margen.
   // Ansichten mit EIGENEM Mehrspalten-Layout (Navigator/Tabelle/Detail bzw. Regler/Grafik)
   // laufen über die volle Breite — die 320px-Seitenspalte würde ihre Tabellen abschneiden.
-  const BREITE_VIEWS: ViewId[] = ["annahmen", "annahmenSheet", "studio", "maschinen", "leistung", "investitionen", "capexScenarien", "ersatz", "lohnarbeit"];
+  /* Breite Ansichten laufen ohne die Prüfliste rechts. Wiedervorlage und Plan↔Ist
+     gehören dazu: sie SIND eine Prüfliste — daneben noch eine zweite zu stellen,
+     würde nur die Frage aufwerfen, welche der beiden gilt. */
+  const BREITE_VIEWS: ViewId[] = ["annahmen", "annahmenSheet", "studio", "maschinen", "leistung", "investitionen", "capexScenarien", "ersatz", "lohnarbeit", "wiedervorlage", "istabgleich"];
   const breit = BREITE_VIEWS.includes(view);
 
   React.useEffect(() => {
@@ -165,6 +170,8 @@ export function AppShell() {
                 : view === "ersatz" ? <MaschinenparkView />
                 : view === "liquiditaet" ? <LiquiditaetView />
                 : view === "annahmenSheet" ? <AnnahmenView />
+                : view === "wiedervorlage" ? <WiedervorlageView />
+                : view === "istabgleich" ? <IstAbgleichView />
                 : view === "lohnarbeit" ? <MaschinenparkView />
                 : view === "holding" ? <HoldingView />
                 : view === "eroeffnung" ? <EroeffnungsbilanzView />

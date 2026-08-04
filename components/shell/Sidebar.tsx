@@ -19,7 +19,7 @@ export type ViewId =
   | "einsatz" | "bewertung" | "contribution" | "overhead" | "verwaltung"
   | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht"
   | "gesellschaften" | "lohnarbeit" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
-  | "studio" | "abnahme" | "lagerkst";
+  | "studio" | "abnahme" | "lagerkst" | "wiedervorlage" | "istabgleich";
 
 type Item = { id: string; label: string; view?: ViewId };
 type Group = { title: string; items: Item[] };
@@ -34,6 +34,14 @@ const IA: Group[] = [
     { id: "kulturkalk", label: "Kultur-Kalkulation (Maßnahmen + Katalog)", view: "kulturkalk" },
     { id: "produktkatalog", label: "Produktkatalog (Dünger · PSM · Sorten)", view: "produktkatalog" },
     { id: "lagerkst", label: "Lager & Packhaus (Kostenstelle)", view: "lagerkst" },
+  ]},
+  /* BELEG & RUECKMELDUNG — die Ist-Seite des Modells. Sie steht bewusst als eigene
+     Gruppe und nicht unter "Verwaltung": zwei Drittel der Ertragsfaktoren sind
+     Annahmen, und die Frage, welche davon inzwischen gemessen sind, ist eine
+     Planungsfrage, keine Ablage. */
+  { title: "Beleg & Rückmeldung", items: [
+    { id: "wiedervorlage", label: "Wiedervorlage (Annahmen ↔ Messung)", view: "wiedervorlage" },
+    { id: "istabgleich", label: "Plan ↔ Ist (Maßnahmen · Flächen)", view: "istabgleich" },
   ]},
   { title: "Maschinen & Flotte", items: [
     { id: "maschinen", label: "Maschinenpark", view: "maschinen" },
@@ -75,6 +83,7 @@ const ICON: Record<string, LucideIcon> = {
   lohnarbeit: Handshake, finanzierung: Landmark, subventionen: BadgeEuro, gesellschaften: Network, holding: Building2, eroeffnung: BookOpen,
   pacht: ScrollText, preise: SlidersHorizontal, pnl: LineChart, balance: Scale, cashflow: Activity,
   liquiditaet: Wallet, contribution: PieChart, studio: SlidersHorizontal, val: Calculator,
+  wiedervorlage: ClipboardCheck, istabgleich: GitCompare,
   shareholder: CircleDollarSign, verwaltung: Save, annahmen: ClipboardCheck, kommentare: MessageSquare, team: UserCog,
 };
 

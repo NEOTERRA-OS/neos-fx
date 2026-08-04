@@ -738,6 +738,27 @@ export interface Beregnungseinheit {
   vorlaeufig?: boolean;
 }
 
+/** Anteil einer Sorte an der Flaeche einer Kultur.
+ *
+ *  Warum ein ANTEIL und keine Hektarzahl: die Flaeche der Kultur laeuft ueber den
+ *  Skalierungspfad von 300 auf 2.334 ha. Eine in Hektar hinterlegte Sortenmenge
+ *  waere ab dem zweiten Planjahr falsch, und zwar still — der Anteil skaliert mit.
+ *
+ *  `anteil` ist eine Quote (0..1) und wird beim Lesen auf die Summe 1 normiert.
+ *  Zwei Sorten mit je 0,5 und zwei Sorten mit je 50 ergeben dieselbe Zuteilung;
+ *  wer im Kopf in Prozent rechnet, soll das duerfen. */
+export interface SortenAnteil {
+  /** Sortenname wie im Produktkatalog. Geht in die Schlag-ID ein und ist damit
+   *  Teil des Arbeitsauftrags — Umbenennen erzeugt neue Schlaege. */
+  sorte: string;
+  /** Quote der Kulturflaeche. Wird normiert; 0 nimmt die Sorte aus dem Plan. */
+  anteil: number;
+  /** Rolle im Anbaukonzept, rein beschreibend (z. B. "vorgezogene Hauptkultur"). */
+  rolle?: string;
+  /** true, solange der Anteil gesetzt und nicht entschieden ist. */
+  vorlaeufig?: boolean;
+}
+
 /** Ein Schlag — Feld x Jahr x Kultur x Sorte. Die Einheit des Arbeitsauftrags. */
 export interface Schlag {
   id: string;

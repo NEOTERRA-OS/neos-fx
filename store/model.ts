@@ -74,6 +74,7 @@ import type {
   Feld,
   Beregnungseinheit,
   Schlag,
+  SortenAnteil,
   IstWert,
   IstMassnahme,
 } from "../core/types";
@@ -397,6 +398,10 @@ export type Domain = {
    *  Fehlt der Eintrag, leitet `personalMonatsgewichte` sie aus den Erntemonaten des
    *  Anbauplans ab. Hier gehoert der echte Kampagnenplan hinein, sobald er vorliegt. */
   personalSaison?: Record<string, number[]>;
+  /** SORTENANTEILE je Kultur (cropId → Sorte·Anteil). Treibt die Schlagbildung
+   *  und damit die Sortenschaerfe des Maßnahmenplans. Fehlt der Eintrag, gilt
+   *  `SORTENPLAN_VORSCHLAG`; eine leere Liste heißt ausdrücklich „ohne Sorten". */
+  sortenplan?: Record<string, SortenAnteil[]>;
   /** MANUELLE Kopfzahl je Position und Planjahr. Schlaegt den Treiber. null = Treiber gilt.
    *  Der Treiber ist ein Vorschlag, keine Vorschrift: wer den Betrieb kennt, weiss besser,
    *  ob 2029 ein Agronom mehr noetig ist, als es jede Verhaeltniszahl hergibt. */
@@ -2755,7 +2760,7 @@ export function flaechenMemo(domain: Domain): FlaechenBild {
   const beregnungseinheiten = buildBeregnungseinheiten(felder);
   const zweitnutzung = new Set(domain.anbauplan.filter((e) => e.zweitnutzung).map((e) => e.cropId));
   const { schlaege, verstoesse } = buildSchlaege(felder, {
-    areas: areasMY, zweitnutzung, jahre,
+    areas: areasMY, zweitnutzung, jahre, sorten: sortenplanOf(domain),
     wirtsgruppen: [
       { id: "kartoffel", pauseYears: KARTOFFEL_PAUSE_JAHRE, cropIds: ["kartoffel_pommes", "kartoffel_chips"] },
       { id: "alliaceen", pauseYears: 5, cropIds: ["knoblauch", "zwiebel_moehre"] },
@@ -2766,6 +2771,86 @@ export function flaechenMemo(domain: Domain): FlaechenBild {
   v = { felder, beregnungseinheiten, schlaege, verstoesse };
   _flaecheMemo.set(domain as object, v);
   return v;
+}
+
+/* --------------------------------------------------------------------------
+ * SORTENPLAN — Anteil je Sorte an der Flaeche einer Kultur.
+ *
+ * PLATZHALTER, ausdruecklich. Die Anteile sind gesetzt, nicht entschieden; sie
+ * tragen `vorlaeufig: true` und sind in der Anbauplanung editierbar. Was sie
+ * leisten, ist nicht die richtige Zahl, sondern die richtige STRUKTUR: solange
+ * die Kultur keine Sorten hat, kann der Massnahmenplan keinen sortenscharfen
+ * Rodetermin ausgeben, und genau das ist der Zweck der Schlagebene.
+ *
+ * Herkunft der Vorschlagswerte — zwei verschiedene Quellen, bewusst getrennt:
+ *
+ *   ROLLE   kommt aus der Anbauentscheidung. Markies ist als vorgezogene
+ *           Hauptkultur gesetzt (31.07.2026), weil sie frueh raeumt und damit
+ *           das Zweitkulturfenster oeffnet. Das ist eine Terminfrage.
+ *
+ *   RANG    kommt aus `build/ranking.py` im Kompendium (Stand 04.08.2026,
+ *           Standort Nedeia). Das ist eine Profilfrage.
+ *
+ * Die beiden widersprechen sich hier sichtbar: Markies steht im Pommes-Ranking
+ * fuer Nedeia auf Rang 13 von 13. Das ist KEIN Einwand gegen die Entscheidung —
+ * das Punktmodell kennt keine Rollen und kann "raeumt frueh genug fuer eine
+ * Zweitkultur" nicht ausdruecken. Es ist aber der Grund, warum Markies hier
+ * nicht die ganze Flaeche bekommt.
+ * ------------------------------------------------------------------------ */
+export const SORTENPLAN_VORSCHLAG: Record<string, SortenAnteil[]> = {
+  kartoffel_pommes: [
+    { sorte: "Markies", anteil: 0.40, rolle: "vorgezogene Hauptkultur", vorlaeufig: true },
+    { sorte: "Quintera", anteil: 0.35, rolle: "second early, hohe TS", vorlaeufig: true },
+    { sorte: "Zorba", anteil: 0.25, rolle: "Hauptkultur, Rang 1 Nedeia", vorlaeufig: true },
+  ],
+  kartoffel_chips: [
+    { sorte: "Chipsy", anteil: 0.55, rolle: "Hauptsorte, Rang 1 an beiden Standorten", vorlaeufig: true },
+    { sorte: "Lady Avalon", anteil: 0.30, rolle: "Rang 3, vollstaendige Datenbasis", vorlaeufig: true },
+    { sorte: "Lady Alicia", anteil: 0.15, rolle: "Rang 2, aber nur 48 % Datenbasis", vorlaeufig: true },
+  ],
+};
+
+/** Sortenanteile einer Kultur — Plan des Betriebs, sonst der Vorschlag, sonst leer.
+ *  Eine LEERE Liste ist eine gueltige Antwort und heisst "diese Kultur wird nicht
+ *  sortenscharf gefuehrt"; sie ergibt sortenlose Schlaege wie vor dem 04.08.2026. */
+export function sortenAnteileOf(domain: Domain, cropId: string): SortenAnteil[] {
+  const eigen = domain.sortenplan?.[cropId];
+  if (eigen) return eigen;
+  return SORTENPLAN_VORSCHLAG[cropId] ?? [];
+}
+
+/** Der Sortenplan, wie ihn die Flaechenzuteilung sieht: alle Kulturen des Plans. */
+export function sortenplanOf(domain: Domain): Record<string, SortenAnteil[]> {
+  const out: Record<string, SortenAnteil[]> = {};
+  for (const a of domain.anbauplan) {
+    const l = sortenAnteileOf(domain, a.cropId);
+    if (l.length) out[a.cropId] = l;
+  }
+  return out;
+}
+
+/** Ist-Verteilung der Sorten nach der Zuteilung — die Probe aufs Exempel.
+ *  Ganze Felder lassen sich nicht beliebig fein teilen; wo Soll und Ist
+ *  auseinanderlaufen, soll man das sehen und nicht glauben muessen. */
+export function sortenVerteilung(domain: Domain, cropId: string, jahrIdx = 0): {
+  sorte: string; sollPct: number; istHa: number; istPct: number; schlaege: number; rolle?: string;
+}[] {
+  const anteile = sortenAnteileOf(domain, cropId);
+  if (!anteile.length) return [];
+  const schlaege = schlaegeOf(domain, cropId, jahrIdx);
+  const gesamt = schlaege.reduce((s, x) => s + x.areaHa, 0);
+  const summe = anteile.reduce((s, a) => s + (a.anteil > 0 ? a.anteil : 0), 0) || 1;
+  return anteile.map((a) => {
+    const mein = schlaege.filter((s) => s.sorte === a.sorte);
+    const ha = mein.reduce((s, x) => s + x.areaHa, 0);
+    return {
+      sorte: a.sorte, rolle: a.rolle,
+      sollPct: (Math.max(0, a.anteil) / summe) * 100,
+      istHa: Math.round(ha * 10) / 10,
+      istPct: gesamt > 0 ? (ha / gesamt) * 100 : 0,
+      schlaege: mein.length,
+    };
+  });
 }
 
 /** Schlaege einer Kultur in einem Planjahr — die Flaeche hinter einer Massnahme. */
@@ -5986,8 +6071,25 @@ export const PERSONAL_POSITIONEN: PersonalPosition[] = [
  *
  * Die Gewichte kommen aus dem PLAN und nicht aus einer Schaetzung: aus den
  * Erntemonaten der angebauten Kulturen, gewichtet mit ihrer Flaeche. Das ist
- * derselbe Anker, den das Modell fuer die Handarbeit (`OP-HAND`) ohnehin
- * benutzt — die beiden koennen dadurch nicht auseinanderlaufen.
+ * derselbe ZEITANKER, den das Modell fuer die Handarbeit (`OP-HAND`) ohnehin
+ * benutzt — die beiden koennen dadurch nicht im Kalender auseinanderlaufen.
+ *
+ * `pers.saison.n` UND `OP-HAND` SIND VERSCHIEDENE LEUTE — geklaert am 04.08.2026
+ * mit NEOTERRA. Die Frage stand als offener Punkt im Umbaubericht, weil eine
+ * Doppelzaehlung hier nicht auffallen wuerde: `pers.saison.n` laeuft ueber die
+ * Personalplanung in SG&A, `OP-HAND` als Direktkosten je Kultur in COGS. Waeren
+ * es dieselben Koepfe, stuenden sie zweimal im Modell, in zwei verschiedenen
+ * Zeilen der GuV, und keine Summenpruefung koennte das finden.
+ *
+ *   pers.saison.n   Kampagnenmannschaft des BETRIEBS: Annahme, Verlesung,
+ *                   Sortierung, Lagerbeschickung, Fahrerhilfe. Ueber die Flaeche
+ *                   getrieben (199 ha/FTE), in SG&A gebucht.
+ *   OP-HAND         nicht-maschinelle FELDARBEIT je Kultur: Ernte von Hand,
+ *                   Nachlese, Kulturarbeiten. Ueber den Kulturkatalog getrieben,
+ *                   als Direktkosten in COGS gebucht.
+ *
+ * Gemeinsam ist ihnen nur der Zeitpunkt — beide haengen an den Erntemonaten.
+ * Genau deshalb teilen sie den Anker und sonst nichts.
  *
  * Der Jahresbetrag bleibt unangetastet: die Gewichte summieren sich auf 1, und
  * die Monatskopfzahl ist Jahres-FTE x 12 x Gewicht. Was sich aendert, ist WANN

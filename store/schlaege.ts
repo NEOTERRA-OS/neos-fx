@@ -33,7 +33,7 @@
  * (`F-014 → "Nedeia Nord 3"`); alles, was daran hängt, folgt automatisch.
  * Was NICHT funktioniert: IDs aus etwas ableiten, das sich ändert.
  */
-import type { Feld, Beregnungseinheit, Schlag } from "../core/types";
+import type { Feld, Beregnungseinheit, Schlag, SortenAnteil } from "../core/types";
 
 /** Typische Feldgröße (ha). Annahme, bis die echten Feldgrenzen vorliegen. */
 export const FELDGROESSE_HA_DEFAULT = 45;
@@ -102,6 +102,29 @@ export function buildBeregnungseinheiten(
   return out;
 }
 
+/** Kleinster Schlag, den die Zuteilung noch erzeugt (ha). Darunter wird ein Feld
+ *  nicht mehr geteilt — ein 2-ha-Zipfel ist kein Arbeitsauftrag. */
+export const MIN_SCHLAG_HA = 5;
+
+/** Sortenname → ID-tauglicher Bestandteil. Die Schlag-ID wandert in den
+ *  Arbeitsauftrag und damit über Systemgrenzen; Leerzeichen und Umlaute haben
+ *  dort nichts zu suchen. Der ANZEIGENAME bleibt unverändert in `Schlag.sorte`. */
+export function sortenSlug(name: string): string {
+  return String(name ?? "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "SORTE";
+}
+
+/** Anteile auf Summe 1 normieren. Nimmt Prozentzahlen genauso wie Quoten an und
+ *  wirft Sorten mit Anteil 0 heraus. Ohne verwertbare Eingabe bleibt ein
+ *  sortenloser Eintrag übrig — dann verhält sich die Zuteilung wie vorher. */
+export function normSortenanteile(list?: SortenAnteil[]): { sorte?: string; anteil: number }[] {
+  const gefiltert = (list ?? []).filter((s) => s?.sorte && Number.isFinite(s.anteil) && s.anteil > 0);
+  const summe = gefiltert.reduce((s, a) => s + a.anteil, 0);
+  if (!gefiltert.length || summe <= 0) return [{ sorte: undefined, anteil: 1 }];
+  return gefiltert.map((a) => ({ sorte: a.sorte, anteil: a.anteil / summe }));
+}
+
 /** Wirtsgruppe je Kultur — für die Anbaupause. Kulturen derselben Gruppe teilen
  *  sich die Pause; sie dürfen nicht kurz hintereinander auf dasselbe Feld. */
 export type Wirtsgruppe = { id: string; pauseYears: number; cropIds: string[] };
@@ -112,8 +135,10 @@ export interface SchlagPlanEingabe {
   /** Kulturen, die als Zweitnutzung laufen (Zwischenfrucht) — sie belegen kein
    *  eigenes Feld, sondern stehen auf dem der Hauptkultur. */
   zweitnutzung?: Set<string>;
-  /** Sorten je Kultur. Mehrere Sorten ergeben mehrere Schläge je Feld. */
-  sorten?: Record<string, string[]>;
+  /** Sortenanteile je Kultur. Mehrere Sorten ergeben mehrere Schläge.
+   *  Fehlt der Eintrag, entsteht ein sortenloser Schlag je Feld — der Zustand
+   *  bis 04.08.2026. */
+  sorten?: Record<string, SortenAnteil[]>;
   wirtsgruppen: Wirtsgruppe[];
   jahre: number;
 }
@@ -182,8 +207,23 @@ export function buildSchlaege(
         .map((f) => ({ f, abstand: engster(f.id) }))
         .sort((a, b) => b.abstand - a.abstand);
 
-      const sorten = ein.sorten?.[cropId]?.length ? ein.sorten[cropId] : [undefined];
-      let sIdx = 0;
+      /* SORTENZUTEILUNG. Bis 04.08.2026 liefen die Sorten hier REIHUM ueber die
+       *  Felder. Das ist genau dann richtig, wenn alle Sorten denselben Anteil
+       *  haben und alle Felder gleich gross sind — und sonst nie. Bei 40/35/25
+       *  auf 55 Feldern lag die reihum verteilte Menge bis zu 15 Prozentpunkte
+       *  neben dem Plan, ohne dass irgendwo eine Warnung entstanden waere.
+       *
+       *  Jetzt bekommt jede Sorte ein Soll in Hektar (Anteil x Kulturflaeche des
+       *  Jahres), und jedes Feld geht an die Sorte mit dem groessten Rueckstand.
+       *  Ein Feld darf dabei geteilt werden — Markies und eine second early auf
+       *  demselben Feld sind zwei Schlaege, weil sie zu verschiedenen Terminen
+       *  gerodet werden. Unterhalb von MIN_SCHLAG_HA wird nicht geteilt: ein
+       *  2-ha-Zipfel ist kein Arbeitsauftrag, sondern ein Rundungsrest. */
+      const anteile = normSortenanteile(ein.sorten?.[cropId]);
+      const gesamtHa = ein.areas[cropId][jahr] ?? 0;
+      const soll = anteile.map((a) => a.anteil * gesamtHa);
+      const ist = anteile.map(() => 0);
+
       for (const k of kandidaten) {
         if (rest <= 0.01) break;
         const nutz = Math.min(k.f.areaHa, rest);
@@ -193,13 +233,40 @@ export function buildSchlaege(
             verstoesse.push({ feldId: k.f.id, gruppe: g.id, jahr, abstand: jahr - l });
           }
         }
-        // Sorten reihum: mehrere Sorten einer Kultur verteilen sich auf Felder.
-        const sorte = sorten[sIdx % sorten.length];
-        sIdx += 1;
-        schlaege.push({
-          id: `${k.f.id}-${jahr}-${cropId}${sorte ? `-${sorte}` : ""}`,
-          feldId: k.f.id, jahr, cropId, sorte,
-          areaHa: Math.round(nutz * 10) / 10,
+        // Feld auf die Sorten aufteilen, groesster Rueckstand zuerst.
+        const aufFeld = new Map<number, number>();
+        let offen = nutz;
+        while (offen > 0.01) {
+          let bi = 0, bd = -Infinity;
+          for (let i = 0; i < anteile.length; i++) {
+            const d = soll[i] - ist[i];
+            if (d > bd) { bd = d; bi = i; }
+          }
+          let nimm = Math.min(offen, Math.max(bd, MIN_SCHLAG_HA));
+          if (offen - nimm < MIN_SCHLAG_HA) nimm = offen;
+          aufFeld.set(bi, (aufFeld.get(bi) ?? 0) + nimm);
+          ist[bi] += nimm;
+          offen -= nimm;
+        }
+        /* RUNDUNG MIT REST. Jeder Schlag wird auf 0,1 ha gerundet; bei drei Sorten
+         *  auf einem Feld summieren sich drei Rundungen. Auf 225 ha waren das
+         *  0,1 ha Drift — klein, aber es heisst, dass die Summe der Schlagflaechen
+         *  nicht mehr die Kulturflaeche ist. Der LETZTE Teil bekommt deshalb den
+         *  Rest, nicht seinen gerundeten Eigenwert. */
+        const teile = [...aufFeld.entries()];
+        let vergeben = 0;
+        teile.forEach(([i, ha], n) => {
+          const letzter = n === teile.length - 1;
+          const flaeche = letzter
+            ? Math.round((nutz - vergeben) * 10) / 10
+            : Math.round(ha * 10) / 10;
+          vergeben += flaeche;
+          const sorte = anteile[i].sorte;
+          schlaege.push({
+            id: `${k.f.id}-${jahr}-${cropId}${sorte ? `-${sortenSlug(sorte)}` : ""}`,
+            feldId: k.f.id, jahr, cropId, sorte,
+            areaHa: flaeche,
+          });
         });
         belegt.add(k.f.id);
         if (gruppen.length === 0) letzte.set(key(k.f.id, cropId), jahr);

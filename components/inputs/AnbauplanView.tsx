@@ -5,10 +5,12 @@ import type { Domain, CatalogEntry } from "../../store/model";
 import { fmtMoney, fmtNumber, fmtEditable, parseDe } from "../../design/format";
 import { Feld } from "./Feld";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
-import { deriveCropAreasMY, setCropPathHa, rampCropPath, deriveContribution, START_YEAR, type CropPolicy } from "../../store/model";
+import { deriveCropAreasMY, setCropPathHa, rampCropPath, deriveContribution, START_YEAR,
+  sortenAnteileOf, sortenVerteilung, schlaegeOf, type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
 import { JahrWahl, JAHR_DEFAULT } from "./JahrWahl";
-import { Droplets, Sun, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Droplets, Sun, X, ChevronDown, ChevronRight, Sprout, Plus, TriangleAlert } from "lucide-react";
+import { TextFeld, Aktion } from "../primitives/Control";
 
 /** Feldkosten €/ha einer Kultur = Σ opLine (Menge/ha × Stücksatz), aus dem KATALOG gezogen. */
 function fieldCostPerHaCent(domain: Domain, entry: CatalogEntry, scenarioId: string): number {
@@ -254,6 +256,9 @@ export function AnbauplanView() {
     {/* Anbaustruktur & Produktion */}
     <ProduktionsTabelle />
 
+    {/* Sortenanteile — die Größe, die aus einer Kulturfläche einen Arbeitsauftrag macht */}
+    <SortenPlanTabelle />
+
     {/* ENTFERNT 31.07.2026: das Politik-Panel (scale/fix/ramp je Kultur). Die Flächen stehen
         jetzt Jahr für Jahr in der Tabelle oben — eine explizite Kurve statt einer Regel, die
         man erst im Kopf auflösen muss. Die Modi scale/fix/ramp werden nicht mehr verwendet. */}
@@ -262,6 +267,223 @@ export function AnbauplanView() {
         Sektion Anbaustrategie, die vorerst komplett aus der App genommen ist. Der Code bleibt
         unter components/_archiv erhalten; die Anbaupausen-Wächter (Kartoffel 25 %,
         Doldenblütler 20 %) laufen unabhängig davon in der Prüfliste weiter. */}
+    </div>
+  );
+}
+
+
+/**
+ * SORTENANTEILE je Kultur.
+ *
+ * WARUM ANTEILE UND KEINE HEKTAR. Die Kulturfläche läuft über den Skalierungspfad
+ * von 300 auf 2.334 ha. Eine in Hektar hinterlegte Sortenmenge wäre ab dem zweiten
+ * Planjahr falsch — und zwar still. Der Anteil skaliert mit.
+ *
+ * WARUM ES DIESE TABELLE ÜBERHAUPT GIBT. Ohne Sorte ist ein Schlag nur ein Feld mit
+ * einer Kultur darauf, und der Maßnahmenplan kann keinen sortenscharfen Rodetermin
+ * ausgeben. Markies und eine second early reifen unterschiedlich ab; „roden" ist
+ * deshalb eine Schlag-Maßnahme und keine Feld-Maßnahme. Genau dafür ist die
+ * Schlagebene gebaut.
+ *
+ * DIE WERTE SIND PLATZHALTER, und die Tabelle sagt das auch. Die Rolle kommt aus der
+ * Anbauentscheidung (Markies als vorgezogene Hauptkultur, 31.07.2026), der Rang aus
+ * dem Sortenranking des Kompendiums. Beide widersprechen sich hier sichtbar —
+ * Markies steht im Pommes-Ranking für Nedeia auf Rang 13 von 13. Das ist kein
+ * Einwand gegen die Entscheidung: das Punktmodell kennt keine Rollen und kann
+ * „räumt früh genug für eine Zweitkultur" nicht ausdrücken. Es ist der Grund, warum
+ * Markies hier nicht die ganze Fläche bekommt.
+ */
+function SortenPlanTabelle() {
+  const { domain, patch } = useModelStore();
+  const readOnly = useModelStore((s) => s.readOnly);
+  const jahre = Math.max(1, domain.growth?.years ?? 1);
+  const [jy, setJy] = React.useState(JAHR_DEFAULT);
+
+  const kulturen = React.useMemo(
+    () => [...new Set(domain.anbauplan.filter((a) => !a.zweitnutzung).map((a) => a.cropId))],
+    [domain],
+  );
+
+  const setzen = (cropId: string, i: number, wert: number) => patch((d) => {
+    const liste = (d.sortenplan?.[cropId] ?? sortenAnteileOf(d, cropId)).map((x) => ({ ...x }));
+    if (!liste[i]) return;
+    liste[i].anteil = Math.max(0, wert) / 100;
+    liste[i].vorlaeufig = false;        // wer daran dreht, hat entschieden
+    d.sortenplan = { ...(d.sortenplan ?? {}), [cropId]: liste };
+  });
+
+  const entfernen = (cropId: string, i: number) => patch((d) => {
+    const liste = (d.sortenplan?.[cropId] ?? sortenAnteileOf(d, cropId)).filter((_, k) => k !== i);
+    d.sortenplan = { ...(d.sortenplan ?? {}), [cropId]: liste };
+  });
+
+  const hinzufuegen = (cropId: string, name: string) => {
+    const sorte = name.trim();
+    if (!sorte) return;
+    patch((d) => {
+      const liste = [...(d.sortenplan?.[cropId] ?? sortenAnteileOf(d, cropId))];
+      if (liste.some((x) => x.sorte.toLowerCase() === sorte.toLowerCase())) return;
+      liste.push({ sorte, anteil: 0, vorlaeufig: true });
+      d.sortenplan = { ...(d.sortenplan ?? {}), [cropId]: liste };
+    });
+  };
+
+  const th = "px-2 py-2 caption text-[10px] text-nx-text-muted";
+  const card: React.CSSProperties = { borderColor: "var(--nx-border)", background: "var(--nx-surface)" };
+
+  return (
+    <section className="rounded-tile border" style={card}>
+      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
+        <Sprout size={15} strokeWidth={2.3} aria-hidden className="text-nx-text-secondary" />
+        <h2 className="text-[14px] font-semibold">{t("Sortenanteile")}</h2>
+        <span className="text-[11px] text-nx-text-muted">
+          {t("Anteil, nicht Hektar — die Kulturfläche wächst, der Anteil skaliert mit. Aus den Anteilen fallen die Schläge und damit die sortenscharfen Rode- und Sikkationstermine.")}
+        </span>
+        <span className="ml-auto"><JahrWahl jahre={jahre} wert={jy} onChange={setJy} /></span>
+      </div>
+
+      <div className="space-y-3 p-3">
+        {kulturen.map((cropId) => {
+          const liste = sortenAnteileOf(domain, cropId);
+          const verteilung = sortenVerteilung(domain, cropId, jy);
+          const summePct = liste.reduce((s, x) => s + Math.max(0, x.anteil), 0) * 100;
+          const flaeche = schlaegeOf(domain, cropId, jy).reduce((s, x) => s + x.areaHa, 0);
+          return (
+            <SortenKarte
+              key={cropId} cropId={cropId} liste={liste} verteilung={verteilung}
+              summePct={summePct} flaeche={flaeche} readOnly={readOnly} th={th}
+              onSetzen={(i, v) => setzen(cropId, i, v)}
+              onEntfernen={(i) => entfernen(cropId, i)}
+              onHinzufuegen={(n) => hinzufuegen(cropId, n)}
+            />
+          );
+        })}
+      </div>
+
+      <div className="border-t px-4 py-2 text-[11px] leading-relaxed text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
+        {t("Die Anteile werden auf 100 % normiert — 40/35/25 und 4/3,5/2,5 ergeben dieselbe Zuteilung. „Zugeteilt“ weicht vom Soll ab, weil ganze Felder verteilt werden und ein Feld erst ab 5 ha geteilt wird; ein 2-ha-Zipfel ist kein Arbeitsauftrag. Sorten mit Anteil 0 bleiben stehen, fallen aber aus der Zuteilung — so lässt sich ein Prüfglied vorhalten, ohne ihm Fläche zu geben.")}
+        {" "}
+        {t("Vorschlagswerte tragen den Vermerk „gesetzt“ und stammen aus der Anbauentscheidung (Rolle) und dem Sortenranking des Kompendiums (Rang). Wer eine Zahl ändert, nimmt den Vermerk weg.")}
+      </div>
+    </section>
+  );
+}
+
+function SortenKarte({
+  cropId, liste, verteilung, summePct, flaeche, readOnly, th, onSetzen, onEntfernen, onHinzufuegen,
+}: {
+  cropId: string;
+  liste: ReturnType<typeof sortenAnteileOf>;
+  verteilung: ReturnType<typeof sortenVerteilung>;
+  summePct: number; flaeche: number; readOnly: boolean; th: string;
+  onSetzen: (i: number, pct: number) => void;
+  onEntfernen: (i: number) => void;
+  onHinzufuegen: (name: string) => void;
+}) {
+  const [neu, setNeu] = React.useState("");
+  return (
+    <div className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-app-bg)" }}>
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--nx-border)" }}>
+        <span style={{ width: 9, height: 9, borderRadius: 2, background: cropColor(cropId), display: "inline-block" }} />
+        <span className="text-[12.5px] font-semibold">{t(cropName(cropId))}</span>
+        <span className="num text-[10.5px] text-nx-text-muted">{fmtNumber(flaeche, 0)} ha</span>
+        {liste.length === 0 && (
+          <span className="text-[10.5px] text-nx-text-muted">{t("ohne Sorten — die Schläge tragen dann keine Sortenkennung")}</span>
+        )}
+        <span className="ml-auto inline-flex items-center gap-2">
+          <TextFeld wert={neu} onChange={setNeu} onEnter={() => { onHinzufuegen(neu); setNeu(""); }}
+            platzhalter={t("Sorte ergänzen …")} breite={170} dicht />
+          <Aktion kind="still" Icon={Plus} dicht disabled={readOnly || !neu.trim()}
+            onClick={() => { onHinzufuegen(neu); setNeu(""); }}>{t("Sorte")}</Aktion>
+        </span>
+      </div>
+
+      {liste.length > 0 && (
+        <div className="overflow-x-auto px-2 py-1">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr>
+                <th className={th + " text-left"} style={{ minWidth: 160 }}>{t("Sorte")}</th>
+                <th className={th + " text-left"} style={{ minWidth: 220 }}>{t("Rolle")}</th>
+                <th className={th + " text-right"}>{t("Anteil %")}</th>
+                <th className={th + " text-right"}>{t("zugeteilt")}</th>
+                <th className={th + " text-right"}>{t("ha")}</th>
+                <th className={th + " text-right"}>{t("Schläge")}</th>
+                <th className={th} />
+              </tr>
+            </thead>
+            <tbody>
+              {liste.map((s, i) => {
+                const v = verteilung.find((x) => x.sorte === s.sorte);
+                const abw = v ? v.istPct - v.sollPct : 0;
+                return (
+                  <tr key={s.sorte} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
+                    <td className="px-2 py-1.5">
+                      <span className="font-medium">{s.sorte}</span>
+                      {s.vorlaeufig && (
+                        <span className="ml-1.5 rounded-pill px-1.5 py-[1px] text-[9px] font-bold"
+                          style={{ background: "var(--nx-surface-sunken)", color: "var(--nx-text-muted)" }}>{t("gesetzt")}</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-[10.5px] text-nx-text-muted">{s.rolle ?? "—"}</td>
+                    <td className="px-1 py-1.5 text-right">
+                      <NumCell value={Math.round(s.anteil * 1000) / 10} width={72} suffix="%"
+                        onCommit={(v2) => onSetzen(i, v2)} />
+                    </td>
+                    <td className="num px-2 py-1.5 text-right font-semibold">
+                      {v ? `${fmtNumber(v.istPct, 1)} %` : "—"}
+                      {v && Math.abs(abw) >= 1 && (
+                        <span className="ml-1 text-[9.5px] font-normal text-nx-text-muted">
+                          ({abw > 0 ? "+" : ""}{fmtNumber(abw, 1)})
+                        </span>
+                      )}
+                    </td>
+                    <td className="num px-2 py-1.5 text-right">{v ? fmtNumber(v.istHa, 1) : "—"}</td>
+                    <td className="num px-2 py-1.5 text-right text-nx-text-muted">{v?.schlaege ?? 0}</td>
+                    <td className="px-1 py-1.5 text-right">
+                      {!readOnly && (
+                        <button className="text-nx-text-muted hover:text-nx-error" title={t("Sorte aus dem Plan nehmen")}
+                          onClick={() => onEntfernen(i)}>
+                          <X size={12} strokeWidth={2.5} aria-hidden />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ borderTop: "2px solid var(--nx-border)" }}>
+                <td className="px-2 py-1.5 font-semibold" colSpan={2}>{t("Σ")}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold"
+                    style={{ color: Math.abs(summePct - 100) > 0.5 ? "var(--nx-warning-text)" : undefined }}>
+                  {fmtNumber(summePct, 1)} %
+                </td>
+                <td className="num px-2 py-1.5 text-right font-semibold">
+                  {fmtNumber(verteilung.reduce((s, v) => s + v.istPct, 0), 1)} %
+                </td>
+                <td className="num px-2 py-1.5 text-right font-semibold">
+                  {fmtNumber(verteilung.reduce((s, v) => s + v.istHa, 0), 1)}
+                </td>
+                <td className="num px-2 py-1.5 text-right font-semibold">
+                  {verteilung.reduce((s, v) => s + v.schlaege, 0)}
+                </td>
+                <td />
+              </tr>
+              {Math.abs(summePct - 100) > 0.5 && (
+                <tr>
+                  <td colSpan={7} className="px-2 py-1 text-[10.5px]" style={{ color: "var(--nx-warning-text)" }}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <TriangleAlert size={11} strokeWidth={2.5} aria-hidden />
+                      {t("Die Anteile summieren nicht auf 100 % — sie werden normiert. Das ist zulässig, aber die zugeteilte Spalte ist dann leichter misszuverstehen als die eingegebene.")}
+                    </span>
+                  </td>
+                </tr>
+              )}
+            </tfoot>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

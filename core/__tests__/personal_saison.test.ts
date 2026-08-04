@@ -17,7 +17,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SEED, buildModelState, personalMonatsgewichte, personalFteOfYear,
-  PERSONAL_POSITIONEN, CROP_CAL, resolveScalar, type Domain,
+  PERSONAL_POSITIONEN, CROP_CAL, resolveScalar, deriveCropMassnahmen, type Domain,
 } from "../../store/model";
 
 const SZ = SEED.baseScenarioId;
@@ -103,6 +103,54 @@ describe("Monatsgewichte", () => {
     const w = personalMonatsgewichte(d, "pers.saison.n", JAHRE - 1, SZ);
     expect(w[5]).toBeCloseTo(1, 9);
     expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
+  });
+});
+
+describe("pers.saison.n und OP-HAND sind verschiedene Leute", () => {
+  /* Geklärt am 04.08.2026 mit NEOTERRA. Der Punkt stand offen, weil eine
+   *  Doppelzählung hier NICHT auffallen würde: die eine Position läuft über die
+   *  Personalplanung in SG&A, die andere als Direktkosten je Kultur in COGS.
+   *  Wären es dieselben Köpfe, stünden sie zweimal im Modell — in zwei
+   *  verschiedenen Zeilen der GuV, wo keine Summenprüfung sie zusammenbringt.
+   *
+   *  Gemeinsam ist ihnen nur der ZEITPUNKT. Dieser Test hält beides fest: dass
+   *  sie denselben Kalenderanker teilen UND dass sie getrennt bleiben. */
+  it("teilen den Erntemonat als Anker", () => {
+    const monate = new Set<number>();
+    for (const a of SEED.anbauplan) {
+      if (a.zweitnutzung) continue;
+      const e = a.harvestPeriods?.length ? a.harvestPeriods : (CROP_CAL[a.cropId as keyof typeof CROP_CAL]?.harvest ?? []);
+      for (const m of e) monate.add(((m % 12) + 12) % 12);
+    }
+    const w = personalMonatsgewichte(SEED, "pers.saison.n", JAHRE - 1, SZ);
+    const spitze = w.indexOf(Math.max(...w));
+    expect(monate.has(spitze), `Spitze in Monat ${spitze}, geerntet wird in ${[...monate].join(",")}`).toBe(true);
+  });
+
+  it("laufen über getrennte Wege ins Ergebnis — SG&A gegen COGS", () => {
+    /* Die Probe: `pers.saison.n` auf null zu setzen, darf die Handarbeitskosten
+     *  der Kulturen NICHT verändern. Hingen beide an derselben Größe, würde die
+     *  eine mit der anderen verschwinden. */
+    const hand = (d: Domain) => deriveCropMassnahmen(d, "kartoffel_pommes", SZ, 0).rows
+      .filter((r) => r.fachbereich === "HANDARBEIT").reduce((s, r) => s + r.totalCent, 0);
+
+    const ohneSaison = klon(SEED);
+    ohneSaison.personalOverride = { ...(ohneSaison.personalOverride ?? {}), "pers.saison.n": [0] };
+    expect(personalFteOfYear(SEED, "pers.saison.n", 0, SZ)).toBeGreaterThan(0);
+    expect(personalFteOfYear(ohneSaison, "pers.saison.n", 0, SZ)).toBe(0);
+    expect(hand(SEED)).toBeGreaterThan(0);
+    expect(hand(ohneSaison)).toBe(hand(SEED));
+  });
+
+  it("die Kopfzahl kommt aus dem Flächen-Treiber, nicht aus der Handarbeit", () => {
+    /* Nebenbefund, der beim Schreiben dieses Tests aufgefallen ist und
+     *  festgehalten gehört: `pers.saison.n` als ANNAHME auf null zu setzen ändert
+     *  die Kopfzahl NICHT — sie fällt aus `personalRatio` (Fläche je Saison-FTE).
+     *  Die Annahme ist nur die Kalibrierungsbasis. Wer die Mannschaft wirklich
+     *  ändern will, ändert das Verhältnis oder überschreibt das Jahr. */
+    const d = klon(SEED);
+    d.assumptions["pers.saison.n"].scenarioProfiles[SZ] = { kind: "constant", value: 0 };
+    expect(personalFteOfYear(d, "pers.saison.n", 0, SZ)).toBeCloseTo(personalFteOfYear(SEED, "pers.saison.n", 0, SZ), 9);
   });
 });
 

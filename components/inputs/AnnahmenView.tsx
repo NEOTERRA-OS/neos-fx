@@ -12,7 +12,8 @@ import { einheit } from "../../design/units";
 import { NumberInput, TextInput } from "./NumberInput";
 import { CommentsPanel, threadOf } from "./CommentsPanel";
 import { t, getLang } from "../../lib/i18n";
-import { MessageSquare, RotateCcw, ChevronDown, ChevronRight, Search, Star, Flag, X } from "lucide-react";
+import { MessageSquare, RotateCcw, ChevronDown, ChevronRight, Search, Star, Flag, X, Plus } from "lucide-react";
+import { TextFeld, Auswahl, Aktion } from "../primitives/Control";
 
 /** ANNAHMEN — EIN Register für alle Modell-Treiber.
  *
@@ -286,26 +287,23 @@ function IstBlock({ r, editor }: { r: AssumptionRow; editor: string }) {
         </div>
       )}
 
-      <div className="mt-2 flex flex-wrap items-center gap-1">
-        <input value={neu.wert} onChange={(e) => setNeu({ ...neu, wert: e.target.value })}
-          placeholder={t("Wert")} className="num rounded-control border px-1.5 text-[11.5px]"
-          style={{ height: 26, width: 72, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)" }} />
-        <input value={neu.jahr} onChange={(e) => setNeu({ ...neu, jahr: e.target.value })}
-          placeholder={t("Jahr")} className="num rounded-control border px-1.5 text-[11.5px]"
-          style={{ height: 26, width: 56, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)" }} />
-        <select value={neu.feldId} onChange={(e) => setNeu({ ...neu, feldId: e.target.value })}
-          className="rounded-control border px-1 text-[11px]"
-          style={{ height: 26, width: 78, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)" }}>
-          <option value="">{t("Betrieb")}</option>
-          {felder.map((f) => <option key={f.id} value={f.id}>{f.nummer}</option>)}
-        </select>
-        <select value={neu.quelle} onChange={(e) => setNeu({ ...neu, quelle: e.target.value as IstQuelle })}
-          className="rounded-control border px-1 text-[11px]"
-          style={{ height: 26, width: 92, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)" }}>
-          {IST_QUELLEN.map((q) => <option key={q} value={q}>{t(q)}</option>)}
-        </select>
-        <button onClick={erfassen} className="rounded-control border px-2 text-[11px] font-semibold"
-          style={{ height: 26, borderColor: "var(--nx-border)", color: "var(--nx-locate)" }}>{t("erfassen")}</button>
+      {/* Eine Erfassungszeile, EINE Höhe. Vorher standen hier vier Elemente auf
+          26 px neben einem Knopf auf 26 px — im selben Bildschirm mit Feldern auf
+          34 px und Segmenten auf 28 px. Jetzt kommt die Höhe aus `--nx-h-control`
+          über die gemeinsamen Bausteine; `dicht` ist die eine erlaubte Ausnahme
+          für Elemente in einem schmalen Seitenpanel. */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <TextFeld wert={neu.wert} onChange={(v) => setNeu({ ...neu, wert: v })} onEnter={erfassen}
+          platzhalter={t("Wert")} breite={76} zahl dicht />
+        <TextFeld wert={neu.jahr} onChange={(v) => setNeu({ ...neu, jahr: v })} onEnter={erfassen}
+          platzhalter={t("Jahr")} breite={62} zahl dicht />
+        <Auswahl wert={neu.feldId} onChange={(v) => setNeu({ ...neu, feldId: v })} breite={84} dicht
+          ariaLabel={t("Feldbezug")}
+          optionen={[{ wert: "", label: t("Betrieb") }, ...felder.map((f) => ({ wert: f.id, label: f.nummer }))]} />
+        <Auswahl wert={neu.quelle} onChange={(v) => setNeu({ ...neu, quelle: v as IstQuelle })} breite={98} dicht
+          ariaLabel={t("Herkunft")}
+          optionen={IST_QUELLEN.map((q) => ({ wert: q, label: t(q) }))} />
+        <Aktion kind="still" Icon={Plus} dicht onClick={erfassen}>{t("erfassen")}</Aktion>
       </div>
       <div className="mt-1 text-[9.5px] text-nx-text-muted">
         {t("Ohne Feldbezug ist ein Messwert ein Betriebsdurchschnitt und belegt keinen Faktor.")}
@@ -509,16 +507,15 @@ export function AnnahmenView() {
               </div>
               <span className="num text-[11px] font-semibold">{geprueft}/{total}</span>
             </div>
+            {/* Eine Leiste, eine Hoehe (30 px, `dicht`) — vorher 26 neben 28. */}
             <button onClick={() => { setQ(""); setAuswahl({ kind: "klaeren" }); }}
-              className="inline-flex items-center gap-1.5 rounded-control border px-2 text-[11px] font-semibold"
-              style={{ height: 26, borderColor: "var(--nx-border)", color: nKlaeren ? "var(--nx-warn, #C9A227)" : "var(--nx-text-muted)" }}>
+              className="inline-flex items-center gap-1.5 rounded-control border px-2.5 text-[11px] font-semibold"
+              style={{ height: 30, borderColor: "var(--nx-border)", color: nKlaeren ? "var(--nx-warn, #C9A227)" : "var(--nx-text-muted)" }}>
               <Flag size={11} strokeWidth={2.5} aria-hidden />{nKlaeren} {t("zu klären")}
             </button>
             <label className="inline-flex items-center gap-1.5 text-[11px] text-nx-text-secondary">
               {t("Bearbeiter")}:
-              <input value={editor} onChange={(e) => setEditor(e.target.value)}
-                className="rounded-control border px-2 text-[12px] font-semibold"
-                style={{ height: 28, width: 130, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)" }} />
+              <TextFeld wert={editor} onChange={setEditor} breite={130} dicht ariaLabel={t("Bearbeiter")} />
             </label>
           </div>
         </div>
