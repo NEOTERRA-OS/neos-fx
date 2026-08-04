@@ -3,73 +3,73 @@
     "jahr": 2027,
     "umsatz": 1317094,
     "ebitda": -784422,
-    "ergebnis": -1424482,
+    "ergebnis": -1423986,
     "steuer": 0,
-    "cfo": -989596,
+    "cfo": -989848,
     "cfi": -3723189,
-    "cff": 2712785,
+    "cff": 2713037,
     "kasse": 0,
-    "bilanzsumme": 3288303
+    "bilanzsumme": 3289051
   },
   {
     "jahr": 2028,
     "umsatz": 3314296,
     "ebitda": -950240,
-    "ergebnis": -2209643,
+    "ergebnis": -2208357,
     "steuer": 0,
-    "cfo": -1511292,
+    "cfo": -1510993,
     "cfi": -2983503,
-    "cff": 4494795,
+    "cff": 4494496,
     "kasse": 0,
-    "bilanzsumme": 5573455
+    "bilanzsumme": 5575190
   },
   {
     "jahr": 2029,
     "umsatz": 6136671,
     "ebitda": -1503523,
-    "ergebnis": -4375438,
+    "ergebnis": -4373195,
     "steuer": 0,
-    "cfo": -2919349,
+    "cfo": -2918292,
     "cfi": -10708047,
-    "cff": 13627396,
+    "cff": 13626340,
     "kasse": 0,
-    "bilanzsumme": 14825413
+    "bilanzsumme": 14828335
   },
   {
     "jahr": 2030,
     "umsatz": 8796108,
     "ebitda": -2058534,
-    "ergebnis": -5931415,
+    "ergebnis": -5928095,
     "steuer": 0,
-    "cfo": -4024951,
+    "cfo": -4022897,
     "cfi": -3593366,
-    "cff": 7618317,
+    "cff": 7616263,
     "kasse": 0,
-    "bilanzsumme": 16512314
+    "bilanzsumme": 16516503
   },
   {
     "jahr": 2031,
     "umsatz": 11559740,
     "ebitda": -2631801,
-    "ergebnis": -7859158,
+    "ergebnis": -7854841,
     "steuer": 0,
-    "cfo": -5380060,
+    "cfo": -5377084,
     "cfi": -6263071,
-    "cff": 11643131,
+    "cff": 11640154,
     "kasse": 0,
-    "bilanzsumme": 20296288
+    "bilanzsumme": 20301816
   },
   {
     "jahr": 2032,
     "umsatz": 14293334,
     "ebitda": -3518845,
-    "ergebnis": -10285718,
+    "ergebnis": -10284093,
     "steuer": 0,
-    "cfo": -6959113,
+    "cfo": -6959028,
     "cfi": -11099205,
-    "cff": 12105247,
-    "kasse": -5953071,
-    "bilanzsumme": 22115816
+    "cff": 12111380,
+    "kasse": -5946853,
+    "bilanzsumme": 22129103
   },
   {
     "jahr": 2033,
@@ -77,11 +77,11 @@
     "ebitda": -4341582,
     "ergebnis": -11700562,
     "steuer": 0,
-    "cfo": -7906470,
+    "cfo": -7907735,
     "cfi": -6552299,
     "cff": 973408,
-    "kasse": -19438431,
-    "bilanzsumme": 11388663
+    "kasse": -19433478,
+    "bilanzsumme": 11401950
   },
   {
     "jahr": 2034,
@@ -89,11 +89,11 @@
     "ebitda": -5303098,
     "ergebnis": -12891128,
     "steuer": 0,
-    "cfo": -8857307,
+    "cfo": -8858732,
     "cfi": -4561533,
     "cff": -281888,
-    "kasse": -33139159,
-    "bilanzsumme": -1784353
+    "kasse": -33135631,
+    "bilanzsumme": -1771067
   },
   {
     "jahr": 2035,
@@ -101,10 +101,10 @@
     "ebitda": -6412520,
     "ergebnis": -13937323,
     "steuer": 0,
-    "cfo": -9945801,
+    "cfo": -9947429,
     "cfi": -4751572,
     "cff": -525594,
-    "kasse": -48362126,
-    "bilanzsumme": -16247270
+    "kasse": -48360226,
+    "bilanzsumme": -16233984
   }
 ]

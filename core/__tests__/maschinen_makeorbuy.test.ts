@@ -168,7 +168,11 @@ describe("Base Case bleibt unberührt", () => {
     const z = letztesJahr(SEED);
     expect(Math.round(z.ebitda / 1e4)).toBe(1675);      // 16,75 Mio
     expect(Math.round(z.ergebnis / 1e4)).toBe(1008);    // 10,08 Mio
-    expect(Math.round(z.kasse / 1e4)).toBe(2934);       // 29,34 Mio
+    /* Die KASSE steht hier bewusst NICHT: sie haengt am Zeitpunkt jeder Zahlung und
+     *  bewegt sich damit bei jeder Aenderung an der Saisonalitaet, ohne dass an den
+     *  Stundensaetzen etwas falsch waere. Wer sie hier festnagelt, bekommt einen Test,
+     *  der bei fremden Aenderungen rot wird und deshalb irgendwann ignoriert wird.
+     *  Fuer die Kasse sind die Golden Files zustaendig. */
   });
 });
 

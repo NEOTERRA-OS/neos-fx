@@ -393,6 +393,10 @@ export type Domain = {
   /** Detail-CAPEX-Planung (Infrastruktur): editierbare Einzelpositionen je Block. */
   /** Treiberverhaeltnis je Personalposition (ha/FTE, h/FTE, Stk/FTE bzw. Ziel-FTE). */
   personalRatio?: Record<string, number>;
+  /** MONATSGEWICHTE je saisonaler Personalposition (Laenge 12, werden normiert).
+   *  Fehlt der Eintrag, leitet `personalMonatsgewichte` sie aus den Erntemonaten des
+   *  Anbauplans ab. Hier gehoert der echte Kampagnenplan hinein, sobald er vorliegt. */
+  personalSaison?: Record<string, number[]>;
   /** MANUELLE Kopfzahl je Position und Planjahr. Schlaegt den Treiber. null = Treiber gilt.
    *  Der Treiber ist ein Vorschlag, keine Vorschrift: wer den Betrieb kennt, weiss besser,
    *  ob 2029 ein Agronom mehr noetig ist, als es jede Verhaeltniszahl hergibt. */
@@ -1736,6 +1740,12 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("pers.saison.gross", "pers.saison.gross", "Saisonkraft Brutto/Monat (5,20 €/h)", "money", 74550),
   A("pers.prakt.n", "pers.prakt.n", "Praktikanten / Trainees (FTE)", "fte", 4),
   A("pers.prakt.gross", "pers.prakt.gross", "Praktikant Brutto/Monat", "money", 45000),
+  // Laenge der Kampagne je Kultur in Monaten, ab dem Erntemonat. Der Kulturkalender
+  //  loest die Ernte auf EINEN Monat auf; die Kampagne dauert laenger — Rodung, Sortierung,
+  //  Einlagerung. Ohne diesen Parameter faende die gesamte Saisonarbeit des Jahres in einem
+  //  einzigen Kalendermonat statt, und das waere nicht Praezision, sondern ein Artefakt der
+  //  Monatsaufloesung. 2 Monate ist eine gesetzte Annahme, keine Ableitung.
+  A("pers.kampagne_monate", "pers.kampagne_monate", "Dauer der Kampagne ab Ernte (Monate)", "count", 2),
 
   // --- Holding (CENT je Periode / Raten) ---
   A("hold.audit", "hold.audit", "Holding Wirtschaftsprüfung", "money", 100000),
@@ -5935,6 +5945,11 @@ export type PersonalPosition = {
   /** Position existiert nur mit eigenem Lager/Packhaus (`store.active` = 1). Ohne Anlage
    *  gibt es niemanden ein- und auszulagern — die Ware geht ab Feld an den Verarbeiter. */
   nurMitLager?: boolean;
+  /** SAISONAL statt ganzjaehrig. Ein Festangestellter kostet im Januar dasselbe wie im
+   *  August — eine Kampagnenkraft nicht. Nur Positionen mit diesem Flag bekommen ein
+   *  Monatsprofil; alle anderen bleiben bewusst flach, weil ein unbefristeter Vertrag
+   *  eben flach ist. */
+  saisonal?: boolean;
 };
 export const PERSONAL_POSITIONEN: PersonalPosition[] = [
   { key: "pers.leitung.n", label: "Betriebsleitung & Agronomie", grossKey: "pers.leitung.gross",
@@ -5948,10 +5963,87 @@ export const PERSONAL_POSITIONEN: PersonalPosition[] = [
   { key: "pers.service.n", label: "Werkstatt & Service/Technik", grossKey: "pers.service.gross",
     art: "maschinen", treiberLabel: "betreute Maschinen je Techniker", einheit: "Stk/FTE", einheitId: "count", standard: 14 },
   { key: "pers.saison.n", label: "Saisonkräfte (Kampagne)", grossKey: "pers.saison.gross",
-    art: "flaeche", treiberLabel: "Fläche je Saison-FTE", einheit: "ha/FTE", einheitId: "hectare", standard: 199 },
+    art: "flaeche", treiberLabel: "Fläche je Saison-FTE", einheit: "ha/FTE", einheitId: "hectare", standard: 199, saisonal: true },
   { key: "pers.prakt.n", label: "Praktikanten / Trainees", grossKey: "pers.prakt.gross",
-    art: "flaeche", treiberLabel: "Fläche je Trainee", einheit: "ha/FTE", einheitId: "hectare", standard: 584 },
+    art: "flaeche", treiberLabel: "Fläche je Trainee", einheit: "ha/FTE", einheitId: "hectare", standard: 584, saisonal: true },
 ];
+
+/* --------------------------------------------------------------------------
+ * SAISONALITAET DER PERSONALKOSTEN.
+ *
+ * Bis 04.08.2026 lag jede Kopfzahl flach ueber dem Jahr: `personalFteOfYear`
+ * liefert einen Jahreswert, und der Composer kopierte ihn auf alle zwoelf
+ * Monate. Fuer Betriebsleitung, Stammfahrer und Werkstatt ist das richtig — ein
+ * unbefristeter Vertrag kostet im Januar dasselbe wie im August.
+ *
+ * Fuer die KAMPAGNENKRAefte ist es falsch, und zwar nicht im Jahresbetrag,
+ * sondern in der Kasse. `pers.saison.n` steht ausdruecklich als "FTE-Aequivalent"
+ * da: 11,7 Vollzeitaequivalente heisst nicht elf Leute das ganze Jahr, sondern
+ * die Jahresarbeitszeit von elf Leuten — geleistet in wenigen Wochen von
+ * entsprechend vielen. Flach verteilt verschiebt das Geld aus der Erntespitze in
+ * den Winter und macht die Liquiditaetsluecke der Kampagne unsichtbar. Genau die
+ * Luecke ist aber der Grund, warum ein Betrieb einen Revolver braucht.
+ *
+ * Die Gewichte kommen aus dem PLAN und nicht aus einer Schaetzung: aus den
+ * Erntemonaten der angebauten Kulturen, gewichtet mit ihrer Flaeche. Das ist
+ * derselbe Anker, den das Modell fuer die Handarbeit (`OP-HAND`) ohnehin
+ * benutzt — die beiden koennen dadurch nicht auseinanderlaufen.
+ *
+ * Der Jahresbetrag bleibt unangetastet: die Gewichte summieren sich auf 1, und
+ * die Monatskopfzahl ist Jahres-FTE x 12 x Gewicht. Was sich aendert, ist WANN
+ * das Geld abfliesst — und ueber den Revolver damit der Zins.
+ *
+ * `domain.personalSaison` ueberschreibt die Ableitung, wenn der echte
+ * Kampagnenplan vorliegt. Bis dahin ist die Ableitung ein begruendeter
+ * Platzhalter, kein Messwert.
+ * ------------------------------------------------------------------------ */
+
+/** Monatsgewichte einer Position im Planjahr y (Laenge 12, Summe 1). */
+export function personalMonatsgewichte(domain: Domain, key: string, y: number, scenarioId?: string): number[] {
+  const flach = Array.from({ length: 12 }, () => 1 / 12);
+  const pos = PERSONAL_POSITIONEN.find((p) => p.key === key);
+  if (!pos?.saisonal) return flach;
+
+  const eigen = domain.personalSaison?.[key];
+  if (eigen && eigen.length === 12) {
+    const sum = eigen.reduce((a, b) => a + b, 0);
+    if (sum > 0) return eigen.map((w) => w / sum);
+  }
+
+  // Erntemonate der Kulturen, gewichtet mit der Flaeche des Jahres. Traegt eine
+  //  Kultur mehrere Erntemonate, verteilt sich ihr Gewicht gleichmaessig darauf.
+  const areas = cropAreasMemo(domain).areas;
+  const dauer = Math.max(1, Math.round(
+    scenarioId && domain.assumptions["pers.kampagne_monate"]
+      ? resolveScalar(domain, "pers.kampagne_monate", scenarioId) : 2));
+  const w = Array.from({ length: 12 }, () => 0);
+  let summe = 0;
+  for (const a of domain.anbauplan) {
+    /* ZWEITNUTZUNG ZAEHLT NICHT. Die Zwischenfrucht traegt im Anbauplan einen
+     *  "Erntemonat" (November) — das ist die Einarbeitung, keine Ernte. Mit 3.017 ha
+     *  ist sie die groesste Flaeche im Plan und haette 44 % der Saisonarbeit in den
+     *  November gezogen, wo niemand erntet. Dieselbe Falle wie bei der Pacht: eine
+     *  Flaeche, die keine eigene ist, darf nicht mitwiegen. */
+    if (a.zweitnutzung) continue;
+    const kurve = areas[a.cropId];
+    const ha = kurve ? (kurve[Math.min(y, kurve.length - 1)] ?? 0) : a.areaHa;
+    if (ha <= 0) continue;
+    const ernte = (a.harvestPeriods?.length ? a.harvestPeriods : CROP_CAL[a.cropId as CropId]?.harvest) ?? [];
+    if (!ernte.length) continue;
+    // Die Kampagne beginnt mit der Ernte und laeuft weiter: Rodung, Sortierung, Einlagerung.
+    const anteil = ha / (ernte.length * dauer);
+    for (const m of ernte) {
+      for (let d = 0; d < dauer; d++) {
+        const m0 = ((Math.round(m) + d) % 12 + 12) % 12;
+        w[m0] += anteil;
+        summe += anteil;
+      }
+    }
+  }
+  // Kein Anbauplan, keine Ernte — dann bleibt flach die ehrlichere Aussage.
+  if (summe <= 0) return flach;
+  return w.map((x) => x / summe);
+}
 
 export function personalRatioOf(domain: Domain, key: string): number {
   const def = PERSONAL_POSITIONEN.find((p) => p.key === key)?.standard ?? 1;
@@ -6918,7 +7010,15 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
         scenarioProfiles: { [domain.baseScenarioId]: { kind: "constant", value: personalFteOfYear(domain, pos.key, 0, scenarioId) * personnelScale } },
         meta: b?.meta };
     } else {
-      const values = Array.from({ length: nPer }, (_, p) => personalFteOfYear(domain, pos.key, yearOf(p), scenarioId) * personnelScale);
+      /* SAISONAL statt flach: die Monatskopfzahl ist Jahres-FTE x 12 x Monatsgewicht.
+       *  Der Jahresbetrag bleibt damit exakt gleich (Gewichte summieren auf 1) — was
+       *  sich verschiebt, ist der Zeitpunkt und ueber den Revolver der Zins. */
+      const values = Array.from({ length: nPer }, (_, p) => {
+        const y = yearOf(p);
+        const jahr = personalFteOfYear(domain, pos.key, y, scenarioId) * personnelScale;
+        if (!pos.saisonal) return jahr;
+        return jahr * 12 * personalMonatsgewichte(domain, pos.key, y, scenarioId)[p % 12];
+      });
       assumptions[pos.key] = { id: b?.id ?? pos.key, key: pos.key, label: b?.label ?? pos.key,
         unit: (b?.unit ?? "count") as any,
         scenarioProfiles: { [domain.baseScenarioId]: { kind: "curve", values } }, meta: b?.meta };
