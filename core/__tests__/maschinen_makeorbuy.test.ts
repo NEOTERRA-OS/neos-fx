@@ -159,15 +159,26 @@ describe("Make-or-Buy · im Lohn", () => {
   });
 });
 
-describe("Base Case bleibt unberührt", () => {
-  it("rechnet ohne Miete und ohne Lohnvergabe unverändert", () => {
-    /* Die Umstellung der Stundensätze ist bewusst so gebaut, dass sie den Base
-     *  Case NICHT bewegt: Versicherung, Reparatur und Schmierstoff behalten bei
-     *  unverändertem Preis ihren Cent-Betrag, AfA und Zins wirken nur im
-     *  Vergleich und im Mietsatz — nicht in der GuV. */
+describe("Base Case", () => {
+  it("steht auf dem Stand von Verfahren C", () => {
+    /* Die Umstellung der STUNDENSÄTZE (9e3cb3b) war bewusst so gebaut, dass sie
+     *  den Base Case nicht bewegt — dieser Test hat das festgehalten: 16,75 Mio
+     *  EBITDA, 10,08 Mio Ergebnis.
+     *
+     *  AM 04.08.2026 BEWEGT SIE SICH, und zwar absichtlich. Verfahren C
+     *  (Entscheidung 02.08.2026) tauscht die Legetechnik, streicht Frontfräse
+     *  und 8RX-Schlepper und korrigiert die Flächenleistung beim Legen von 0,50
+     *  auf 1,26 ha/h. Weniger Maschinen heissen weniger AfA, weniger Zins,
+     *  weniger Diesel — EBITDA und Ergebnis steigen, ohne dass am Umsatz etwas
+     *  geändert wurde. Genau diese Signatur macht die Änderung überprüfbar:
+     *  der UMSATZ muss stehenbleiben.
+     *
+     *  vorher   16,75 EBITDA · 10,08 Ergebnis
+     *  nachher  17,01 EBITDA · 10,98 Ergebnis   (Umsatz beide Male 46,44 Mio) */
     const z = letztesJahr(SEED);
-    expect(Math.round(z.ebitda / 1e4)).toBe(1675);      // 16,75 Mio
-    expect(Math.round(z.ergebnis / 1e4)).toBe(1008);    // 10,08 Mio
+    expect(Math.round(z.umsatz / 1e4)).toBe(4644);     // 46,44 Mio — UNVERÄNDERT
+    expect(Math.round(z.ebitda / 1e4)).toBe(1701);     // 17,01 Mio
+    expect(Math.round(z.ergebnis / 1e4)).toBe(1098);   // 10,98 Mio
     /* Die KASSE steht hier bewusst NICHT: sie haengt am Zeitpunkt jeder Zahlung und
      *  bewegt sich damit bei jeder Aenderung an der Saisonalitaet, ohne dass an den
      *  Stundensaetzen etwas falsch waere. Wer sie hier festnagelt, bekommt einen Test,

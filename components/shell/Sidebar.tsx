@@ -40,7 +40,7 @@ const IA: Group[] = [
      Annahmen, und die Frage, welche davon inzwischen gemessen sind, ist eine
      Planungsfrage, keine Ablage. */
   { title: "Beleg & Rückmeldung", items: [
-    { id: "wiedervorlage", label: "Wiedervorlage (Annahmen ↔ Messung)", view: "wiedervorlage" },
+    { id: "wiedervorlage", label: "Wiedervorlage — was ist belegt?", view: "wiedervorlage" },
     { id: "istabgleich", label: "Plan ↔ Ist (Rückmeldung aus dem Feld)", view: "istabgleich" },
   ]},
   { title: "Maschinen & Flotte", items: [

@@ -1247,14 +1247,23 @@ const ARBEITSGAENGE: Record<CropId, Arbeitsgang[]> = {
     { m: "pflug", passes: 1 }, { m: "saatbett", passes: 1 }, { m: "streuer", passes: 1 },
     { m: "tompflanz", passes: 1 }, { m: "spritze14", passes: 16 }, { m: "tomernte", passes: 1 }, { m: "transport", passes: 1 },
   ],
-  // Delta 21.07.: One-Pass (SC360+CP42) verschmilzt Dammformen + Legen; Häufeln entfällt;
-  // Ernte durch gezogenen Roder ROPA Keiler II (statt Kartoffel-Vollernter SF).
+  /* FRUEHJAHRSFOLGE KARTOFFEL — Verfahren C, 02.08.2026.
+   *  Vorher zwei Ueberfahrten (Grubber, One-Pass mit Fraese), jetzt drei:
+   *    1  Kurzscheibenegge 6 m, 4–6 cm, Oberflaeche oeffnen (KW 10)
+   *    2  Saatbettkombination 9 m, 8–12 cm (KW 11)
+   *    3  PRIOS 440 PRO, Legetiefe 6–8 cm, Damm im selben Gang (KW 11)
+   *  Das Dokument nennt den Tausch ausdruecklich: "Ueberfahrten im Fruehjahr: 1 → 3".
+   *  Er ist kein Rueckschritt — die drei passiven Ueberfahrten kosten zusammen
+   *  weniger als die eine angetriebene und brauchen die halbe Motorleistung.
+   *  Die PRIOS formt den Damm mit; ein eigener Dammformer entfaellt weiterhin. */
   kartoffel_pommes: [
-    { m: "pflug", passes: 1 }, { m: "onepass", passes: 1 }, { m: "streuer", passes: 1 },
+    { m: "pflug", passes: 1 }, { m: "scheibenegge", passes: 1 }, { m: "saatbett", passes: 1 },
+    { m: "onepass", passes: 1 }, { m: "streuer", passes: 1 },
     { m: "spritze14", passes: 16 }, { m: "roder_ropa", passes: 1 }, { m: "transport", passes: 1 },
   ],
   kartoffel_chips: [
-    { m: "pflug", passes: 1 }, { m: "onepass", passes: 1 }, { m: "streuer", passes: 1 },
+    { m: "pflug", passes: 1 }, { m: "scheibenegge", passes: 1 }, { m: "saatbett", passes: 1 },
+    { m: "onepass", passes: 1 }, { m: "streuer", passes: 1 },
     { m: "spritze14", passes: 16 }, { m: "roder_ropa", passes: 1 }, { m: "transport", passes: 1 },
   ],
   // ROPA Keiler 2 RK22 = geteilter Wurzelernter (Kartoffel + Möhre + Zwiebel + Sellerie) →
@@ -1323,9 +1332,9 @@ export const MACHINE_LABELS: Record<string, string> = {
   streuer: "Düngerstreuer",
   spritze14: "Spritzen-Kostenprofil 36 m (Mischpark TD 12 / PT)",
   krautschl: "Frontkrautschläger ROPA KS 475 (am Roder)",
-  onepass: "One-Pass SC360 + CP42",
+  onepass: "Legen PRIOS 440 PRO",
+  scheibenegge: "Kurzscheibenegge 6 m",
   roder_ropa: "Roder ROPA Keiler II",
-  zug_8rx: "Zug JD 8RX 410",
   ops_6r: "Pflege/Ernte JD 6R 260",
   radlader: "JCB Radlader",
   shuttle: "Field-Shuttle 8×8",
@@ -1389,7 +1398,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("capex.afa_years", "capex.afa_years", "AfA-Dauer Maschinen (Jahre, bilanziell)", "years", 8),
   // Wartung/Service €/h (CENT) — reale JD-Angebotswerte; SEPARAT vom CAPEX (Netto-Einkauf).
   // Fließt über den Service-Pfad in opex.machines (Monats-Overhead) und in deriveMachineTCO.
-  A("tco.zug_8rx.service_h", "tco.zug_8rx.service_h", "Wartung/Service Zug JD 8RX €/h", "money", 291),
+  A("tco.zug_8rx.service_h", "tco.zug_8rx.service_h", "Wartung/Service Zugschlepper 8R-Klasse €/h", "money", 291),
   A("tco.ops_6r.service_h", "tco.ops_6r.service_h", "Wartung/Service Pflege/Ernte JD 6R €/h", "money", 220),
   A("tco.maehdr.service_h", "tco.maehdr.service_h", "Wartung/Service Mähdrescher S7 900 €/h", "money", 644),
   // Zahlungsziel EINHEITLICH auf Planungsebene (Entscheidung Benedikt, 30.07.) — ein Treiber
@@ -1574,7 +1583,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // --- Maschinen-Neupreise (CENT) — Referenz B ---
   // Anbaugeräte-Preise = NUR das Gerät (ohne Schlepper — Traktoren sind eigene Positionen zug_9r/8rx/6r).
   A("mprice.pflug", "mprice.pflug", "Universalgrubber HORSCH Fortis 6.4 LT", "money", 7200000),
-  A("mprice.saatbett", "mprice.saatbett", "Saatbettkombi 12 m", "money", 7000000),
+  A("mprice.saatbett", "mprice.saatbett", "Saatbettkombination 9 m (Verfahren C)", "money", 7500000),
   A("mprice.drille", "mprice.drille", "Getreidedrille 9–12 m (HORSCH Pronto)", "money", 13000000),
   A("mprice.einzelkorn", "mprice.einzelkorn", "Einzelkornsämaschine HORSCH Maestro 12 TX", "money", 24000000),
   // Feingemüse-Sätechnik: Zwiebel und Möhre werden auf BEETEN gesät (Reihenabstand 5–7 cm,
@@ -1601,11 +1610,10 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("mprice.spritze14", "mprice.spritze14", "Spritzen-Kostenprofil 36 m (Mischpark, €/Einheit)", "money", 38000000),
   A("mprice.krautschl", "mprice.krautschl", "Krautschläger ROPA KS 475 (4-reihig, 75–80 cm)", "money", 4500000),
   // Kartoffel One-Pass-Kette (Delta 21.07.) — ersetzt Legemaschine/Dammformer/Vollernter SF.
-  A("mprice.onepass", "mprice.onepass", "Dewulf CP 42 Smart Float Becherlegemaschine", "money", 8000000),
-  A("mprice.sc360", "mprice.sc360", "Dewulf SC-Front Frontfräse", "money", 6000000),
+  A("mprice.onepass", "mprice.onepass", "Grimme PRIOS 440 PRO (4 × 75 cm, geschätzt — Angebot ausstehend)", "money", 14500000),
+  A("mprice.scheibenegge", "mprice.scheibenegge", "Kurzscheibenegge 6,0 m", "money", 4500000),
   A("mprice.roder_ropa", "mprice.roder_ropa", "Roder ROPA Keiler II", "money", 22500000),
   // Reale John-Deere-Angebotswerte (Liste) — Overrides für Rabatt/Restwert an der MachineType.
-  A("mprice.zug_8rx", "mprice.zug_8rx", "Zugschlepper JD 8RX 410 (Liste, JD-Angebot)", "money", 68644700),
   // 9R 590 -> 8R 410 (Entscheidung 31.07.2026). Fuer 300 ha Startflaeche ist die 590-PS-Klasse
   //  ueberdimensioniert. Anker: dasselbe JD-Angebot vom 23.07.2026 wie fuer 8RX und 9R —
   //  Liste 523.813 EUR gegen 700.336 EUR, also -25,2 %. Der 8R 410 zieht den 6,2-m-Grubber
@@ -2236,7 +2244,16 @@ const SPEC: Spec[] = [
   //  6,20 m, bis 30 cm Arbeitstiefe, ~435 PS empfohlen (→ 9R 590), Liste ~71.230 € (profi-Test).
   //  cEff = 6,2 m × 8 km/h × 0,72 ÷ 10 ≈ 3,57 ha/h (halbe Schlagkraft ggü. dem alten 12-m-Fantasieprofil).
   { id: "pflug",      label: "Grubber HORSCH Fortis 6.4 LT · bis 30 cm (6,20 m)", priceKey: "mprice.pflug", cat: "gezogen", neupreis: 7200000, nutzung: 10, hJ: 600, restw: 0.25, dieselLh: 22, afa: 1800, zins: 600, vers: 480, rep: 1920, schmier: 260, cEff: 3.57, fleet: 4, tractorId: "zug_9r" },
-  { id: "saatbett",   label: "Saatbettkombi Väderstad NZ Extreme · 12,5 m (passiv)",              priceKey: "mprice.saatbett",   cat: "gezogen", neupreis: 7000000, nutzung: 10, hJ: 500, restw: 0.25, dieselLh: 18, afa: 2400, zins: 800, vers: 640, rep: 2240, schmier: 270, cEff: 9.60, fleet: 1, tractorId: "zug_9r" },
+  // Auf 9,0 m korrigiert (Verfahren C, 02.08.2026): die Kartoffel faehrt das Geraet
+  //  jetzt selbst, und dort ist die Fahrgassengeometrie massgeblich, nicht die
+  //  maximale Breite. cEff = 9,0 m x 10,0 km/h x 0,80 / 10 = 7,20 ha/h.
+  { id: "saatbett",   label: "Saatbettkombination 9,0 m (passiv, Federzinken · Planierbalken · Kruemlerwalze)", priceKey: "mprice.saatbett",   cat: "gezogen", neupreis: 7500000, nutzung: 10, hJ: 500, restw: 0.25, dieselLh: 18, afa: 2571, zins: 857, vers: 686, rep: 2400, schmier: 289, cEff: 7.20, fleet: 1, tractorId: "zug_9r" },
+  /* KURZSCHEIBENEGGE — Arbeitsgang 1 der Fruehjahrsfolge (Verfahren C, 02.08.2026).
+   *  4 bis 6 cm, Oberflaeche oeffnen und abtrocknen lassen, KW 10. Sie ersetzt
+   *  zusammen mit der Saatbettkombination die weggefallene angetriebene
+   *  Bodenbearbeitung. Preis 45.000 EUR aus dem Bodenbearbeitungskonzept 01.08.
+   *  cEff = 6,0 m x 12,0 km/h x 0,80 / 10 = 5,76 ha/h. */
+  { id: "scheibenegge", label: "Kurzscheibenegge 6,0 m (4–6 cm)", priceKey: "mprice.scheibenegge", cat: "gezogen", neupreis: 4500000, nutzung: 10, hJ: 400, restw: 0.25, dieselLh: 16, afa: 844, zins: 281, vers: 338, rep: 1181, schmier: 141, cEff: 5.76, fleet: 1, tractorId: "zug_9r" },
   { id: "drille",     label: "Getreidedrille HORSCH Pronto 9 DC · 9,0 m", priceKey: "mprice.drille", cat: "gezogen", neupreis: 13000000, nutzung: 12, hJ: 350, restw: 0.25, dieselLh: 14, afa: 3036, zins: 1214, vers: 971, rep: 2429, schmier: 210, cEff: 6.00, fleet: 1, tractorId: "zug_9r" },
   { id: "einzelkorn", label: "Einzelkorn HORSCH Maestro 24.50 SX · 24 R 50 cm (12,0 m)", priceKey: "mprice.einzelkorn", cat: "gezogen", neupreis: 24000000, nutzung: 12, hJ: 300, restw: 0.25, dieselLh: 12, afa: 3958, zins: 1583, vers: 1267, rep: 3167, schmier: 180, cEff: 4.02, fleet: 2, tractorId: "zug_9r" },
   // FEINGEMÜSE-SÄTECHNIK. Der Maestro ist eine Mais-/Soja-/Raps-Einzelkornsämaschine mit
@@ -2257,10 +2274,28 @@ const SPEC: Spec[] = [
   // FRONTANBAU am Roder (einphasige Ernte): kein eigener Traktor/keine eigene Überfahrt — Stückzahl folgt dem Roder,
   //  der Diesel des Toppers ist in den Roder gefaltet (dieselLh dort +4). CAPEX/AfA bleiben eigenständig.
   { id: "krautschl",  label: "Krautschläger ROPA KS 475 · Frontanbau am Roder (einphasig)", priceKey: "mprice.krautschl",  cat: "gezogen", neupreis: 4500000, nutzung: 10, hJ: 300, restw: 0.20, dieselLh: 0, afa: 5200, zins: 1560, vers: 1300, rep: 3900, schmier: 180, cEff: 0.81, fleet: 2 },
-  // Kartoffel One-Pass-Kette (Delta 21.07.). Diesel/Fahrer der Zugschlepper 8RX/6R sind
-  // bewusst in die operating€/h von onepass/roder_ropa GEFALTET (dieselLh 40 bzw. 32) —
-  // Kalibrierungspunkt; die Träger 8RX/6R/Radlader/Shuttle liefern separat CAPEX+AfA.
-  { id: "onepass",    label: "Dewulf CP 42 Smart Float · 4 R (3,0 m)", priceKey: "mprice.onepass",  cat: "gezogen", neupreis: 8000000, nutzung: 10, hJ: 250, restw: 0.20, dieselLh: 40, afa: 3840, zins: 1152, vers: 960, rep: 2880, schmier: 600, cEff: 0.50, fleet: 3, tractorId: "zug_8rx" },
+  /* LEGETECHNIK — VERFAHREN C, Entscheidung 02.08.2026.
+   *  Bis 04.08.2026 stand hier die Dewulf CP 42 Smart Float mit vorlaufender
+   *  Frontfraese. Das Verfahren ist abgewaehlt; die Entscheidung lag seit dem
+   *  02.08. vor und war im Modell nicht angekommen. Was sich dadurch aendert, ist
+   *  nicht nur der Maschinenname:
+   *
+   *    Frontfraese entfaellt  →  keine Zapfwellenlast  →  kein 410-PS-Schlepper.
+   *    Der 8RX war ausschliesslich von der Fraese erzwungen. Mit ihr faellt er weg.
+   *
+   *    Ohne Fraese ist das Legen reine Zugarbeit. cEff steigt von 0,50 auf
+   *    1,26 ha/h (3,00 m x 6,0 km/h x 0,70) — der Wert aus der Legetechnik-
+   *    Untersuchung vom 01.08. Die alten 0,50 waren der kruemellimitierte
+   *    One-Pass-Wert. Da die Legerzahl ueber die Flaechenleistung faellt,
+   *    braucht der Betrieb rund zweieinhalbmal weniger Leger.
+   *
+   *    Diesel: 21 l/ha laut Verfahrensvergleich (One-Pass mit Fraese: 30 l/ha).
+   *    Bei 1,26 ha/h sind das 26,5 l/h statt 40.
+   *
+   *  Der Preis ist GESCHAETZT (Angebot ausstehend, offener Punkt im Dokument).
+   *  Diesel/Fahrer des Zugschleppers bleiben wie bisher in die operating-EUR/h
+   *  gefaltet; der Traeger liefert separat CAPEX und AfA. */
+  { id: "onepass",    label: "Kartoffellegemaschine Grimme PRIOS 440 PRO · 4 × 75 cm (3,0 m), aufgesattelt", priceKey: "mprice.onepass",  cat: "gezogen", neupreis: 14500000, nutzung: 10, hJ: 250, restw: 0.20, dieselLh: 26.5, afa: 4640, zins: 1392, vers: 1740, rep: 5220, schmier: 1088, cEff: 1.26, fleet: 3, tractorId: "ops_6r" },
   // ROPA Keiler II: 225.000 € Listenpreis netto (ohne MwSt), mit WD-Triebachse. Regulärer Rabatt-Pfad
   // (globaler tco.discount) → Netto-Einkauf; Restwert über die gezogene Quote (tco.res_trail).
   // ROPA Keiler 2 RK22 = GETEILTER Wurzelernter (Kartoffel + Möhre + Zwiebel + Sellerie). Flotte auf
@@ -2277,8 +2312,8 @@ const SPEC: Spec[] = [
   //  Zwiebel 2-stufig = Schwadleger (rodet ins Schwad) + Ladeeroder (nimmt auf) · Möhre = Klemmbandroder.
   //  Passes je 0,5 auf zwiebel_moehre (halbe Fläche Zwiebel-Weg, halbe Fläche Möhren-Weg).
   { id: "gem_schwad", label: "Zwiebel-Schwadleger ASA-LIFT WR-180 (1,80 m)", priceKey: "mprice.gem_schwad", cat: "gezogen", neupreis: 9500000, nutzung: 10, hJ: 250, restw: 0.20, dieselLh: 12, afa: 3000, zins: 950, vers: 800, rep: 3200, schmier: 150, cEff: 0.90, fleet: 1, tractorId: "ops_6r" },
-  { id: "gem_lader",  label: "Zwiebel-Ladeeroder ASA-LIFT SP-400 (1,50 m Pickup)", priceKey: "mprice.gem_lader", cat: "gezogen", neupreis: 26500000, nutzung: 10, hJ: 250, restw: 0.20, dieselLh: 18, afa: 8500, zins: 2550, vers: 2100, rep: 8500, schmier: 300, cEff: 0.70, fleet: 2, tractorId: "zug_8rx" },
-  { id: "gem_moehre", label: "Möhren-Klemmbandroder ASA-LIFT T-300 DF (2-reihig)", priceKey: "mprice.gem_moehre", cat: "gezogen", neupreis: 34000000, nutzung: 10, hJ: 250, restw: 0.20, dieselLh: 20, afa: 10900, zins: 3270, vers: 2720, rep: 10900, schmier: 350, cEff: 0.50, fleet: 2, tractorId: "zug_8rx" },
+  { id: "gem_lader",  label: "Zwiebel-Ladeeroder ASA-LIFT SP-400 (1,50 m Pickup)", priceKey: "mprice.gem_lader", cat: "gezogen", neupreis: 26500000, nutzung: 10, hJ: 250, restw: 0.20, dieselLh: 18, afa: 8500, zins: 2550, vers: 2100, rep: 8500, schmier: 300, cEff: 0.70, fleet: 2, tractorId: "zug_9r" },
+  { id: "gem_moehre", label: "Möhren-Klemmbandroder ASA-LIFT T-300 DF (2-reihig)", priceKey: "mprice.gem_moehre", cat: "gezogen", neupreis: 34000000, nutzung: 10, hJ: 250, restw: 0.20, dieselLh: 20, afa: 10900, zins: 3270, vers: 2720, rep: 10900, schmier: 350, cEff: 0.50, fleet: 2, tractorId: "zug_9r" },
   // Reale JD-Angebotswerte X9 1100: Liste 1.290.504 € / Rabatt 33,67 % (Netto 856.000) / Restwert 38,12 % v. Liste / Wartung 6,44 €/h.
   // KALIBRIERUNGSPUNKT: Operating-Parameter (Diesel l/h, C_eff/Flächenleistung, h/J) unverändert vom 9-m-Mähdrescher übernommen —
   // C_eff/Diesel des X9 1100 sind real vermutlich höher; separat kalibrieren, sobald Angebotsdaten vorliegen.
@@ -2303,8 +2338,14 @@ const CAPEX_ONLY_SPEC: CapexOnlySpec[] = [
   { id: "zug_9r",   label: "Zug JD 8R 410 (Boden/Saat)", priceKey: "mprice.zug_9r", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
     discountPct: 0.3503, residualPctList: 0.2924, serviceRateKey: "tco.zug_8rx.service_h", serviceHoursLike: "pflug", owned: 0 },
   // Reale JD-Angebotswerte: Liste 686.447 € / Rabatt 36,05 % / Restwert 30,06 % v. Liste / Wartung 2,91 €/h.
-  { id: "zug_8rx",  label: "Zug JD 8RX 410",       priceKey: "mprice.zug_8rx",  cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
-    discountPct: 0.3605, residualPctList: 0.3006, serviceRateKey: "tco.zug_8rx.service_h", serviceHoursLike: "onepass", owned: 0 },
+  /* DER 8RX 410 IST ENTFALLEN (Verfahren C, 02.08.2026): "Seine Leistung war
+   *  ausschliesslich von der Frontfraese erzwungen." Mit der Fraese faellt der
+   *  Schlepper. Die verbliebenen schweren Zugarbeiten — Zwiebel-Ladeeroder,
+   *  Moehren-Klemmbandroder, gezogene Spritze — haengen jetzt an der
+   *  320–340-PS-Klasse (`zug_9r`), die das Schlepperkonzept dafuer vorsieht.
+   *  Der Annahme-SCHLUESSEL `tco.zug_8rx.service_h` bleibt bestehen, damit
+   *  gespeicherte Modellstaende ihn weiter aufloesen; nur seine Beschriftung
+   *  nennt jetzt die Klasse statt des Typs. */
   // Reale JD-Angebotswerte: Liste 325.094 € (6R 250 +3 %) / Rabatt 31,75 % / Restwert 36,90 % v. Liste / Wartung 2,20 €/h.
   { id: "ops_6r",   label: "Pflege/Ernte JD 6R 260", priceKey: "mprice.ops_6r", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
     discountPct: 0.3175, residualPctList: 0.3690, serviceRateKey: "tco.ops_6r.service_h", serviceHoursLike: "roder_ropa", owned: 0 },
@@ -2322,7 +2363,6 @@ const CAPEX_ONLY_SPEC: CapexOnlySpec[] = [
 //  Pflanzenschutz → Ernte) plus Trag-/Infrastruktur-Klassen. Kanonisch via CAT_ORDER sortiert.
 const MACHINE_META: Record<string, { category: string; manufacturer: string; product: string }> = {
   zug_9r:      { category: "Zugmaschinen", manufacturer: "John Deere", product: "8R 410 (Rad, 411 PS)" },
-  zug_8rx:     { category: "Zugmaschinen", manufacturer: "John Deere", product: "8RX 410" },
   ops_6r:      { category: "Zugmaschinen", manufacturer: "John Deere", product: "6R 260" },
   pflug:       { category: "Bodenbearbeitung", manufacturer: "HORSCH", product: "Fortis 6.4 LT · Universalgrubber bis 30 cm (6,20 m)" },
   // GERAETEWECHSEL 31.07.2026: Der HORSCH Cruiser 12 XL verlangt laut Herstellerprospekt
@@ -2330,12 +2370,12 @@ const MACHINE_META: Record<string, { category: string; manufacturer: string; pro
   //  gemacht. Die passive Zinken-Saatbettkombi derselben Breite braucht laut Vaederstad
   //  300-500 PS und wird vom 8R 410 gezogen.
   saatbett:    { category: "Bodenbearbeitung", manufacturer: "Väderstad", product: "NZ Extreme 1250 · passive Saatbettkombination 12,5 m (300–500 PS)" },
-  sc360:       { category: "Bodenbearbeitung", manufacturer: "Dewulf", product: "SC-Front Frontfräse (Kartoffelbeet)" },
   drille:      { category: "Aussaat & Pflanzung", manufacturer: "HORSCH", product: "Getreidedrille Pronto 9 DC · 9,0 m" },
   einzelkorn:  { category: "Aussaat & Pflanzung", manufacturer: "HORSCH", product: "Maestro 24.50 SX · 24-reihig 50 cm (12,0 m)" },
   gem_saat:    { category: "Aussaat & Pflanzung", manufacturer: "Agricola-Klasse", product: "Beetsämaschine Feingemüse · 3 Beete (5,40 m) — Zwiebel/Möhre" },
   knobl_lege:  { category: "Aussaat & Pflanzung", manufacturer: "JJ-Broch-/Seca-Klasse", product: "Knoblauch-Legemaschine pneumatisch · 8-reihig (1,80 m), 0,4–0,5 ha/h" },
-  onepass:     { category: "Aussaat & Pflanzung", manufacturer: "Dewulf", product: "CP 42 Becherlegemaschine · 4-reihig (3,0 m)" },
+  onepass:     { category: "Aussaat & Pflanzung", manufacturer: "Grimme", product: "PRIOS 440 PRO · 4 × 75 cm, aufgesattelt, 1.700-l-Reihendüngertank" },
+  scheibenegge: { category: "Bodenbearbeitung", manufacturer: "—", product: "Kurzscheibenegge 6,0 m" },
   tompflanz:   { category: "Aussaat & Pflanzung", manufacturer: "Checchi & Magli", product: "Pflanzmaschine DUAL 12 GOLD · 6-reihig (3,0 m)" },
   streuer:     { category: "Düngung", manufacturer: "Bredal", product: "Düngerstreuer K135 · gezogen 36 m (Bestand 2×)" },
   // KOSTENPROFIL, keine eigene Maschine: fasst den realen Mischpark (TD 12 gezogen + PT SF, je 36 m)
@@ -2368,7 +2408,8 @@ const MACHINE_KIN: Record<string, { w: number; eff: number; feldTage: number }> 
   drille: { w: 9, eff: 0.75, feldTage: 30 }, einzelkorn: { w: 12, eff: 0.70, feldTage: 23 },
   gem_saat: { w: 5.4, eff: 0.65, feldTage: 20 }, knobl_lege: { w: 1.8, eff: 0.60, feldTage: 25 },
   streuer: { w: 36, eff: 0.72, feldTage: 41 }, spritze14: { w: 36, eff: 0.75, feldTage: 0 },
-  krautschl: { w: 3, eff: 0.80, feldTage: 16 }, onepass: { w: 3, eff: 0.75, feldTage: 31 },
+  krautschl: { w: 3, eff: 0.80, feldTage: 16 }, onepass: { w: 3, eff: 0.70, feldTage: 31 },
+  scheibenegge: { w: 6, eff: 0.80, feldTage: 24 },
   roder_ropa: { w: 1.5, eff: 0.90, feldTage: 18 }, tompflanz: { w: 3, eff: 0.80, feldTage: 18 },
   tomernte: { w: 1.8, eff: 0.85, feldTage: 24 }, maehdr: { w: 12.19, eff: 0.45, feldTage: 97 },
   transport: { w: 6, eff: 0.70, feldTage: 44 },
@@ -2529,7 +2570,7 @@ const SPRAY_MACHINES: MachineType[] = [
     mode: "fixedFleet", driver: { kind: "total" }, assetClass: "machinery",
     afaCommercialYears: 10, afaFiscalYears: 9, fleetStage1: 0, restwertPct: 0.30, nutzungYears: 10,
     cat: "gezogen", sprayPart: "gz",
-    widthM: 36, speedKmh: 8.93, fieldEff: 0.75, cEff: 24.1, tractorId: "zug_8rx" },
+    widthM: 36, speedKmh: 8.93, fieldEff: 0.75, cEff: 24.1, tractorId: "zug_9r" },
   // BESTAND 3× HORSCH Leeb 8.300 PT (8.000-l-Klasse, SF) — decken den fenstergetriebenen SF-Bedarf @ Stufe 1.
   { id: "spray_sf", label: "Feldspritze SF HORSCH Leeb 8.300 PT (8.000-l-Klasse)", unitPriceKey: "mprice.spray_sf",
     category: "Pflanzenschutz", manufacturer: "HORSCH Leeb", productName: "PT 8.300 Selbstfahrer",
@@ -2567,10 +2608,6 @@ const MACHINE_CATALOG: MachineType[] = [
     cat: "selbstf", ownedUnits: 0, activeWhen: "boom48" },
   // Kartoffel-Pflanzkomplex — SC360 Strip-Till (Beetformer) als eigene CAPEX-Position (im One-Pass
   //  mit CP42 gezogen; Feld-Operation/Diesel liegt auf onepass=CP42, daher hier kein cEff/Arbeitsgang).
-  { id: "sc360", label: "Dewulf SC-Front Frontfräse", productName: "SC-Front Frontfräse (Kartoffelbeet)",
-    category: "Bodenbearbeitung", manufacturer: "Dewulf", unitPriceKey: "mprice.sc360",
-    mode: "fixedFleet", driver: { kind: "total" }, assetClass: "machinery",
-    afaCommercialYears: 10, afaFiscalYears: 9, fleetStage1: 3, restwertPct: 0.20, nutzungYears: 10, cat: "gezogen", tractorId: "zug_8rx" },
   // IoT / Digitalisierung: als editierbare Position in der Maschinen-Jahres-Planung (CAPEX_PLAN_SEED),
   //  nicht mehr als Katalog-Maschine — Kategorie/AfA/Jahr dort frei planbar.
   { id: "irrig", label: "Bewässerung/Pivot", unitPriceKey: "mprice.irrig_perha",
@@ -2615,6 +2652,7 @@ const LOHN_SAETZE: LohnSatz[] = [
   { m: "pflug",       gruppe: "boden",       label: "Grundbodenbearbeitung (Grubber)", eurHa: 45,  quelle: LWK + " (Grubber 3 m flach 29 €, auf 6,2 m/tief hochgerechnet)" },
   { m: "saatbett",    gruppe: "boden",       label: "Saatbettbereitung",               eurHa: 28,  quelle: LWK + " (Saatbettkombination 4 m 33 €, auf 12 m gerechnet)" },
   { m: "onepass",     gruppe: "pflanzung",   label: "Kartoffeln legen",                eurHa: 90,  quelle: LWK + " (Kartoffellegemaschine 4-reihig)" },
+  { m: "scheibenegge", gruppe: "boden",         label: "Kurzscheibenegge",           eurHa: 22,  quelle: LWK + " (Scheibenegge 6 m)" },
   { m: "einzelkorn",  gruppe: "pflanzung",   label: "Einzelkornsaat",                  eurHa: 40,  quelle: LWK + " (Einzelkornsägerät 12-reihig 55,50 €, auf 24 R gerechnet)" },
   { m: "gem_saat",    gruppe: "pflanzung",   label: "Beetsaat Zwiebel/Möhre",          eurHa: 95,  quelle: SCHAETZ },
   { m: "knobl_lege",  gruppe: "pflanzung",   label: "Knoblauch stecken",               eurHa: 320, quelle: SCHAETZ },
@@ -3442,7 +3480,7 @@ const FINANCING_CONTRACTS: LeasingContract[] = [
     // maehdr existiert im Solo-Modell nicht mehr und wurde stillschweigend uebersprungen;
     //  zug_9r (JD 8R 410, 2,99 Mio CAPEX) stand in KEINEM Vertrag und lief als Barkauf
     //  direkt gegen den Revolver.
-    objectIds: ["zug_8rx", "ops_6r", "zug_9r"],
+    objectIds: ["ops_6r", "zug_9r"],
     drawPeriod: 0, avansRate: 0.25, residualRate: 0.01, termMonths: 84,
     rateBasis: "floating", referenceRateKey: "macro.euribor", floatingSpread: 0.0355,
     frequency: "seasonal", seasonMonths: [7, 10], repayment: "annuity",
@@ -4201,7 +4239,8 @@ const MACHINE_PHASE: Record<string, { phase: string; order: number; bbch: string
   einzelkorn: { phase: "Aussaat (Einzelkorn)", order: 3, bbch: "00", timing: "S (Saat)", when: (s) => s },
   gem_saat: { phase: "Aussaat Feingemüse (Beet)", order: 3, bbch: "00", timing: "S (Saat)", when: (s) => s },
   knobl_lege: { phase: "Stecken (Knoblauch, Zehenausrichtung)", order: 3, bbch: "00", timing: "S (Legen)", when: (s) => s },
-  onepass: { phase: "Legen/Pflanzung (One-Pass)", order: 3, bbch: "00", timing: "S (Legen)", when: (s) => s },
+  onepass: { phase: "Legen/Pflanzung (PRIOS, Damm im selben Gang)", order: 3, bbch: "00", timing: "S (Legen)", when: (s) => s },
+  scheibenegge: { phase: "Kurzscheibenegge (4–6 cm)", order: 1.5, bbch: "—", timing: "S − 30…20 T", when: (s) => s - 1 },
   tompflanz: { phase: "Pflanzung", order: 3, bbch: "00 (Jungpfl.)", timing: "S (Pflanzung)", when: (s) => s },
   streuer: { phase: "Düngung (Grund + Kopf, Streuer)", order: 4, bbch: "00–49", timing: "Gaben lt. BBCH-Programm", when: (s) => s },
   spritze14: { phase: "Pflanzenschutz (Überfahrten)", order: 5, bbch: "lt. Programm", timing: "Fenster je Überfahrt", when: (s, h) => (s + h) / 2 },
@@ -5087,14 +5126,6 @@ export function machineFleetCount(domain: Domain, m: MachineType, scenarioId: st
   // Hybrid-Override: manuell fixierte Stückzahl schlägt alles.
   if (m.fleetOverride != null) return Math.max(0, Math.round(m.fleetOverride));
   // FRONTANBAU 1:1 zum Roder: Frontkrautschläger sitzt vorn am Roder (einphasige Ernte).
-  // FRONTFRAESE sc360 folgt 1:1 dem One-Pass-Leger: sie faehrt im selben Gespann. Vorher
-  //  stand sie mit fleetStage1 = 3 im Katalog-Fallback und skalierte mangels Arbeitsgang
-  //  ueber die GESAMTflaeche (x7,8) statt ueber die Kartoffelflaeche (x3,3) — 1,26 Mio EUR
-  //  CAPEX gegen 0,50 Mio fuer die Maschine, der sie folgt.
-  if (m.id === "sc360") {
-    const op = domain.machineCatalog.find((x) => x.id === "onepass");
-    return op ? machineFleetCount(domain, op, scenarioId) : 0;
-  }
   if (m.id === "krautschl") {
     const rod = domain.machineCatalog.find((x) => x.id === "roder_ropa");
     return rod ? machineFleetCount(domain, rod, scenarioId) : Math.ceil((m.fleetStage1 ?? 0) * stageFactorOf(domain.stage));
@@ -5764,18 +5795,18 @@ export const LOGISTIK_TONNAGE_TREIBER: Record<string, string[]> = {
   radlader: VALUE_CROP_IDS,
 };
 
-export const SIZED_MACHINE_IDS = new Set(["pflug", "saatbett", "drille", "einzelkorn", "streuer", "maehdr", "roder_ropa", "gem_schwad", "gem_lader", "gem_moehre", "gem_saat", "knobl_lege", "tomernte", "tompflanz", "onepass", "transport"]);
-export const SIZED_TRACTOR_IDS = new Set(["zug_9r", "zug_8rx", "ops_6r"]);
+export const SIZED_MACHINE_IDS = new Set(["pflug", "scheibenegge", "saatbett", "drille", "einzelkorn", "streuer", "maehdr", "roder_ropa", "gem_schwad", "gem_lader", "gem_moehre", "gem_saat", "knobl_lege", "tomernte", "tompflanz", "onepass", "transport"]);
+export const SIZED_TRACTOR_IDS = new Set(["zug_9r", "ops_6r"]);
 export const isSizedId = (id: string) => SIZED_MACHINE_IDS.has(id) || SIZED_TRACTOR_IDS.has(id);
 
 /** Bearbeitbare Feldtage je Maschine im kritischen Einsatzfenster (wetter-/logistikbereinigt).
  *  Fallback, wenn die Maschine kein eigenes windowDays trägt (v. a. gepoolte Zugklassen).
  *  Kalibriert, so dass das @4.000-ha-Bottom-up den validierten Research-Park reproduziert. */
 export const WINDOW_FELDTAGE: Record<string, number> = {
-  pflug: 24, saatbett: 30, drille: 30, einzelkorn: 23, streuer: 41, maehdr: 97, roder_ropa: 18,
+  pflug: 24, scheibenegge: 24, saatbett: 30, drille: 30, einzelkorn: 23, streuer: 41, maehdr: 97, roder_ropa: 18,
   tomernte: 24, tompflanz: 18, krautschl: 16, onepass: 31, transport: 44,
   gem_schwad: 20, gem_lader: 20, gem_moehre: 28, gem_saat: 20, knobl_lege: 25,
-  zug_9r: 40, zug_8rx: 31, ops_6r: 76,
+  zug_9r: 40, ops_6r: 76,
 };
 /** Feldtage einer Maschine: eigenes windowDays (editierbar) sonst Fallback-Tabelle. */
 export function feldTageOf(domain: Domain, id: string): number {
@@ -7700,8 +7731,8 @@ export const PRICE_GROUPS: { group: string; keys: string[] }[] = [
   ]},
   { group: "Maschinen-Neupreise (CENT)", keys: [
     "mprice.pflug", "mprice.saatbett", "mprice.drille", "mprice.einzelkorn", "mprice.streuer",
-    "mprice.spritze14", "mprice.krautschl", "mprice.onepass", "mprice.sc360", "mprice.roder_ropa",
-    "mprice.zug_8rx", "mprice.ops_6r", "mprice.radlader", "mprice.shuttle", "mprice.fieldloader",
+    "mprice.spritze14", "mprice.krautschl", "mprice.onepass", "mprice.scheibenegge", "mprice.roder_ropa",
+    "mprice.ops_6r", "mprice.radlader", "mprice.shuttle", "mprice.fieldloader",
     "mprice.tompflanz", "mprice.tomernte", "mprice.gem_schwad", "mprice.gem_lader", "mprice.gem_moehre",
     "mprice.gem_saat", "mprice.knobl_lege", "mprice.maehdr", "mprice.transport",
     "mprice.spray_gz", "mprice.spray_sf",

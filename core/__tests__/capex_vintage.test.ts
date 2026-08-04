@@ -100,13 +100,25 @@ describe("CAPEX-Jahrgänge · IDs", () => {
 
 describe("CAPEX-Jahrgänge · die Rechnung bleibt stehen", () => {
   it.each(SZENARIEN)("bucht in %s denselben CAPEX je Jahr wie vor der Umstellung", (sc) => {
-    /* Referenz aus dem Stand VOR der ID-Umstellung (ca997fe), Szenario-weise
-     *  Summe und Positionszahl. Eine ID-Änderung, die den CAPEX bewegt, ist keine
-     *  ID-Änderung — sie ist ein Fehler, und genau den soll dieser Test finden. */
+    /* Szenario-weise Summe und Positionszahl. Eine ID-Änderung, die den CAPEX
+     *  bewegt, ist keine ID-Änderung — sie ist ein Fehler, und genau den soll
+     *  dieser Test finden.
+     *
+     *  NEU GESETZT AM 04.08.2026 mit Verfahren C (Entscheidung 02.08.2026). Der
+     *  alte Stand war { n: 1198, sum: 5614784367 } für sc-base. Was sich bewegt
+     *  hat und warum:
+     *    · Dewulf CP 42 → Grimme PRIOS 440 PRO (80.000 → 145.000 € je Stück)
+     *    · Frontfräse SC 360 entfällt vollständig — sie stand 1:1 zum Leger
+     *    · JD 8RX 410 entfällt vollständig — er war nur von der Fräse erzwungen
+     *    · Flächenleistung Legen 0,50 → 1,26 ha/h ⇒ deutlich weniger Leger
+     *    · Kurzscheibenegge 6 m neu, Saatbettkombination auf 9 m korrigiert
+     *  Summe über den Neunjahrespfad: 56,15 → 48,02 Mio €, also −8,13 Mio €.
+     *  Das Entscheidungsdokument nennt −2,65 Mio bei 3.000 ha; es vergleicht
+     *  Ausbaustufen, dieser Test den ganzen Pfad einschliesslich Ersatzkäufe. */
     const REF: Record<string, { n: number; sum: number }> = {
-      "sc-base":  { n: 1198, sum: 5614784367 },
-      "sc-best":  { n: 1198, sum: 5612706251 },
-      "sc-worst": { n: 1198, sum: 5614925616 },
+      "sc-base":  { n: 1138, sum: 4801675347 },
+      "sc-best":  { n: 1138, sum: 4799597231 },
+      "sc-worst": { n: 1138, sum: 4801816596 },
     };
     const capex = capexOf(SEED, sc);
     expect(capex.length).toBe(REF[sc].n);
