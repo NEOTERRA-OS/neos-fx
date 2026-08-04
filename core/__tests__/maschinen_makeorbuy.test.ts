@@ -247,12 +247,21 @@ describe("Base Case", () => {
      *  Ausgangsstand   16,75 EBITDA · 10,08 Ergebnis
      *  nach Verfahren C   17,01 · 10,98   (weniger Maschinen)
      *  nach Produktpreis  15,17 ·  9,43   (ehrlichere Düngung)
+     *  VIERTE BEWEGUNG, ebenfalls 04.08.2026: die Beregnung folgt der NETTO-
+     *  Norm des Kompendiums statt eigener Zahlen („alles muss netto kalkuliert
+     *  sein"). FX lag darunter — bei der Süßkartoffel um 51 % —, also kostet
+     *  die Umstellung. Und wieder: der Umsatz bleibt stehen.
+     *
+     *  Ausgangsstand   16,75 EBITDA · 10,08 Ergebnis
+     *  nach Verfahren C   17,01 · 10,98   (weniger Maschinen)
+     *  nach Produktpreis  15,17 ·  9,43   (ehrlichere Düngung)
      *  nach Pflanzgut     15,78 ·  9,95   (Kompendiumsmenge)
-     *  Umsatz durchgehend 46,44 Mio — in ALLEN vier Ständen */
+     *  nach Netto-Norm    15,66 ·  9,84   (Beregnung aus dem Kompendium)
+     *  Umsatz durchgehend 46,44 Mio — in ALLEN fünf Ständen */
     const z = letztesJahr(SEED);
     expect(Math.round(z.umsatz / 1e4)).toBe(4644);     // 46,44 Mio — UNVERÄNDERT
-    expect(Math.round(z.ebitda / 1e4)).toBe(1578);     // 15,78 Mio
-    expect(Math.round(z.ergebnis / 1e4)).toBe(995);    // 9,95 Mio
+    expect(Math.round(z.ebitda / 1e4)).toBe(1566);     // 15,66 Mio
+    expect(Math.round(z.ergebnis / 1e4)).toBe(984);    // 9,84 Mio
     /* Die KASSE steht hier bewusst NICHT: sie haengt am Zeitpunkt jeder Zahlung und
      *  bewegt sich damit bei jeder Aenderung an der Saisonalitaet, ohne dass an den
      *  Stundensaetzen etwas falsch waere. Wer sie hier festnagelt, bekommt einen Test,

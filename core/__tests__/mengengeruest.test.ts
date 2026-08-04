@@ -23,7 +23,7 @@
  * Test dasteht, ist eine offene Frage — das ist ein Unterschied.
  */
 import { describe, it, expect } from "vitest";
-import { SEED, kompendiumSaatMenge, CROP_NAME } from "../../store/model";
+import { SEED, kompendiumSaatMenge, kompendiumBeregnungMm, CROP_NAME } from "../../store/model";
 import { MENGEN_GERUEST } from "../../store/mengen.generated";
 
 const cfg = (id: string) => MENGEN_GERUEST.find((m) => m.cfgId === id)!;
@@ -85,42 +85,33 @@ describe("ÜBERNOMMEN — FX liest, statt abzuschreiben", () => {
     expect(saat.lines.length).toBeGreaterThan(1);
     expect(saat.lines.reduce((s, l) => s + l.quantityPerHa, 0)).toBeCloseTo(cfg("potFryVHK").saatMenge, 3);
   });
+
+  it("beregnet mit der NETTO-Norm des Kompendiums — Entscheidung 04.08.2026", () => {
+    /* „Alles muss netto kalkuliert sein." Netto ist, was an der Pflanze
+     *  ankommt; brutto, was durch die Pumpe geht. FX führte bis heute eigene
+     *  Zahlen („Süd-Oltenien, abgeleitet") und lag bei der Süßkartoffel 51 %
+     *  unter der Kompendiumsnorm.
+     *
+     *  DIE BEDINGUNG, DIE AN DIESER ENTSCHEIDUNG HÄNGT und die dieser Test
+     *  NICHT prüfen kann, weil sie außerhalb des Modells liegt: `irrig.eur_mm`
+     *  muss ein Satz JE NETTO-MILLIMETER sein, in dem der Systemverlust
+     *  steckt. Der mittlere Wirkungsgrad der 22 Konfigurationen ist 64 % —
+     *  wer dort einen Preis je gefördertem Kubikmeter einträgt, unterschätzt
+     *  die Beregnung um gut die Hälfte. Der Treibername sagt es jetzt. */
+    for (const crop of ["kartoffel_pommes", "kartoffel_chips", "tomate", "suesskartoffel", "knollensellerie"]) {
+      const k = kompendiumBeregnungMm(crop as never);
+      expect(k, crop).toBeGreaterThan(0);
+    }
+    // Die Mischposition mittelt die beiden Konfigurationen — Millimeter bleiben Millimeter.
+    const gemischt = kompendiumBeregnungMm("zwiebel_moehre" as never)!;
+    const einzeln = (cfg("onDry").beregnungNettoMm + cfg("carSum").beregnungNettoMm) / 2;
+    expect(gemischt).toBe(Math.round(einzeln));
+    // Die Trockenrotation bekommt KEINE Norm — sie wird nicht beregnet.
+    expect(kompendiumBeregnungMm("weizen_dry" as never)).toBeUndefined();
+  });
 });
 
 describe("ABWEICHEND — festgehalten, nicht stillgelegt", () => {
-  it("rechnet die Beregnung auf NETTO-mm, obwohl brutto bezahlt wird", () => {
-    /* DER BEFUND, und er ist die teuerste offene Frage in dieser Datei.
-     *
-     *  FX rechnet `BEWAESSERUNG_MM × irrig.eur_mm` — für Pommes 380 mm × 1,50 €
-     *  = 570 €/ha. Die 380 mm liegen dicht an der NETTO-Norm des Kompendiums
-     *  (387 mm). Bezahlt werden Wasser und Strom aber auf das, was durch die
-     *  Pumpe geht: 613 mm brutto. Das sind 920 €/ha, also 350 €/ha mehr.
-     *
-     *  Zwei Auflösungen sind denkbar, und nur der Betrieb kann sie trennen:
-     *
-     *    (a) `irrig.eur_mm` = 1,50 € ist bereits ein Satz JE NETTO-MM, in dem
-     *        der Systemverlust steckt. Dann ist alles richtig und der Name des
-     *        Treibers ist irreführend.
-     *    (b) Der Satz ist der Preis je tatsächlich geförderten Millimeter. Dann
-     *        unterschätzt FX die Beregnung um rund 60 % — betriebsweit ein
-     *        siebenstelliger Betrag.
-     *
-     *  Ich ändere nichts, solange das nicht geklärt ist: eine Zahl auf Verdacht
-     *  um 60 % anzuheben, wäre derselbe Fehler wie sie auf Verdacht zu lassen —
-     *  nur teurer herum. Der Test hält den Zustand fest und wird rot, sobald
-     *  eine der beiden Seiten sich bewegt.
-     *
-     *  ZU KLÄREN MIT NEOTERRA: ist 1,50 €/mm·ha netto oder brutto gerechnet? */
-    const netto = cfg("potFryVHK").beregnungNettoMm;
-    const brutto = cfg("potFryVHK").beregnungBruttoMm;
-    expect(netto).toBe(387);
-    expect(brutto).toBe(613);
-    // FX liegt am Netto, nicht am Brutto — das ist der festgehaltene Zustand.
-    const fxMm = 380;
-    expect(Math.abs(fxMm - netto)).toBeLessThan(20);
-    expect(brutto - fxMm).toBeGreaterThan(200);
-  });
-
   it("führt Zwiebel/Möhre als EINE Kultur, das Kompendium als zwei", () => {
     /* Kein Fehler, sondern eine bewusst andere Schnittebene: FX plant die
      *  Fläche als Mischposition mit einem ha-Satz Saatgut, das Kompendium
@@ -132,14 +123,44 @@ describe("ABWEICHEND — festgehalten, nicht stillgelegt", () => {
     expect(cfg("onDry").saatEinheit).not.toBe(cfg("carSum").saatEinheit);
   });
 
-  it("hat für sieben Kulturen des Katalogs gar keine Kompendiums-Konfiguration", () => {
-    /* Die Liste ist der Arbeitsvorrat, nicht das Ergebnis. Jede Kultur hier
-     *  rechnet mit einer FX-eigenen Menge, die niemand belegt hat. */
-    const ohne = SEED.catalog.map((c) => c.cropId)
-      .filter((c) => kompendiumSaatMenge(c as never) === undefined);
-    expect(ohne.length).toBeGreaterThan(0);
-    // Festgehalten, damit ein neuer Export sie sichtbar abbaut:
-    expect(ohne).toContain("zwiebel_moehre");
-    expect(ohne).toContain("tomate");
+  it("legt Tomate, Süßkartoffel und Knoblauch dünner als das Kompendium", () => {
+    /* DREI ABWEICHUNGEN, DIE STEHENBLEIBEN — bis der Betrieb sie entscheidet.
+     *
+     *     Kultur          FX          Kompendium        Δ    Belegstatus
+     *     Tomate          25.000 Pfl.  32.000 (+3 % R.)  −22 %  BELEGT
+     *     Süßkartoffel    30.000 Slips 38.000            −21 %  BELEGT
+     *     Knoblauch          900 kg     1.000 kg         −10 %  ABGELEITET
+     *
+     *  Aufschlussreich ist, was NICHT abweicht: Knollensellerie trifft mit
+     *  50.000 Jungpflanzen auf die Pflanze genau, die Zwischenfrucht bei der
+     *  Beregnung auf den Millimeter. Die FX-Zahlen sind also nicht erfunden,
+     *  sondern zu einem früheren Zeitpunkt aus derselben Quelle übernommen —
+     *  und danach hat das Kompendium sich bewegt und FX nicht. Genau dieses
+     *  Muster macht Abschreiben unhaltbar: es sieht jahrelang richtig aus.
+     *
+     *  ICH ÄNDERE SIE NICHT VON MIR AUS. Eine Pflanzdichte ist eine
+     *  agronomische Entscheidung mit Folgen weit über die Pflanzgutrechnung
+     *  hinaus — Reihenweite, Kaliber, Erntetechnik, Sortierausbeute hängen
+     *  daran. Der Betrieb hat am 04.08.2026 die KARTOFFEL entschieden; für
+     *  diese drei steht die Frage offen.
+     *
+     *  Was sie kosten würde, damit die Frage beantwortbar ist:
+     *     Tomate        +7.000 Pfl. × 36 €/1.000  = +252 €/ha
+     *     Süßkartoffel  +8.000 Slips × 120 €/1.000 = +960 €/ha
+     *     Knoblauch       +100 kg × 3,00 €/kg     = +300 €/ha */
+    const FX_ABSOLUT: Record<string, number> = {
+      tomate: 25_000, suesskartoffel: 30_000, knoblauch: 900,
+    };
+    const KOMPENDIUM: Record<string, number> = {
+      tomate: 32_000, suesskartoffel: 38_000, knoblauch: 1_000,
+    };
+    for (const k of Object.keys(FX_ABSOLUT)) {
+      const abw = (FX_ABSOLUT[k] - KOMPENDIUM[k]) / KOMPENDIUM[k];
+      expect(abw, `${k}: ${(abw * 100).toFixed(0)} %`).toBeLessThan(0);      // FX liegt darunter
+      expect(Math.abs(abw), `${k}: ${(abw * 100).toFixed(0)} %`).toBeLessThan(0.25);
+    }
+    // Und der Gegenbeweis: wo FX und Kompendium sich decken, decken sie sich exakt.
+    expect(cfg("celRoot").saatMenge).toBe(50_000);
+    expect(cfg("covCrop").beregnungNettoMm).toBe(138);
   });
 });

@@ -1526,8 +1526,23 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("seed.suesskartoffel", "seed.suesskartoffel", "Süßkartoffel-Slips €/1.000 Stk (30 T/ha)", "money", 12000),
   A("seed.knoblauch", "seed.knoblauch", "Pflanzknoblauch €/kg (900 kg/ha)", "money", 300),
   A("seed.knollensellerie", "seed.knollensellerie", "Sellerie-Jungpflanzen je 1.000 Stück", "money", 6500),
-  // Phase 5 — Bewässerung Energie+Wasser €/mm·ha (CENT). Norm mm je Kultur × Preis (Center-Pivot Süd-Dolj).
-  A("irrig.eur_mm", "irrig.eur_mm", "Bewässerung Energie+Wasser €/mm·ha", "money", 150),
+  /* BEWAESSERUNG — Energie und Wasser je NETTO-Millimeter und Hektar (CENT).
+   *
+   * „JE NETTO-MM" steht seit dem 04.08.2026 im Namen, und das ist kein
+   * Sprachdetail. Die Menge, mit der dieser Satz multipliziert wird, ist die
+   * NETTO-Norm: was an der Pflanze ankommt (Entscheidung NEOTERRA, „alles muss
+   * netto kalkuliert sein"). Durch die Pumpe geht mehr — der mittlere
+   * Systemwirkungsgrad der Kompendiums-Konfigurationen ist 64 %.
+   *
+   * Wer hier also einen Energiepreis je tatsaechlich gefoerdertem Kubikmeter
+   * eintraegt, unterschaetzt die Beregnung um den Kehrwert des Wirkungsgrads —
+   * um gut die Haelfte. Der Satz MUSS den Systemverlust enthalten.
+   *
+   * 1,50 EUR/mm·ha sind 0,15 EUR je m3 netto (1 mm auf 1 ha = 10 m3). Bei 64 %
+   * Wirkungsgrad entspricht das rund 0,096 EUR je gefoerdertem m3. Ob das der
+   * Strom- und Wasserpreis Sued-Dolj hergibt, ist die Frage an den Betrieb —
+   * sie steht in der Wiedervorlage. */
+  A("irrig.eur_mm", "irrig.eur_mm", "Bewässerung Energie+Wasser €/mm·ha (je NETTO-mm, Systemverlust enthalten)", "money", 150),
 
   // --- Ertrag / Preis / Verlust je Kultur (Referenz A) ---
   A("yield.weizen", "yield.weizen", "Ertrag Winterweizen", "tonne_per_ha", 8.5, 9.4, 7.2),
@@ -2173,16 +2188,75 @@ export function deriveMassnahmenChecks(domain: Domain): CheckResult[] {
  * Der Test `mengengeruest.test.ts` hält fest, welche das sind — er schlägt an,
  * sobald eine Kultur einen Kompendiumswert bekommt und FX ihn nicht liest.
  */
-const KOMPENDIUM_CFG: Partial<Record<CropId, string>> = {
-  kartoffel_pommes: "potFryVHK",
-  kartoffel_chips: "potChpVHK",
+/**
+ * WELCHE KOMPENDIUMS-KONFIGURATION ZU WELCHER FX-KULTUR GEHOERT.
+ *
+ * Mit ANTEILEN, weil die Schnittebenen nicht deckungsgleich sind: FX plant
+ * Zwiebel/Moehre als EINE Mischposition, das Kompendium fuehrt onDry und carSum
+ * getrennt. Die Gewichte sind dieselben wie beim Duengerplan-Export — waeren
+ * sie es nicht, truege dieselbe Flaeche zwei verschiedene Mischungsverhaeltnisse.
+ */
+const KOMPENDIUM_CFG: Partial<Record<CropId, [string, number][]>> = {
+  kartoffel_pommes: [["potFryVHK", 1]],
+  kartoffel_chips: [["potChpVHK", 1]],
+  tomate: [["tomInd", 1]],
+  zwiebel_moehre: [["onDry", 0.5], ["carSum", 0.5]],
+  suesskartoffel: [["swePot", 1]],
+  knoblauch: [["garWin", 1]],
+  knollensellerie: [["celRoot", 1]],
+  zwischenfrucht: [["covCrop", 1]],
+  weizen: [["wheat", 1]],
+  gerste_zw: [["barley", 1]],
+  mais: [["maize", 1]],
+  soja_luzerne: [["soyBn", 1]],
+  sonnenblume: [["sunFlw", 1]],
 };
 
-/** Pflanzgutmenge aus dem Kompendium, wenn es eine gibt. Sonst `undefined`. */
+/** Ein Feld des Mengengeruests, ueber die Konfigurationen einer Kultur gewichtet. */
+function ausMengengeruest(cropId: CropId, feld: "saatMenge" | "beregnungNettoMm" | "beregnungBruttoMm"): number | undefined {
+  const teile = KOMPENDIUM_CFG[cropId];
+  if (!teile) return undefined;
+  let summe = 0;
+  for (const [cfgId, anteil] of teile) {
+    const m = MENGEN_GERUEST.find((x) => x.cfgId === cfgId);
+    if (!m) return undefined;
+    summe += m[feld] * anteil;
+  }
+  return summe;
+}
+
+/**
+ * Pflanzgutmenge aus dem Kompendium.
+ *
+ * NUR fuer Kulturen, deren Einheit sich mitteln laesst. Zwiebel/Moehre steht
+ * bewusst NICHT dabei: onDry rechnet in kg Steckzwiebel, carSum in Mio Korn —
+ * ein Mittelwert daraus waere eine Zahl ohne Gegenstand. Fuer die BEREGNUNG
+ * geht dieselbe Mischung dagegen auf, weil Millimeter Millimeter bleiben.
+ */
 export function kompendiumSaatMenge(cropId: CropId): number | undefined {
-  const cfg = KOMPENDIUM_CFG[cropId];
-  if (!cfg) return undefined;
-  return MENGEN_GERUEST.find((m) => m.cfgId === cfg)?.saatMenge;
+  const teile = KOMPENDIUM_CFG[cropId];
+  if (!teile || teile.length !== 1) return undefined;
+  return ausMengengeruest(cropId, "saatMenge");
+}
+
+/**
+ * Beregnungsnorm in NETTO-Millimetern aus dem Kompendium.
+ *
+ * NETTO IST DIE BASIS — Entscheidung NEOTERRA vom 04.08.2026, „alles muss netto
+ * kalkuliert sein". Netto ist, was an der Pflanze ankommt; brutto, was durch die
+ * Pumpe geht. Der mittlere Systemwirkungsgrad ueber alle 22 Konfigurationen des
+ * Kompendiums liegt bei 64 %.
+ *
+ * DAMIT HAENGT ALLES AN EINER BEDINGUNG, und sie steht hier, weil sie sonst
+ * nirgends steht: `irrig.eur_mm` MUSS ein Satz JE NETTO-MILLIMETER sein, in dem
+ * der Systemverlust bereits enthalten ist. Wer dort einen Energiepreis je
+ * tatsaechlich gefoerdertem Kubikmeter eintraegt, unterschaetzt die Beregnung
+ * um den Kehrwert des Wirkungsgrads — bei 64 % um gut die Haelfte. Der Treiber
+ * heisst deshalb seit dem 04.08.2026 ausdruecklich „je NETTO-mm".
+ */
+export function kompendiumBeregnungMm(cropId: CropId): number | undefined {
+  const v = ausMengengeruest(cropId, "beregnungNettoMm");
+  return v ? Math.round(v) : undefined;
 }
 
 const SEED_PROGRAM: Record<CropId, { qty: number; unit: string }> = {
@@ -2198,12 +2272,50 @@ const SEED_PROGRAM: Record<CropId, { qty: number; unit: string }> = {
   weizen_dry: { qty: 200, unit: "kg" }, gerste_dry: { qty: 170, unit: "kg" }, raps_dry: { qty: 1.8, unit: "Einh." },
   sonnenblume: { qty: 0.5, unit: "Einh." },
 };
-/** Phase 5 — Bewässerungsnorm mm/ha je Kultur (Süd-Oltenien; Weizen/Mais belegt, übrige abgeleitet). */
+/**
+ * BEWAESSERUNGSNORM in NETTO-Millimetern je Hektar und Kultur.
+ *
+ * BIS 04.08.2026 STANDEN HIER EIGENE ZAHLEN, „Süd-Oltenien; Weizen/Mais belegt,
+ * übrige abgeleitet". Abgeleitet wovon, stand nicht dabei. Das Kompendium führt
+ * dieselbe Größe je Anbaukonfiguration, mit Belegstatus — und die beiden lagen
+ * teils weit auseinander:
+ *
+ *     Süßkartoffel   300 gegen 452 mm   (+51 %)
+ *     Knollensellerie 350 gegen 395     (+13 %)
+ *     Zwiebel/Möhre   330 gegen 372     (+13 %)
+ *     Chips           380 gegen 405     ( +7 %)
+ *     Pommes          380 gegen 387     ( +2 %)
+ *     Zwischenfrucht  138 gegen 138     — identisch
+ *
+ * Die Zwischenfrucht ist der aufschlussreiche Fall: sie trifft auf den
+ * Millimeter. Die Zahlen hier waren also nicht frei erfunden, sondern zu einem
+ * früheren Zeitpunkt einmal aus derselben Quelle übernommen — und danach hat
+ * das Kompendium sich weiterbewegt und FX nicht. Genau das ist der Grund, warum
+ * Abschreiben nicht reicht und Lesen die einzige haltbare Form ist.
+ *
+ * NETTO, nicht brutto — Entscheidung NEOTERRA 04.08.2026. Siehe
+ * `kompendiumBeregnungMm` für die Bedingung, die daran hängt: `irrig.eur_mm`
+ * muss ein Satz JE NETTO-MILLIMETER sein.
+ *
+ * Die Trockenrotation steht auf 0 und bekommt keinen Kompendiumswert: sie wird
+ * definitionsgemäß nicht beregnet. Das Kompendium führt für Weizen und Gerste
+ * trotzdem eine Norm, weil dort die BEREGNETE Variante beschrieben ist.
+ */
 const BEWAESSERUNG_MM: Record<CropId, number> = {
-  zwischenfrucht: 138,   // Auflaufberegnung; ohne sie keimt Sudangras im August nicht
-  weizen: 175, gerste_zw: 110, soja_luzerne: 150, winterraps: 130, mais: 200,
-  tomate: 550, kartoffel_pommes: 380, kartoffel_chips: 380, zwiebel_moehre: 330,
-  suesskartoffel: 300, knoblauch: 150, knollensellerie: 350,
+  zwischenfrucht: kompendiumBeregnungMm("zwischenfrucht") ?? 138,   // ohne Auflaufberegnung keimt Sudangras im August nicht
+  weizen: kompendiumBeregnungMm("weizen") ?? 175,
+  gerste_zw: kompendiumBeregnungMm("gerste_zw") ?? 110,
+  soja_luzerne: kompendiumBeregnungMm("soja_luzerne") ?? 150,
+  winterraps: 130,                                                  // keine Kompendiums-Konfiguration
+  mais: kompendiumBeregnungMm("mais") ?? 200,
+  tomate: kompendiumBeregnungMm("tomate") ?? 550,
+  kartoffel_pommes: kompendiumBeregnungMm("kartoffel_pommes") ?? 380,
+  kartoffel_chips: kompendiumBeregnungMm("kartoffel_chips") ?? 380,
+  zwiebel_moehre: kompendiumBeregnungMm("zwiebel_moehre") ?? 330,
+  suesskartoffel: kompendiumBeregnungMm("suesskartoffel") ?? 300,
+  knoblauch: kompendiumBeregnungMm("knoblauch") ?? 150,
+  knollensellerie: kompendiumBeregnungMm("knollensellerie") ?? 350,
+  // TROCKENROTATION — unberegnet, und zwar als Eigenschaft, nicht als Sparmaßnahme.
   weizen_dry: 0, gerste_dry: 0, raps_dry: 0, sonnenblume: 0,
 };
 
