@@ -2805,7 +2805,7 @@ export const SORTENPLAN_VORSCHLAG: Record<string, SortenAnteil[]> = {
   ],
   kartoffel_chips: [
     { sorte: "Chipsy", anteil: 0.55, rolle: "Hauptsorte, Rang 1 an beiden Standorten", vorlaeufig: true },
-    { sorte: "Lady Avalon", anteil: 0.30, rolle: "Rang 3, vollstaendige Datenbasis", vorlaeufig: true },
+    { sorte: "Lady Avalon", anteil: 0.30, rolle: "Rang 3, vollständige Datenbasis", vorlaeufig: true },
     { sorte: "Lady Alicia", anteil: 0.15, rolle: "Rang 2, aber nur 48 % Datenbasis", vorlaeufig: true },
   ],
 };

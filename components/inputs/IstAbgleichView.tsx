@@ -5,7 +5,7 @@ import {
   deriveIstAbgleich, schlaegeOf, flaechenMemo, sortenVerteilung, CROP_NAME, START_YEAR,
   type IstAbgleichRow,
 } from "../../store/model";
-import { fmtMoney, fmtNumber } from "../../design/format";
+import { fmtMoney, fmtNumber, fmtZahl } from "../../design/format";
 
 /** Kulturname zu einer id, die zur Laufzeit auch unbekannt sein darf —
  *  `CROP_NAME` ist auf `CropId` getippt, `IstAbgleichRow.cropId` ist es nicht
@@ -41,7 +41,7 @@ import { GitCompare, MapPin, CircleAlert, CircleCheck, TriangleAlert, Download, 
  */
 
 type Sicht = "massnahmen" | "flaechen";
-type Filter = "alle" | "offen" | "ungeplant" | "erledigt";
+type Filter = "alle" | "offen" | "ungeplant" | "erledigt" | "ruht";
 
 export function IstAbgleichView() {
   const domain = useModelStore((s) => s.domain);
@@ -66,13 +66,27 @@ export function IstAbgleichView() {
     [alle],
   );
 
+  /* DER FUND AUS DEM ERSTEN DURCHKLICKEN: „erledigt 71" war eine Lüge.
+   *
+   *  `offeneZiele === 0` bedeutet zweierlei — alles zurückgemeldet ODER es gab
+   *  nichts zurückzumelden. 71 der 98 Maßnahmen fielen in den zweiten Fall: ihre
+   *  Kultur hat 2027 schlicht keine Fläche, weil sie erst später im
+   *  Skalierungspfad anläuft. Sie als „erledigt" zu zählen ist in einer
+   *  Abgleichsansicht der schlimmste mögliche Fehler — sie behauptet Vollzug, wo
+   *  nichts geschehen ist.
+   *
+   *  Vierter Zustand: `ruht`. Geplant, aber in diesem Jahr ohne Fläche. */
   const zustand = (r: IstAbgleichRow): Filter =>
-    r.ungeplant ? "ungeplant" : r.offeneZiele > 0 ? "offen" : "erledigt";
+    r.ungeplant ? "ungeplant"
+    : r.planFlaecheHa <= 0 ? "ruht"
+    : r.offeneZiele > 0 ? "offen"
+    : "erledigt";
 
   const zaehler = React.useMemo(() => ({
     offen: alle.filter((r) => zustand(r) === "offen").length,
     ungeplant: alle.filter((r) => r.ungeplant).length,
     erledigt: alle.filter((r) => zustand(r) === "erledigt").length,
+    ruht: alle.filter((r) => zustand(r) === "ruht").length,
   }), [alle]);
 
   const zeilen = React.useMemo(() => {
@@ -114,6 +128,10 @@ export function IstAbgleichView() {
     return {
       schlaege: jahrSchlaege,
       felder: bild.felder.length,
+      /* Nur die Felder, die in DIESEM Jahr etwas tragen. Der Gesamtbestand (223)
+       *  neben 18 Schlägen zu nennen mischt eine gefilterte mit einer
+       *  ungefilterten Zahl und liest sich wie ein Rückmeldedefizit von 205. */
+      felderBelegt: new Set(jahrSchlaege.map((s) => s.feldId)).size,
       beregnung: bild.beregnungseinheiten.length,
       verstoesse: bild.verstoesse.filter((v) => v.jahr === jy).length,
       sorten: [...new Set(domain.anbauplan.map((a) => a.cropId))]
@@ -156,17 +174,17 @@ export function IstAbgleichView() {
       />
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Kennzahl label={t("Rückmeldegrad")} wert={`${fmtNumber(rueckPct, 0)} %`} Icon={GitCompare}
+        <Kennzahl label={t("Rückmeldegrad")} wert={`${fmtZahl(rueckPct, 0)} %`} Icon={GitCompare}
           ton={rueckPct >= 95 ? "gut" : "warn"}
           zusatz={`${zieleGesamt - offeneZiele} ${t("von")} ${zieleGesamt} ${t("Zielen")}`} />
-        <Kennzahl label={t("Flächen ohne Rückmeldung")} wert={fmtNumber(offeneZiele, 0)} Icon={CircleAlert}
+        <Kennzahl label={t("Flächen ohne Rückmeldung")} wert={fmtZahl(offeneZiele, 0)} Icon={CircleAlert}
           ton={offeneZiele > 0 ? "warn" : "gut"}
           zusatz={`${zaehler.offen} ${t("Maßnahmen betroffen")}`} />
         <Kennzahl label={t("ausgeführt ohne Plan")} wert={String(zaehler.ungeplant)} Icon={TriangleAlert}
           ton={zaehler.ungeplant > 0 ? "warn" : "neutral"}
           zusatz={t("zeigt, was der Plan nicht weiß")} />
-        <Kennzahl label={t("Arbeitsaufträge im Jahr")} wert={fmtNumber(zieleGesamt, 0)} Icon={Layers}
-          zusatz={`${flaechen.schlaege.length} ${t("Schläge")} · ${flaechen.felder} ${t("Felder")}`} />
+        <Kennzahl label={t("Arbeitsaufträge im Jahr")} wert={fmtZahl(zieleGesamt, 0)} Icon={Layers}
+          zusatz={`${flaechen.schlaege.length} ${t("Schläge")} auf ${flaechen.felderBelegt} ${t("belegten Feldern")}`} />
       </div>
 
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
@@ -182,6 +200,7 @@ export function IstAbgleichView() {
                 { value: "offen", label: t("offen"), count: zaehler.offen, tone: "warning" },
                 { value: "ungeplant", label: t("ohne Plan"), count: zaehler.ungeplant, tone: "warning" },
                 { value: "erledigt", label: t("erledigt"), count: zaehler.erledigt },
+                { value: "ruht", label: t("ruht"), count: zaehler.ruht },
                 { value: "alle", label: t("alle"), count: alle.length, divider: true },
               ]} />
           )}
@@ -225,7 +244,8 @@ export function IstAbgleichView() {
                 </thead>
                 <tbody>
                   {zeilen.map((r) => (
-                    <tr key={r.measureId} className="hover:brightness-[1.03]">
+                    <tr key={r.measureId} className="hover:brightness-[1.03]"
+                        style={{ opacity: zustand(r) === "ruht" ? 0.55 : 1 }}>
                       <td className={TD} style={TD_STYLE}>
                         <div className="flex items-center gap-1.5">
                           {r.ungeplant && (
@@ -256,6 +276,10 @@ export function IstAbgleichView() {
                       <td className={TD + " num text-right text-nx-text-muted"} style={TD_STYLE}>{r.istAnzahl || "—"}</td>
                       <td className={TD + " num text-right font-semibold"} style={TD_STYLE}>
                         {r.ungeplant ? <span className="font-normal text-nx-text-muted">—</span>
+                          : zustand(r) === "ruht"
+                            ? <span className="text-[10.5px] font-normal text-nx-text-muted"
+                                    title={t("Diese Kultur hat im gewählten Jahr keine Fläche — es gibt nichts zurückzumelden.")}>
+                                {t("ruht")}</span>
                           : r.offeneZiele === 0
                             ? <span className="inline-flex items-center gap-1" style={{ color: "var(--nx-success)" }}>
                                 <CircleCheck size={12} strokeWidth={2.5} aria-hidden />0</span>

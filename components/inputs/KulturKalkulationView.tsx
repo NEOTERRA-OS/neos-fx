@@ -4,14 +4,14 @@ import { DirektkostenSummary } from "./DirektkostenSummary";
 import { useModelStore } from "../../store/modelStore";
 import { START_YEAR, deriveCropMassnahmen, deriveAgronomieWarnings, getProductCatalog, exportMassnahmenplan, schlaegeOf, MACHINE_LABELS, CROP_NAME, type CropCalc, type MassnahmeBM } from "../../store/model";
 import { findProduct, categoriesForOp, type CatalogProduct } from "../../store/productCatalog";
-import { fmtMoney, fmtNumber } from "../../design/format";
+import { fmtMoney, fmtNumber, fmtZahl } from "../../design/format";
 import { NumberInput, TextInput } from "./NumberInput";
 import { ProductPicker } from "./ProductPicker";
 import { cropColor } from "./cropCalc";
 import { neueMeasureId, measureIdForMachine } from "../../store/measureId";
 import { t } from "../../lib/i18n";
 import { JahrWahl, JAHR_DEFAULT } from "./JahrWahl";
-import { Link, Search, Ban, TriangleAlert, Check, X } from "lucide-react";
+import { Link, Search, Ban, TriangleAlert, Check, X, MapPin } from "lucide-react";
 
 /** BBCH-Annotation aus dem Maßnahmen-Label entfernen (wird bereits in Spalte 1 „BBCH · Timing" gezeigt).
  *  Der gespeicherte Label behält BBCH (Timing-Quelle) — hier nur die Anzeige/Bearbeitung ohne Dopplung. */
@@ -23,6 +23,46 @@ function stripBBCH(s: string): string {
 function priceUnit(unit: string): string {
   const base = (unit || "").replace(/\s*\/\s*ha$/i, "").trim();
   return base ? `€/${base}` : "€";
+}
+
+/**
+ * DIE BETRIEBSMITTEL-SPALTE HAT BIS 04.08.2026 DIE MASSNAHME WIEDERHOLT.
+ *
+ * Der Grund liegt im Datenmodell, nicht in der Anzeige: der Kostenkatalog kennt
+ * je Maßnahme n Zeilen, und das Label DIESER Zeilen ist zugleich die Beschriftung
+ * der Maßnahme. Bei einer einzigen Zeile — Bewässerung, Handarbeit, Material,
+ * jede PSM-Anwendung — stand deshalb links „Handarbeit" und daneben noch einmal
+ * „Handarbeit". In neun von zwölf Zeilen der Kartoffel war die Spalte eine reine
+ * Wiederholung.
+ *
+ * Bei der Düngung war es schlimmer. Drei Zeilen tragen `<Maßnahme> · N`,
+ * `· P₂O₅`, `· K₂O`; das Eingabefeld ist 168 px breit und schnitt genau nach dem
+ * Maßnahmenteil ab. Auf dem Schirm standen dreimal identisch
+ * „Grund P/K + Start-N (vor Le" — es sah aus, als wäre die Maßnahme dreifach
+ * erfasst, und der einzige unterscheidende Teil war der abgeschnittene.
+ *
+ * `unterscheidung` schneidet den gemeinsamen Maßnahmenteil weg und lässt stehen,
+ * was die Zeile von ihren Geschwistern trennt. Bleibt nichts übrig, ist die Zeile
+ * die Maßnahme selbst — dann gehört an diese Stelle nicht ihr Name, sondern das
+ * PRODUKT: entweder das verknüpfte, oder ein sichtbar leeres Feld.
+ */
+function unterscheidung(label: string, phase: string): { rest: string; praefix: string } {
+  const l = stripBBCH(label);
+  const p = stripBBCH(phase);
+  // "<Maßnahme> · N" → "N"
+  if (p && l.startsWith(p)) {
+    const rest = l.slice(p.length).replace(/^\s*·\s*/, "").trim();
+    return { rest, praefix: l.slice(0, l.length - rest.length) };
+  }
+  /* Der zweite Fall, der beim ersten Anlauf durchgerutscht ist: das Label ist eine
+   *  VERKÜRZUNG der Maßnahme, nicht ihre Verlängerung. „Handarbeit" neben
+   *  „Handarbeit (nicht-maschinell)", „Material/Lager" neben „Material / Lager",
+   *  „Bewässerung" neben „Bewässerung (Pivot/Fertigation)". Ein `startsWith` auf
+   *  den Rohtexten findet das nicht, weil Leerzeichen und Klammern dazwischenstehen
+   *  — für den Leser ist es trotzdem dieselbe Wiederholung. */
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-zäöüß0-9]/g, "");
+  if (p && norm(l) && norm(p).startsWith(norm(l))) return { rest: "", praefix: "" };
+  return { rest: l, praefix: "" };
 }
 
 /** Kultur-Kalkulation — je Kultur die vollständige Maßnahmenkette (ab Bodenbearbeitung nach
@@ -47,6 +87,9 @@ export function KulturKalkulationView() {
   const schlaegeJahr = schlaegeOf(domain, crop, jy);
   const felderJahr = new Set(schlaegeJahr.map((s) => s.feldId));
   const zugeteiltHa = schlaegeJahr.reduce((a, s) => a + s.areaHa, 0);
+  /* Sorten des Jahres — sie machen sichtbar, WARUM es mehr Schläge als Felder gibt.
+   *  Ohne sie liest sich "4 Felder, 6 Schläge" wie ein Widerspruch. */
+  const sortenJahr = [...new Set(schlaegeJahr.map((s) => s.sorte).filter(Boolean))] as string[];
 
   // Kostenkatalog INTEGRIERT: Mengen & Stücksätze werden direkt hier editiert.
   const updQty = (opCode: string, lineIdx: number, v: number) => patch((d) => {
@@ -139,16 +182,39 @@ export function KulturKalkulationView() {
     if (l) { l.label = p.name; l.productId = p.id; }
   });
 
-  const BmLine = ({ b }: { b: MassnahmeBM }) => {
+  const BmLine = ({ b, phase }: { b: MassnahmeBM; phase: string }) => {
     const linked = findProduct(products, b.productId);
     const canPick = categoriesForOp(b.opCode).length > 0;
+    const { rest, praefix } = unterscheidung(b.label, phase);
+    /* Zeile == Maßnahme: hier gehört das PRODUKT hin, nicht der Name noch einmal.
+     *  Ist keines verknüpft, sagt das Feld das auch — ein leeres Feld ist eine
+     *  ehrlichere Auskunft als ein wiederholter Maßnahmenname. */
+    const istEigenstaendig = rest !== "";
+    const anzeige = istEigenstaendig ? rest : (linked?.name ?? "");
+    const commit = (s: string) => {
+      const bbch = b.label.match(/\s*\(BBCH[^)]*\)/i);
+      const kern = praefix ? praefix + s.trim() : (s.trim() || stripBBCH(phase));
+      updLabel(b.opCode, b.lineIdx, bbch ? kern + " " + bbch[0].trim() : kern);
+    };
     return (
       <div>
         <div className="flex items-center gap-1.5">
-          <TextInput value={stripBBCH(b.label)} width={168} onCommit={(s) => {
-            const m = b.label.match(/\s*\(BBCH[^)]*\)/i);
-            updLabel(b.opCode, b.lineIdx, m ? stripBBCH(s) + " " + m[0].trim() : s);
-          }} />
+          {istEigenstaendig ? (
+            <span className="inline-flex items-center gap-1" style={{ width: 168 }}>
+              <TextInput value={anzeige} width={168} onCommit={commit} />
+            </span>
+          ) : linked ? (
+            <span className="truncate text-[12px] font-medium" style={{ width: 168 }} title={linked.name}>{linked.name}</span>
+          ) : (
+            /* Ein Gedankenstrich, kein Satz. Sechs Zeilen mit „kein Produkt gewählt"
+               untereinander sind wieder genau die Wiederholung, die diese Spalte
+               loswerden sollte — und die Lupe daneben sagt bereits, was zu tun ist.
+               Der Tooltip trägt die Erklärung für den, der sie sucht. */
+            <span className="text-[12px] text-nx-text-muted" style={{ width: 168 }}
+              title={t("Kein Produkt aus dem Katalog verknüpft. Menge und Stücksatz rechnen trotzdem — die Lupe verknüpft ein Produkt.")}>
+              —
+            </span>
+          )}
           {canPick && (
             <button className="shrink-0 rounded-control border px-1.5 text-[11px] leading-none hover:opacity-80"
               style={{ height: 24, borderColor: linked ? "var(--nx-green)" : "var(--nx-border)", color: linked ? "var(--nx-green)" : "var(--nx-locate)", background: "var(--nx-app-bg)" }}
@@ -226,7 +292,34 @@ export function KulturKalkulationView() {
       {/* Maßnahmenblatt */}
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b" style={{ borderColor: "var(--nx-border)" }}>
-          <h3 className="text-[13px] font-semibold" style={{ color: cropColor(crop) }}>{calc.name} {t("· Maßnahmenkette")} ({fmtNumber(calc.areaHa, 0)} ha {t("in")} {START_YEAR + jy})</h3>
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-semibold" style={{ color: cropColor(crop) }}>{calc.name} {t("· Maßnahmenkette")} ({fmtZahl(calc.areaHa, 0)} ha {t("in")} {START_YEAR + jy})</h3>
+            {/* Die Flächenauskunft EINMAL, hier. Vorher stand sie identisch auf jeder
+                Maßnahmenzeile — und bei einer Kultur ohne Fläche stand dort zwölfmal
+                „0 Felder · – ha", was wie ein Fehler aussieht statt wie ein Plan. */}
+            {zugeteiltHa > 0 ? (
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px] text-nx-text-muted">
+                <span className="num">{felderJahr.size} {t("Felder")}</span>
+                <span aria-hidden>·</span>
+                <span className="num">{schlaegeJahr.length} {t("Schläge")}</span>
+                {sortenJahr.length > 0 && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span title={t("Sortenanteile stehen im Anbauplan und bestimmen die Schlagbildung")}>
+                      {sortenJahr.join(" · ")}
+                    </span>
+                  </>
+                )}
+                <span aria-hidden>·</span>
+                <span className="num">{fmtNumber(zugeteiltHa, 0)} ha {t("zugeteilt")}</span>
+              </div>
+            ) : (
+              <div className="mt-0.5 inline-flex items-center gap-1.5 text-[10.5px]" style={{ color: "var(--nx-warn, #C9A227)" }}>
+                <TriangleAlert size={11} strokeWidth={2.4} aria-hidden />
+                {t("Diese Kultur hat")} {START_YEAR + jy} {t("keine Fläche — die Kette zeigt Kosten je Hektar, die Betriebssumme ist null. Der Skalierungspfad steht im Anbauplan.")}
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <label className="inline-flex items-center gap-1.5 text-[11px] text-nx-text-muted">{t("Aussaat/Pflanzung (S)")}
               <select className="rounded-control border px-2 text-[12px] font-semibold"
@@ -292,14 +385,20 @@ export function KulturKalkulationView() {
                       )}
                     </div>
                     <div className="num text-[9px] text-nx-text-muted" title={t("Stabile, positionsfreie Maßnahmen-ID für den FMS-Abgleich")}>#{r.measureId}</div>
-                    <div className="text-[9px] text-nx-text-muted"
+                    {/* NUR die Bezugsebene, nicht die Zahl. Die Zahl ist für alle Zeilen
+                        dieselbe und steht deshalb EINMAL in der Kopfzeile; zwölfmal
+                        untereinander sah sie aus wie ein Kopierfehler und verdeckte
+                        die einzige Information, die sich je Zeile unterscheidet. */}
+                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-pill px-1.5 py-[1px] text-[9px] font-bold"
+                      style={r.bezug === "schlag"
+                        ? { background: "color-mix(in srgb, var(--nx-locate) 14%, transparent)", color: "var(--nx-locate)" }
+                        : { background: "var(--nx-surface-sunken)", color: "var(--nx-text-muted)" }}
                       title={t(r.bezug === "schlag"
-                        ? "Schlagbezug: Feld × Jahr × Kultur × Sorte — der Termin ist sortenabhängig"
-                        : "Feldbezug: mehrere Sorten auf einem Feld werden in EINER Überfahrt erledigt")}>
-                      {r.bezug === "schlag"
-                        ? `${schlaegeJahr.length} ${t("Schläge")}`
-                        : `${felderJahr.size} ${t("Felder")}`} · {fmtNumber(zugeteiltHa, 0)} ha
-                    </div>
+                        ? "Schlagbezug: Feld × Jahr × Kultur × Sorte. Der Termin ist sortenabhängig — Rückmeldung je Schlag."
+                        : "Feldbezug: eine Überfahrt erledigt alle Sorten des Feldes — Rückmeldung je Feld.")}>
+                      <MapPin size={9} strokeWidth={2.6} aria-hidden />
+                      {r.bezug === "schlag" ? t("je Schlag") : t("je Feld")}
+                    </span>
                   </td>
                   <td className="px-2 py-1.5 text-nx-text-secondary">
                     {r.machineId ? (() => {
@@ -324,7 +423,7 @@ export function KulturKalkulationView() {
                     })() : r.applyHint ? <span className="text-[11.5px] text-nx-text-muted">{t(r.applyHint)}</span> : <span className="text-nx-text-muted">—</span>}
                   </td>
                   <td className="px-2 py-1.5" style={{ minWidth: 360 }}>
-                    {r.bm.length ? <div className="space-y-1">{r.bm.map((b) => <BmLine key={`${r.opCode}-${b.lineIdx}`} b={b} />)}</div> : <span className="text-[11px] text-nx-text-muted">{t("keine Betriebsmittel")}</span>}
+                    {r.bm.length ? <div className="space-y-1">{r.bm.map((b) => <BmLine key={`${r.opCode}-${b.lineIdx}`} b={b} phase={r.phase} />)}</div> : <span className="text-[11px] text-nx-text-muted">{t("keine Betriebsmittel")}</span>}
                     {r.opCode && r.opCode !== "OP-PSM" && (
                       <button className="mt-1 rounded-control border px-2 py-0.5 text-[10.5px] font-semibold hover:opacity-80"
                         style={{ borderColor: "var(--nx-border)", color: "var(--nx-locate)", background: "var(--nx-app-bg)" }}

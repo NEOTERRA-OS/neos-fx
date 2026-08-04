@@ -31,6 +31,29 @@ export function fmtNumber(v: number, digits = 2): string {
   }).format(v);
 }
 
+/**
+ * Wie `fmtNumber`, aber NULL BLEIBT NULL.
+ *
+ * `fmtNumber` zeigt die Null als Gedankenstrich. In einer Kostentabelle ist das
+ * richtig: eine Zeile ohne Diesel hat keinen Dieselwert, und ein Strich liest
+ * sich ruhiger als eine Reihe von Nullen.
+ *
+ * An einer Kennzahl ist es falsch, und zwar sichtbar falsch. Die Plan-Ist-Kachel
+ * zeigte „Rückmeldegrad – %" und darunter „0 von 132 Zielen" — zwei Aussagen auf
+ * derselben Kachel, von denen eine behauptet, es gebe keinen Wert, während die
+ * andere ihn nennt. Null Prozent zurückgemeldet IST das Ergebnis, nicht seine
+ * Abwesenheit.
+ *
+ * Faustregel: fehlt der Wert, `fmtNumber`. Ist die Null das Ergebnis, `fmtZahl`.
+ */
+export function fmtZahl(v: number, digits = 2): string {
+  if (!isFinite(v)) return "–";
+  return new Intl.NumberFormat(LOCALE, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(v);
+}
+
 export function fmtFactor(v: number): string {
   if (!isFinite(v)) return "–";
   return new Intl.NumberFormat(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);

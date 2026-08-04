@@ -30,9 +30,9 @@ const IA: Group[] = [
   ]},
   { title: "Annahmen & Kulturen", items: [
     { id: "annahmenSheet", label: "Annahmen", view: "annahmenSheet" },
-    { id: "anbauplan", label: "Anbauplan & Erträge", view: "anbauplan" },
-    { id: "kulturkalk", label: "Kultur-Kalkulation (Maßnahmen + Katalog)", view: "kulturkalk" },
-    { id: "produktkatalog", label: "Produktkatalog (Dünger · PSM · Sorten)", view: "produktkatalog" },
+    { id: "anbauplan", label: "Anbauplan · Flächen, Erträge, Sorten", view: "anbauplan" },
+    { id: "kulturkalk", label: "Maßnahmen & Kosten je Kultur", view: "kulturkalk" },
+    { id: "produktkatalog", label: "Produktkatalog (Dünger · PSM · Pflanzgut)", view: "produktkatalog" },
     { id: "lagerkst", label: "Lager & Packhaus (Kostenstelle)", view: "lagerkst" },
   ]},
   /* BELEG & RUECKMELDUNG — die Ist-Seite des Modells. Sie steht bewusst als eigene
@@ -41,7 +41,7 @@ const IA: Group[] = [
      Planungsfrage, keine Ablage. */
   { title: "Beleg & Rückmeldung", items: [
     { id: "wiedervorlage", label: "Wiedervorlage (Annahmen ↔ Messung)", view: "wiedervorlage" },
-    { id: "istabgleich", label: "Plan ↔ Ist (Maßnahmen · Flächen)", view: "istabgleich" },
+    { id: "istabgleich", label: "Plan ↔ Ist (Rückmeldung aus dem Feld)", view: "istabgleich" },
   ]},
   { title: "Maschinen & Flotte", items: [
     { id: "maschinen", label: "Maschinenpark", view: "maschinen" },

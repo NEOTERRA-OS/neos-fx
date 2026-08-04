@@ -386,8 +386,13 @@ function SortenKarte({
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--nx-border)" }}>
         <span style={{ width: 9, height: 9, borderRadius: 2, background: cropColor(cropId), display: "inline-block" }} />
         <span className="text-[12.5px] font-semibold">{t(cropName(cropId))}</span>
-        <span className="num text-[10.5px] text-nx-text-muted">{fmtNumber(flaeche, 0)} ha</span>
-        {liste.length === 0 && (
+        {/* „– ha ohne Sorten" stand bei fünf Kulturen untereinander und sah aus wie
+            ein Fehler. Es ist keiner: die Kultur läuft erst später im
+            Skalierungspfad an. Dann soll da auch das stehen. */}
+        {flaeche > 0
+          ? <span className="num text-[10.5px] text-nx-text-muted">{fmtNumber(flaeche, 0)} ha</span>
+          : <span className="text-[10.5px] text-nx-text-muted">{t("keine Fläche in diesem Planjahr")}</span>}
+        {liste.length === 0 && flaeche > 0 && (
           <span className="text-[10.5px] text-nx-text-muted">{t("ohne Sorten — die Schläge tragen dann keine Sortenkennung")}</span>
         )}
         <span className="ml-auto inline-flex items-center gap-2">
