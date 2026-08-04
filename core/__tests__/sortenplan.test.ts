@@ -20,7 +20,7 @@ import { describe, it, expect } from "vitest";
 import {
   SEED, schlaegeOf, sortenAnteileOf, sortenVerteilung, sortenplanOf,
   exportMassnahmenplan, flaechenMemo, sortenEintrag, unbekannteSorten,
-  SORTENPLAN_VORSCHLAG, type Domain,
+  SORTENPLAN_VORSCHLAG, kompendiumSaatMenge, type Domain,
 } from "../../store/model";
 import { DEFAULT_PRODUCTS } from "../../store/productCatalog";
 import { normSortenanteile, sortenSlug, MIN_SCHLAG_HA } from "../../store/schlaege";
@@ -221,31 +221,37 @@ describe("Pflanzgut je Sorte", () => {
     const saat = e.ops.find((o) => o.code === "OP-SAAT")!;
     expect(saat.lines.length).toBe(sortenAnteileOf(SEED, "kartoffel_pommes").length);
     const summe = saat.lines.reduce((s, l) => s + l.quantityPerHa, 0);
-    expect(summe).toBeCloseTo(2.8, 2);
+    expect(summe).toBeCloseTo(2.3, 2);   // Kompendiumswert, siehe naechster Test
     expect(saat.lines.every((l) => /Pflanzgut /.test(l.label))).toBe(true);
   });
 
-  it("weicht bei der Pflanzgutmenge vom Kompendium ab — festgehalten, nicht stillgelegt", () => {
-    /* BEFUND BEIM SCHREIBEN DIESES TESTS, nicht gesucht, sondern gestolpert.
+  it("legt mit der Menge, die das Kompendium führt — nicht mit einer eigenen", () => {
+    /* DIE GESCHICHTE DIESES TESTS IN ZWEI SÄTZEN. Am 04.08.2026 stand er hier
+     *  als „weicht ab — festgehalten, nicht stillgelegt": FX rechnete 2,8 t/ha,
+     *  das Kompendium führte 2,3 (BELEGT, Quelle SRC-BETRIEB-2608, „rund 32.500
+     *  Pflanzen je Hektar"). Ich habe die Zahl damals NICHT von mir aus
+     *  geändert — welche gilt, ist eine Betriebsentscheidung: 2,8 t/ha wäre bei
+     *  33.500 Pflanzen/ha eine schwerere Sortierung, und das kann gewollt sein.
+     *  Der Betrieb hat am 04.08.2026 entschieden: 2,3 t/ha.
      *
-     *  FX rechnet 2,8 t/ha Pflanzgut für Pommes. Das Kompendium führt
-     *  `CROP.POTATO.SEED_RATE_T_HA` = 2,3 t/ha als BELEGT mit der Quelle
-     *  SRC-BETRIEB-2608 — also als Angabe des Betriebs, „rund 32.500 Pflanzen
-     *  je Hektar". Bei 390 €/t sind 0,5 t/ha Unterschied rund 195 €/ha, auf
-     *  2.500 ha Kartoffel also etwa 0,5 Mio € im Jahr.
+     *  Der Test prüft jetzt die EIGENSCHAFT, nicht die Zahl — FX liest den
+     *  Kompendiumswert, statt ihn abzuschreiben. Er wird rot, sobald das
+     *  Kompendium die Menge ändert und der Export nicht nachgezogen wird.
      *
-     *  Ich ändere die Zahl NICHT von mir aus: sie ist eine Betriebsangabe, und
-     *  welche der beiden gilt, entscheidet der Betrieb — 2,8 t/ha wäre bei
-     *  33.500 Pflanzen/ha (Agrico für Markies) eine schwerere Sortierung, und
-     *  das kann gewollt sein. Der Test hält die Abweichung fest, damit sie nicht
-     *  wieder aus dem Blick gerät. Er wird rot, sobald jemand eine der beiden
-     *  Seiten anfasst — und genau dann gehört die Frage entschieden. */
-    const e = SEED.catalog.find((c) => c.cropId === "kartoffel_pommes")!;
-    const saat = e.ops.find((o) => o.code === "OP-SAAT")!;
-    const fx = saat.lines.reduce((s, l) => s + l.quantityPerHa, 0);
-    const kompendium = 2.3;
-    expect(fx).toBeCloseTo(2.8, 2);
-    expect(Math.abs(fx - kompendium)).toBeCloseTo(0.5, 2);
+     *  WIRKUNG DER ENTSCHEIDUNG, gemessen an den Golden Files:
+     *    Umsatz  unverändert in JEDEM Planjahr (die Prüfsignatur — eine
+     *            Pflanzgutmenge darf den Erlös nicht anfassen)
+     *    EBITDA  2035  15,17 → 15,78 Mio €   (+608 k€)
+     *    Ergebnis 2035  9,43 → 9,95 Mio €    (+515 k€)
+     *    Kasse   2035  +2,18 Mio € kumuliert */
+    for (const crop of ["kartoffel_pommes", "kartoffel_chips"] as const) {
+      const e = SEED.catalog.find((c) => c.cropId === crop)!;
+      const saat = e.ops.find((o) => o.code === "OP-SAAT")!;
+      const fx = saat.lines.reduce((s, l) => s + l.quantityPerHa, 0);
+      const kompendium = kompendiumSaatMenge(crop);
+      expect(kompendium, `${crop}: kein Kompendiumswert im Export`).toBeGreaterThan(0);
+      expect(fx, crop).toBeCloseTo(kompendium!, 3);
+    }
   });
 
   it("gibt jeder Sorte eine eigene Maßnahmen-ID", () => {

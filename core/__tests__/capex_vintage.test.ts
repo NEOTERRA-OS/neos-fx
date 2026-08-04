@@ -13,7 +13,7 @@
  * CAPEX nichts geändert hat.
  */
 import { describe, it, expect } from "vitest";
-import { SEED, buildModelState, setMachineOutsourced, type Domain } from "../../store/model";
+import { SEED, buildModelState, setMachineOutsourced, deriveCropAreasMY, START_YEAR, type Domain } from "../../store/model";
 import { capexVintageId, parseCapexId, capexBasisId, machineIdOfCapex, istAlteCapexId } from "../../store/capexId";
 
 const SZENARIEN = SEED.scenarios.map((s) => s.id);
@@ -143,5 +143,57 @@ describe("CAPEX-Jahrgänge · die Rechnung bleibt stehen", () => {
         .map((c) => parseCapexId(c.id).kohorte!).sort((a, b) => a - b);
       expect(ks).toEqual(ks.map((_, i) => i));
     }
+  });
+});
+
+describe("Bauzeitenplan Lager & Packhaus — Entscheidung 04.08.2026", () => {
+  /* WARUM DAS EIN TEST IST UND KEIN KOMMENTAR. Die Bauabschnitte sind seit dem
+   *  04.08.2026 in der Oberflaeche editierbar (Kostenstelle Lager & Packhaus).
+   *  Das ist richtig so — aber es heisst auch, dass der Seed-Stand jederzeit
+   *  unbemerkt wegdriften kann, und der Seed ist es, gegen den jeder neue
+   *  Nutzer und jede Golden-Datei rechnet.
+   *
+   *  Die Staffelung ist keine Kosmetik: ohne sie faellt das gesamte Programm —
+   *  rund 27 Mio EUR — in EINEM Jahr an, in dem der Betrieb 670 ha
+   *  bewirtschaftet. Danach steht die Kasse sieben Jahre auf null und der
+   *  Revolver ist durchgezogen. Wer den Plan aendert, aendert den
+   *  Finanzierungsbedarf; das soll auffallen. */
+  const jahrVon = (id: string) =>
+    (SEED.capexPlan ?? []).find((p) => p.id === id)?.jahr;
+
+  it("baut in der entschiedenen Reihenfolge, nicht alles auf einmal", () => {
+    const PLAN: Record<string, number> = {
+      "lg-shell": 2, "lg-bulk": 2,          // 2029 Huelle + Schuettlager
+      "lg-cure": 4,                          // 2031 Curing
+      "lg-cool": 5,                          // 2032 Kuehl-/CA-Lager
+      "pk-line": 6, "pk-optic": 6, "pk-wash": 6,   // 2033 Packhaus Kern
+      "pk-pal": 7, "pk-onion": 7,            // 2034 Palettierung + Zwiebellinie
+    };
+    for (const [id, jahr] of Object.entries(PLAN)) {
+      expect(jahrVon(id), `${id} (${START_YEAR + jahr})`).toBe(jahr);
+    }
+  });
+
+  it("verteilt das Programm auf mindestens vier Planjahre", () => {
+    /* Die EIGENSCHAFT hinter der Entscheidung, unabhaengig von den konkreten
+     *  Jahren: wenn jemand den Plan umbaut, darf er nicht wieder in einem Jahr
+     *  zusammenfallen. */
+    const jahre = new Set((SEED.capexPlan ?? [])
+      .filter((p) => p.block === "lager" || p.block === "packhaus")
+      .map((p) => p.jahr));
+    expect(jahre.size).toBeGreaterThanOrEqual(4);
+  });
+
+  it("baut das Lager NICHT vor dem ersten nennenswerten Kartoffeljahr", () => {
+    /* Ein Lager, das vor der Ware steht, ist Leerstand mit AfA. Geprueft wird
+     *  gegen den Anbauplan, nicht gegen eine Jahreszahl — so bleibt der Test
+     *  richtig, wenn der Hochlauf sich verschiebt. */
+    const erstesLagerjahr = Math.min(...(SEED.capexPlan ?? [])
+      .filter((p) => p.block === "lager").map((p) => p.jahr));
+    const flaechen = deriveCropAreasMY(SEED).areas;
+    const kartoffelHa = (jahr: number) => Object.keys(flaechen)
+      .filter((c) => c.startsWith("kartoffel"))
+      .reduce((s, c) => s + (flaechen[c][jahr] ?? 0), 0);
+    expect(kartoffelHa(erstesLagerjahr)).toBeGreaterThan(300);
   });
 });

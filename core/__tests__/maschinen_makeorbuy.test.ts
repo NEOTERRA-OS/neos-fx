@@ -44,6 +44,54 @@ describe("Stundensätze · an den Preis gebunden", () => {
     }
   });
 
+  it("hat keine handgesetzte Ausnahme mehr — Entscheidung 04.08.2026", () => {
+    /* DIE ENTSCHEIDUNG, DIE DIESER TEST FESTHÄLT. Sieben der dreizehn
+     *  Feldmaschinen trugen einen AfA-Satz, der nicht zu ihrem Preis passte:
+     *
+     *      Feldrand-Kipper 24 t     15,00 €/h  gegen Formel  5,00   +200 %
+     *      Saatbettkombi 9 m        24,00              10,50        +129 %
+     *      Grubber Fortis 6.4       18,00               9,00        +100 %
+     *      Düngerstreuer K135       28,00              17,00         +65 %
+     *      One-Pass (damals CP 42)  38,40              25,60         +50 %
+     *      Pflanzmaschine C&M       64,00              56,00         +14 %
+     *      Wurzelernter ROPA        53,33              60,00         −11 %
+     *
+     *  Rechnet man aus jedem alten Satz zurück, welche Jahresstundenzahl ihn
+     *  erzeugt hätte, liegen SECHS unter der hinterlegten `refHoursPerYear` —
+     *  beim Kipper 200 statt 600. Das sah nicht nach sieben Einzelirrtümern
+     *  aus, sondern nach einer Flottenbemessung, die die Jahresstunden angehoben
+     *  und die Sätze stehengelassen hat. NEOTERRA hat am 04.08.2026 bestätigt:
+     *  die niedrigeren Formelwerte gelten, `refHoursPerYear` bleibt stehen.
+     *
+     *  Geprüft wird deshalb nicht „der Satz ist 5,00" — das täte der Test oben
+     *  schon —, sondern dass es KEINEN Weg mehr gibt, an der Formel vorbei eine
+     *  eigene Zahl zu setzen. Solange jede Maschine mit Preis, Nutzungsdauer
+     *  und Referenzstunden die Formel trifft, kann die Lücke nicht wiederkommen. */
+    const ohneFormel: string[] = [];
+    for (const m of SEED.machineCatalog) {
+      if (!m.refHoursPerYear || !m.nutzungYears || !m.unitPriceKey) continue;
+      const preis = resolveScalar(SEED, m.unitPriceKey, SZ);
+      if (!preis) continue;
+      const soll = Math.round((preis * (1 - (m.restwertPct ?? 0))) / (m.nutzungYears * m.refHoursPerYear));
+      const ist = machineRatesPerHour(SEED, m, SZ).afaCent;
+      if (ist !== soll) ohneFormel.push(`${m.id}: ${ist} statt ${soll}`);
+    }
+    expect(ohneFormel).toEqual([]);
+  });
+
+  it("hält den Zug JD 8R 410 — bestätigt am 04.08.2026 gegen die 340-PS-Klasse", () => {
+    /* Der auslegende Arbeitsgang ist der Grubber HORSCH Fortis 6.4 LT auf 30 cm
+     *  im schweren Süd-Dolj-Boden; HORSCH gibt für ihn bis 435 PS an. Geprüft
+     *  wird das, was das Modell davon weiß: der Zug hängt an diesem Gerät, und
+     *  sein Listenpreis steht auf dem realen JD-Angebot vom 23.07.2026
+     *  (523.813 €). Wer die Klasse tauscht, ändert diesen Preis — und dann
+     *  gehört die Zuordnung neu begründet. */
+    expect(resolveScalar(SEED, "mprice.zug_9r", SZ)).toBe(52381300);
+    const grubber = maschine(SEED, "pflug");
+    expect(grubber.tractorId).toBe("zug_9r");
+    expect(SEED.machineCatalog.some((m) => m.id === "zug_8rx")).toBe(false);  // Verfahren C
+  });
+
   /* DER EIGENTLICHE TEST: der Listenpreis ist editierbar, also müssen die Sätze mit. */
   it("zieht alle fünf Sätze mit, wenn der Listenpreis steigt", () => {
     const m = maschine(SEED, "roder_ropa");
@@ -190,14 +238,21 @@ describe("Base Case", () => {
      *  Mischpreis zu niedrig war — Pommes 743 → 1.676 €/ha, betriebsweit
      *  5,86 Mio € Düngung 2035. Auch hier: der Umsatz bleibt stehen.
      *
+     *  DRITTE BEWEGUNG, 04.08.2026 nachmittags: die Pflanzgutmenge fällt auf
+     *  den Kompendiumswert (Pommes 2,8 → 2,3 t/ha, Chips 3,0 → 2,5). Der
+     *  Betrieb hat entschieden; das Kompendium führte die Zahl seit jeher als
+     *  BELEGT. Weniger Pflanzgut heisst weniger Direktkosten — und wieder darf
+     *  der Umsatz sich nicht rühren.
+     *
      *  Ausgangsstand   16,75 EBITDA · 10,08 Ergebnis
      *  nach Verfahren C   17,01 · 10,98   (weniger Maschinen)
      *  nach Produktpreis  15,17 ·  9,43   (ehrlichere Düngung)
-     *  Umsatz durchgehend 46,44 Mio */
+     *  nach Pflanzgut     15,78 ·  9,95   (Kompendiumsmenge)
+     *  Umsatz durchgehend 46,44 Mio — in ALLEN vier Ständen */
     const z = letztesJahr(SEED);
     expect(Math.round(z.umsatz / 1e4)).toBe(4644);     // 46,44 Mio — UNVERÄNDERT
-    expect(Math.round(z.ebitda / 1e4)).toBe(1517);     // 15,17 Mio
-    expect(Math.round(z.ergebnis / 1e4)).toBe(943);    // 9,43 Mio
+    expect(Math.round(z.ebitda / 1e4)).toBe(1578);     // 15,78 Mio
+    expect(Math.round(z.ergebnis / 1e4)).toBe(995);    // 9,95 Mio
     /* Die KASSE steht hier bewusst NICHT: sie haengt am Zeitpunkt jeder Zahlung und
      *  bewegt sich damit bei jeder Aenderung an der Saisonalitaet, ohne dass an den
      *  Stundensaetzen etwas falsch waere. Wer sie hier festnagelt, bekommt einen Test,
@@ -221,6 +276,61 @@ describe("Kein Knopf ohne Wirkung", () => {
         const park2 = deriveMaschinenpark(d, SZ, Math.max(1, SEED.growth?.years ?? 1));
         expect(park2.find((x) => x.machineId === m.machineId)!.beschaffung, m.machineId).toBe("lohn");
       }
+    }
+  });
+});
+
+describe("Die Maschine heißt, was sie rechnet", () => {
+  it("nennt in Beschriftung, Produktname und Kinematik dieselbe Arbeitsbreite", () => {
+    /* DER FUND, DER DIESEN TEST AUSGELÖST HAT — im eigenen Screenshot-Review am
+     *  04.08.2026, nicht gemeldet und nicht gesucht. Die Maßnahmenkette zeigte:
+     *
+     *      Saatbettbereitung
+     *      × Saatbettkombination 9,0 m (passiv, …)
+     *      12,0 m · 7,5 km/h · 80 % → 7,20 ha/h
+     *
+     *  Drei Zeilen übereinander, zwei verschiedene Breiten. Die Beschriftung
+     *  sagte 9,0 m, gerechnet wurde mit 12,0 m, und der hinterlegte Produktname
+     *  war ein Väderstad NZ Extreme 1250 — dessen Typnummer IST die Breite:
+     *  12,5 m. Die Beschriftung war der Ausreißer und ist korrigiert.
+     *
+     *  Warum das mehr als Kosmetik ist: `cEff` — die Flächenleistung — treibt
+     *  Stückzahl, CAPEX und Feldtage. Wer die Beschriftung liest und 9 m glaubt,
+     *  hält 7,20 ha/h für eine hohe Leistung und die Flotte für knapp bemessen;
+     *  wer 12,5 m rechnet, sieht dieselbe Zahl als normal an. Dieselbe Kennzahl,
+     *  zwei entgegengesetzte Schlüsse — je nachdem, welche Zeile man glaubt.
+     *
+     *  Geprüft wird die ganze Klasse, nicht der Einzelfall: steht in
+     *  Beschriftung oder Produktname eine Meterzahl, muss sie die der Kinematik
+     *  sein. Wer eine Maschine tauscht und nur eine Stelle nachzieht, wird hier
+     *  rot — und das ist genau der Moment, in dem es auffallen soll. */
+    const breiten = (t: string) =>
+      [...t.matchAll(/(\d+(?:[.,]\d+)?)\s*m\b/g)].map((m) => parseFloat(m[1].replace(",", ".")));
+    const streit: string[] = [];
+    for (const m of SEED.machineCatalog) {
+      if (!m.widthM) continue;
+      for (const [feld, text] of [["Beschriftung", m.label], ["Produktname", m.productName ?? ""]]) {
+        const gefunden = breiten(text);
+        if (gefunden.length && !gefunden.some((b) => Math.abs(b - m.widthM!) < 0.05)) {
+          streit.push(`${m.id} ${feld}: ${gefunden.join("/")} m gegen Kinematik ${m.widthM} m`);
+        }
+      }
+    }
+    expect(streit).toEqual([]);
+  });
+
+  it("hält Breite, Geschwindigkeit, Feldeffizienz und Flächenleistung zusammen", () => {
+    /* cEff = Breite × Geschwindigkeit × Feldeffizienz ÷ 10. Die Oberfläche
+     *  zeigt alle vier Zahlen nebeneinander — dann müssen sie auch aufgehen,
+     *  sonst rechnet der Leser mit und findet einen Fehler, der keiner ist. */
+    for (const m of SEED.machineCatalog) {
+      if (!m.widthM || !m.speedKmh || !m.fieldEff || !m.cEff) continue;
+      /* 0,5 % Toleranz statt zwei Nachkommastellen: einige cEff sind von Hand
+       *  auf eine Stelle gerundet eingetragen (Spritze 24,1 gegen 24,111). Das
+       *  ist Rundung, kein Widerspruch — bei mehr als einem halben Prozent
+       *  stimmt dagegen eine der vier Zahlen nicht. */
+      const gerechnet = (m.widthM * m.speedKmh * m.fieldEff) / 10;
+      expect(Math.abs(gerechnet - m.cEff) / m.cEff, `${m.id}: ${gerechnet.toFixed(3)} gegen ${m.cEff}`).toBeLessThan(0.005);
     }
   });
 });

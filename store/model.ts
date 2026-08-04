@@ -81,6 +81,7 @@ import type {
 export type { OfftakeContract, HarvestAdvancePolicy } from "../core/types";
 import { DEFAULT_PRODUCTS, type CatalogProduct } from "./productCatalog";
 import { DUENGER_GABEN, DUENGER_PRODUKTE } from "./duengerplan.generated";
+import { MENGEN_GERUEST } from "./mengen.generated";
 import { SORTEN_REGISTER, type SortenEintrag } from "./sorten.generated";
 export type { CatalogProduct } from "./productCatalog";
 
@@ -1614,7 +1615,7 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   // --- Maschinen-Neupreise (CENT) — Referenz B ---
   // Anbaugeräte-Preise = NUR das Gerät (ohne Schlepper — Traktoren sind eigene Positionen zug_9r/8rx/6r).
   A("mprice.pflug", "mprice.pflug", "Universalgrubber HORSCH Fortis 6.4 LT", "money", 7200000),
-  A("mprice.saatbett", "mprice.saatbett", "Saatbettkombination 9 m (Verfahren C)", "money", 7500000),
+  A("mprice.saatbett", "mprice.saatbett", "Saatbettkombination 12,5 m (Verfahren C)", "money", 7500000),
   A("mprice.drille", "mprice.drille", "Getreidedrille 9–12 m (HORSCH Pronto)", "money", 13000000),
   A("mprice.einzelkorn", "mprice.einzelkorn", "Einzelkornsämaschine HORSCH Maestro 12 TX", "money", 24000000),
   // Feingemüse-Sätechnik: Zwiebel und Möhre werden auf BEETEN gesät (Reihenabstand 5–7 cm,
@@ -2150,12 +2151,48 @@ export function deriveMassnahmenChecks(domain: Domain): CheckResult[] {
   return checks;
 }
 
-/** Phase 5 — Saatgut/Pflanzgut: Menge/ha (natürliche Einheit) × Preis-Assumption seed.<crop>. */
+/**
+ * PFLANZGUT- UND SAATMENGE je Hektar.
+ *
+ * DIE KARTOFFELMENGEN KOMMEN AUS DEM KOMPENDIUM, seit 04.08.2026 und auf
+ * Entscheidung des Betriebs. Vorher standen sie hier als eigene Zahl — Pommes
+ * 2,8 t/ha, Chips 3,0 — und das Kompendium sagte 2,3 und 2,5, beide BELEGT
+ * (`cfg_mengen.csv`, potFryVHK/potChpVHK). Niemand hat die beiden je
+ * verglichen, weil sie in verschiedenen Repositorien standen und beide für
+ * sich plausibel aussahen.
+ *
+ * 0,5 t/ha bei 390 EUR/t sind 195 EUR/ha. Im Endausbau — 1.150 ha Pommes und
+ * 1.184 ha Chips — ist das eine halbe Million Euro im Jahr, aus EINER Zahl.
+ * Genau dafür ist die Eigentumsgrenze da: agronomische Mengen gehören ins
+ * Kompendium, FX liest sie.
+ *
+ * Die übrigen Kulturen stehen weiter hier. Nicht aus Bequemlichkeit: für sie
+ * führt der Betrieb keine eigene Konfiguration im Mengengerüst, oder die
+ * Einheit passt nicht (FX rechnet Zwiebel/Möhre als EINE Mischkultur mit einem
+ * ha-Satz, das Kompendium führt onDry und carSum getrennt in kg bzw. Korn).
+ * Der Test `mengengeruest.test.ts` hält fest, welche das sind — er schlägt an,
+ * sobald eine Kultur einen Kompendiumswert bekommt und FX ihn nicht liest.
+ */
+const KOMPENDIUM_CFG: Partial<Record<CropId, string>> = {
+  kartoffel_pommes: "potFryVHK",
+  kartoffel_chips: "potChpVHK",
+};
+
+/** Pflanzgutmenge aus dem Kompendium, wenn es eine gibt. Sonst `undefined`. */
+export function kompendiumSaatMenge(cropId: CropId): number | undefined {
+  const cfg = KOMPENDIUM_CFG[cropId];
+  if (!cfg) return undefined;
+  return MENGEN_GERUEST.find((m) => m.cfgId === cfg)?.saatMenge;
+}
+
 const SEED_PROGRAM: Record<CropId, { qty: number; unit: string }> = {
   zwischenfrucht: { qty: 35, unit: "kg" },
   weizen: { qty: 220, unit: "kg" }, gerste_zw: { qty: 180, unit: "kg" }, soja_luzerne: { qty: 75, unit: "kg" },
   winterraps: { qty: 1.8, unit: "Einh." }, mais: { qty: 1.0, unit: "Einh." }, tomate: { qty: 25, unit: "×1000 Pfl." },
-  kartoffel_pommes: { qty: 2.8, unit: "t" }, kartoffel_chips: { qty: 3.0, unit: "t" }, zwiebel_moehre: { qty: 1, unit: "ha-Satz" },
+  // 2,3 bzw. 2,5 t/ha — aus dem Kompendium, nicht von Hand. Siehe oben.
+  kartoffel_pommes: { qty: kompendiumSaatMenge("kartoffel_pommes") ?? 2.3, unit: "t" },
+  kartoffel_chips: { qty: kompendiumSaatMenge("kartoffel_chips") ?? 2.5, unit: "t" },
+  zwiebel_moehre: { qty: 1, unit: "ha-Satz" },
   // Sellerie: 45–50 T Pfl./ha (50×40 cm) — Standard Frischmarkt-Kaliber 500–1.000 g.
   suesskartoffel: { qty: 30, unit: "×1000 Slips" }, knoblauch: { qty: 900, unit: "kg" }, knollensellerie: { qty: 50, unit: "×1000 Pfl." },
   weizen_dry: { qty: 200, unit: "kg" }, gerste_dry: { qty: 170, unit: "kg" }, raps_dry: { qty: 1.8, unit: "Einh." },
@@ -2436,7 +2473,7 @@ const SPEC: Spec[] = [
   // Auf 9,0 m korrigiert (Verfahren C, 02.08.2026): die Kartoffel faehrt das Geraet
   //  jetzt selbst, und dort ist die Fahrgassengeometrie massgeblich, nicht die
   //  maximale Breite. cEff = 9,0 m x 10,0 km/h x 0,80 / 10 = 7,20 ha/h.
-  { id: "saatbett",   label: "Saatbettkombination 9,0 m (passiv, Federzinken · Planierbalken · Kruemlerwalze)", priceKey: "mprice.saatbett",   cat: "gezogen", neupreis: 7500000, nutzung: 10, hJ: 500, restw: 0.25, dieselLh: 18, afa: 2571, zins: 857, vers: 686, rep: 2400, schmier: 289, cEff: 7.20, fleet: 1, tractorId: "zug_9r" },
+  { id: "saatbett",   label: "Saatbettkombination 12,5 m (passiv, Federzinken · Planierbalken · Kruemlerwalze)", priceKey: "mprice.saatbett",   cat: "gezogen", neupreis: 7500000, nutzung: 10, hJ: 500, restw: 0.25, dieselLh: 18, afa: 2571, zins: 857, vers: 686, rep: 2400, schmier: 289, cEff: 7.20, fleet: 1, tractorId: "zug_9r" },
   /* KURZSCHEIBENEGGE — Arbeitsgang 1 der Fruehjahrsfolge (Verfahren C, 02.08.2026).
    *  4 bis 6 cm, Oberflaeche oeffnen und abtrocknen lassen, KW 10. Sie ersetzt
    *  zusammen mit der Saatbettkombination die weggefallene angetriebene
@@ -2522,8 +2559,24 @@ type CapexOnlySpec = {
   owned?: number;
 };
 const CAPEX_ONLY_SPEC: CapexOnlySpec[] = [
-  // Reale JD-Angebotswerte 9R 590: Liste 700.336 € / Rabatt 35,03 % / Restwert 29,24 % v. Liste.
-  // BESTAND 3× — Prime Mover für die 12-m-Boden/Saat/Drille (590-PS-Klasse, ≠ 8RX 410).
+  /* DER 8R 410 BLEIBT — bestätigt am 04.08.2026, nachdem die 340-PS-Klasse zur
+   *  Prüfung stand. Die Frage war berechtigt: der Betrieb hat mit Verfahren C
+   *  die angetriebenen Werkzeuge gestrichen, und ohne Frontfräse sinkt der
+   *  Zugkraftbedarf. Sie ist trotzdem mit Nein beantwortet, und der Grund steht
+   *  im Gerät, nicht im Schlepper: der HORSCH Fortis 6.4 LT auf 30 cm Tiefe im
+   *  schweren Süd-Dolj-Boden ist der auslegende Arbeitsgang, und HORSCH gibt
+   *  für ihn bis 435 PS an. Ein 8R 340 läge unter der Herstellerangabe des
+   *  Gerätes, das er ziehen soll — dann fährt man langsamer oder flacher, und
+   *  beides kostet mehr als die Schlepperdifferenz.
+   *
+   *  Die ID heisst weiter `zug_9r`, obwohl die Maschine ein 8R 410 ist. Das ist
+   *  Absicht: sie steht in gespeicherten Ständen, in Finanzierungsverträgen und
+   *  in jeder Rückmeldung. Eine ID ist ein Name, kein Datenblatt — wer sie der
+   *  Typbezeichnung nachführt, verliert die Historie.
+   *
+   *  Reale JD-Angebotswerte (23.07.2026): Liste 523.813 € / Rabatt 35,03 % /
+   *  Restwert 29,24 % v. Liste. Vorgänger im Modell war der 9R 590 zu 700.336 € —
+   *  für 300 ha Startfläche überdimensioniert (Entscheidung 31.07.2026). */
   { id: "zug_9r",   label: "Zug JD 8R 410 (Boden/Saat)", priceKey: "mprice.zug_9r", cat: "selbstf", nutzung: 10, restw: 0.25, fleet: 3,
     discountPct: 0.3503, residualPctList: 0.2924, serviceRateKey: "tco.zug_8rx.service_h", serviceHoursLike: "pflug", owned: 0 },
   // Reale JD-Angebotswerte: Liste 686.447 € / Rabatt 36,05 % / Restwert 30,06 % v. Liste / Wartung 2,91 €/h.
@@ -2593,7 +2646,7 @@ const MACHINE_META: Record<string, { category: string; manufacturer: string; pro
  *  Alle Werte editierbar in der Maschinen-Werkbank. Selbstfahrer-Ernter: „Breite" = eff. Aufnahme-/
  *  Schneidbreite, Eff niedriger (Durchsatzgrenze). Feldtage = bearbeitbare Tage im kritischen Fenster. */
 const MACHINE_KIN: Record<string, { w: number; eff: number; feldTage: number }> = {
-  pflug: { w: 6.2, eff: 0.72, feldTage: 24 }, saatbett: { w: 12, eff: 0.80, feldTage: 30 },
+  pflug: { w: 6.2, eff: 0.72, feldTage: 24 }, saatbett: { w: 12.5, eff: 0.80, feldTage: 30 },
   drille: { w: 9, eff: 0.75, feldTage: 30 }, einzelkorn: { w: 12, eff: 0.70, feldTage: 23 },
   gem_saat: { w: 5.4, eff: 0.65, feldTage: 20 }, knobl_lege: { w: 1.8, eff: 0.60, feldTage: 25 },
   streuer: { w: 36, eff: 0.72, feldTage: 41 }, spritze14: { w: 36, eff: 0.75, feldTage: 0 },
@@ -2660,6 +2713,27 @@ const FIELD_MACHINES: MachineType[] = SPEC.map((s) => ({
  * editierbar —, bewegt den CAPEX und die Bilanz-AfA, aber nicht diese Sätze.
  * Beim Mähdrescher lässt sich das nachrechnen: sein Preis wurde auf das reale
  * JD-Angebot (858.778 €) gehoben, sein AfA-Satz blieb auf dem Stand von 400.000 €.
+ *
+ * ENTSCHIEDEN AM 04.08.2026. Die Frage war nicht rhetorisch: rechnet man aus
+ * jedem alten Satz zurück, welche Jahresstundenzahl ihn erzeugt hätte, liegen
+ * sechs der sieben UNTER der hinterlegten `refHoursPerYear` — beim Kipper 200
+ * statt 600, beim Grubber 300 statt 600. Zwei Lesarten waren möglich:
+ *
+ *   (a) die Sätze sind veraltet, die Jahresstunden stammen aus der aktuellen
+ *       Flottenbemessung → die Formel gewinnt, die Sätze fallen;
+ *   (b) hinter Kipper oder Grubber steckt eine KTBL-Quelle mit EIGENEN
+ *       Referenzstunden → dann gehörte `refHoursPerYear` korrigiert, nicht der
+ *       Satz.
+ *
+ * NEOTERRA hat (a) entschieden: die niedrigeren, formelgebundenen Sätze gelten,
+ * `refHoursPerYear` bleibt, wie die Flottenbemessung es hergibt. Damit hängt
+ * ab jetzt JEDER Satz am Preis — es gibt keine handgesetzte Ausnahme mehr, und
+ * genau das prüft `maschinen_makeorbuy.test.ts`.
+ *
+ * Was das kostet, ist bewusst KEINE Zahl in diesem Kommentar: die Umstellung
+ * war so gebaut, dass sie den Base Case nicht bewegt — sie ändert die Sätze,
+ * nicht das Ergebnis, weil dieselben Stunden mit denselben Maschinen gefahren
+ * werden. Sie wirkt erst, wenn ein Preis sich ändert. Dann aber automatisch.
  *
  * Bezugsgröße ist der LISTENPREIS, nicht der Netto-Einkauf. Das ist Absicht und
  * unterscheidet zwei Fragen, die im Modell ohnehin getrennt laufen:
@@ -3632,13 +3706,28 @@ const CAPEX_PLAN_SEED: CapexPlanItem[] = [
   //  Referenz: bei VIA Agro steht ein Lager mit 80.000 t. Als Größenordnung für
   //  Baukosten je Tonne ist das der belastbarste Vergleich in der Region — ob
   //  Mitnutzung eine Alternative zum Eigenbau ist, ist offen und nicht bewertet.
-  //  BAUABSCHNITTE (`jahr`): der Lagerbau folgt dem Kartoffelhochlauf, er geht ihm
-  //  nicht voraus. Ohne Staffelung fiel das gesamte Programm — rund 27 Mio EUR —
-  //  im Jahr 2028 an, in dem der Betrieb 670 ha bewirtschaftet. Die Kasse stand
-  //  danach sieben Jahre auf null und der Revolver war durchgezogen.
-  //  Die hier gesetzten Abschnitte sind ein PLATZHALTER fuer die echte
-  //  Projektplanung: Huelle und Schuettlager 2029, Curing 2031, Kuehllager 2032,
-  //  Packhaus 2033/34. Sobald der Bauzeitenplan steht, gehoert er hierher.
+  //  BAUABSCHNITTE (`jahr`) — ENTSCHIEDEN 04.08.2026, vorher Platzhalter.
+  //
+  //  Der Lagerbau folgt dem Kartoffelhochlauf, er geht ihm nicht voraus. Ohne
+  //  Staffelung fiel das gesamte Programm — rund 27 Mio EUR — im Jahr 2028 an,
+  //  in dem der Betrieb 670 ha bewirtschaftet; die Kasse stand danach sieben
+  //  Jahre auf null und der Revolver war durchgezogen.
+  //
+  //    2029  Gebaeudehuelle + Schuettlager    (erste 20.000 t Pommes)
+  //    2031  Zwiebel-Trocknung / Curing        (Gemueseschiene laeuft an)
+  //    2032  Kuehl-/CA-Lager Kartoffel         (Chipspartie, tiefe Temperatur)
+  //    2033  Packhaus: Linie, Grading, Waesche (erste Verpackung in Eigenregie)
+  //    2034  Palettierung + Linie Zwiebel/Moehre
+  //
+  //  DIE STAFFELUNG IST EINE ENTSCHEIDUNG, KEIN BAUZEITENPLAN. Sie bemisst sich
+  //  am Mengenhochlauf, nicht an Genehmigung, Ausschreibung und Bauzeit. Wenn
+  //  der echte Plan kommt, ersetzt er diese Jahre — und mit ihnen bewegt sich
+  //  das CAPEX-Phasing und damit der Revolverbedarf. Die Werte sind seit dem
+  //  04.08.2026 in der Oberflaeche editierbar (Lager & Packhaus, Kostenstelle).
+  //
+  //  REVISIONSAUSLOESER: eine Verschiebung des Kartoffelhochlaufs um mehr als
+  //  ein Jahr, ein Baugenehmigungsverfahren ueber 12 Monate, oder ein AFIR-Aufruf
+  //  mit Fristbindung (der Zuschuss der Huelle haengt daran, s. o.).
   //
   //  Diese Zahlen sind PROJEKTPLANUNG und laufen bewusst getrennt von der Automatik:
   //  ein Lager wird gebaut, wie es gebaut wird, nicht wie eine Formel es ausrechnet.

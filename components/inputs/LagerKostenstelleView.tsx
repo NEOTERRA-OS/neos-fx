@@ -292,15 +292,12 @@ export function LagerKostenstelleView() {
           NEU AM 04.08.2026. Neun Positionen — Schüttlager, Kühl-/CA-Lager,
           Curing, Gebäudehülle und fünf Packhauslinien, zusammen rund 27 Mio € —
           standen im Modell, trieben die Abschreibung dieser Kostenstelle und
-          waren von keiner Ansicht aus änderbar. Die Bauabschnitte (`jahr`) sind
-          ausdrücklich ein Platzhalter für die echte Projektplanung; wer sie nicht
-          setzen kann, sieht das ganze Programm in einem Jahr anfallen und den
-          Revolver durchgezogen. Deshalb gehören sie HIERHIN: an die Rechnung,
-          deren Abschreibung sie sind. */}
+          waren von keiner Ansicht aus änderbar. Sie gehören HIERHIN: an die
+          Rechnung, deren Abschreibung sie sind. */}
       <div className="px-1 pt-2">
         <h3 className="text-[13px] font-semibold">{t("Investition der Kostenstelle")}</h3>
         <p className="caption mt-0.5 mb-2 text-[10.5px] text-nx-text-muted">
-          {t("Bauabschnitte sind Platzhalter, bis der Bauzeitenplan steht. FK-Quote, Zins und Laufzeit stehen in der Finanzierung.")}
+          {t("Bauabschnitte entschieden am 04.08.2026 und am Mengenhochlauf bemessen: Hülle und Schüttlager 2029, Curing 2031, Kühllager 2032, Packhaus 2033/34. Das ist eine Reihenfolge, kein Bauzeitenplan — Genehmigung, Ausschreibung und Bauzeit können sie verschieben, und mit ihnen den Revolverbedarf. FK-Quote, Zins und Laufzeit stehen in der Finanzierung.")}
         </p>
       </div>
       <CapexPositionen blocks={["lager", "packhaus"]} />
