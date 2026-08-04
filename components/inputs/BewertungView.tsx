@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
-import { buildModelState, SKALIERUNG_TOTAL_HA, START_YEAR } from "../../store/model";
+import {buildModelState, SKALIERUNG_TOTAL_HA} from "../../store/model";
 import { computeModel } from "../../core/engine";
 import { aggregateComputed } from "../../core/aggregate";
 import { npv, irr } from "../../design/finance";

@@ -25,6 +25,15 @@ function selCls(w?: number): React.CSSProperties {
   return { height: 30, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-text)", width: w };
 }
 
+/* SZENARIO-ZIEL. Bis 04.08.2026 schrieben die Felder dieser Ansicht IMMER nach
+ *  `baseScenarioId`, egal welches Szenario oben in der Leiste stand. Das ist
+ *  stiller Datenverlust: `wc.dso` traegt Base 14, Best 7, Worst 47. Wer auf
+ *  "Best" schaltet, 10 eintippt und Enter drueckt, aendert BASE — und das Feld
+ *  springt vor seinen Augen auf 7 zurueck, weil es weiter Best liest. Dieselbe
+ *  Zahl im Annahmen-Register getippt wirkt korrekt.
+ *
+ *  Geschrieben wird jetzt in das AKTIVE Szenario, wie es der gemeinsame
+ *  Feld-Baustein (`components/inputs/Feld.tsx`) seit jeher tut. */
 export function FinanzierungView() {
   const store = useModelStore();
   const { domain, patch } = store;
@@ -312,15 +321,16 @@ export function FinanzierungView() {
       <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
         <div className="px-4 py-2.5 border-b" style={{ borderColor: "var(--nx-border)" }}><h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Working Capital (Netto-Umlaufvermögen)")}</h3></div>
         <div className="flex flex-wrap gap-x-8 gap-y-3 px-4 py-3">
+          {/* siehe Hinweis oben zum Szenario-Ziel */}
           <Field label={t("DSO — Forderungslaufzeit (Tage)")}>
             <NumberInput value={readAssumption(domain, domain.workingCapital.dsoAssumptionKey, scenarioId) ?? 0} width={72} unit="days"
-              onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.dsoAssumptionKey]; if (b) b.scenarioProfiles[d.baseScenarioId] = { kind: "constant", value: n }; })} /></Field>
+              onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.dsoAssumptionKey]; if (b) b.scenarioProfiles[scenarioId] = { kind: "constant", value: n }; })} /></Field>
           <Field label={t("DPO — Verbindlichkeitslaufzeit (Tage)")}>
             <NumberInput value={readAssumption(domain, domain.workingCapital.dpoAssumptionKey, scenarioId) ?? 0} width={72} unit="days"
-              onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.dpoAssumptionKey]; if (b) b.scenarioProfiles[d.baseScenarioId] = { kind: "constant", value: n }; })} /></Field>
+              onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.dpoAssumptionKey]; if (b) b.scenarioProfiles[scenarioId] = { kind: "constant", value: n }; })} /></Field>
           <Field label={t("Vorrats-Reichweite (Tage)")}>
             <NumberInput value={readAssumption(domain, domain.workingCapital.inventoryDaysAssumptionKey, scenarioId) ?? 0} width={72} unit="days"
-              onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.inventoryDaysAssumptionKey]; if (b) b.scenarioProfiles[d.baseScenarioId] = { kind: "constant", value: n }; })} /></Field>
+              onCommit={(n) => patch((d) => { const b = d.assumptions[d.workingCapital.inventoryDaysAssumptionKey]; if (b) b.scenarioProfiles[scenarioId] = { kind: "constant", value: n }; })} /></Field>
         </div>
         <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border-divider)" }}>
           {t("DSO/DPO und Vorrats-Reichweite treiben Forderungen, Verbindlichkeiten und Vorräte in der Bilanz; die Δ-Veränderung fließt in den operativen Cashflow.")}
@@ -331,9 +341,22 @@ export function FinanzierungView() {
   );
 }
 
-/** Detailplan-Positionen (Investitionen-Editor) — VERZAHNT: jede aktive Position fließt mit
- *  Anschaffungsjahr, FK-Quote, Zins & Laufzeit als eigener Investitionskredit (Annuität) in die
- *  3-Statement-Engine (auch spätere Jahre, inkl. CAPEX-Inflationsindex). Hier editierbar. */
+/**
+ * FINANZIERUNG JE CAPEX-POSITION — die MITTELHERKUNFT, nicht die Investition.
+ *
+ * Diese Tabelle trug bis 04.08.2026 auch das Anschaffungsjahr als Eingabe. Es
+ * steht ein zweites Mal im Investitionsplan („Bau & Infrastruktur"), dort als
+ * Auswahlliste, hier als Zahlenfeld — zwei Bedienelemente auf demselben Feld,
+ * ohne dass eine der beiden Seiten das erwähnte. Wer beide offen hatte, sah
+ * zwei Wahrheiten; wer eine änderte, wusste nicht, ob die andere folgt.
+ *
+ * Die Grenze verläuft jetzt entlang der FRAGE, nicht entlang der Ansicht:
+ *   Investitionsplan  was, wie viel, WANN, AfA, Zuschuss
+ *   hier              FK-Quote, Zins, Laufzeit
+ * Jahr und Netto-CAPEX stehen hier deshalb als Anzeige — man braucht sie, um
+ * die Finanzierung zu beurteilen, aber ändern tut man sie dort, wo die
+ * Investitionsentscheidung fällt.
+ */
 function PlanFinanzierung({ domain, patch }: { domain: any; patch: (fn: (d: any) => void) => void }) {
   const active = domain.capexPlanActive ?? {};
   const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -371,9 +394,11 @@ function PlanFinanzierung({ domain, patch }: { domain: any; patch: (fn: (d: any)
                 <tr key={it.id} style={{ borderTop: "1px solid var(--nx-border-divider)" }}>
                   <td className="px-2 py-1.5">{it.bezeichnung}</td>
                   <td className="px-2 py-1.5 text-[11px] text-nx-text-muted">{t(BLOCK_LABEL[it.block] ?? it.block)}</td>
-                  <td className="num px-2 py-1.5 text-right">
-                    <NumberInput value={START_YEAR + (it.jahr || 0)} width={70}
-                      onCommit={(n) => upd(it.id, (x) => { x.jahr = Math.max(0, Math.round(n - START_YEAR)); })} />
+                  {/* ANZEIGE, keine Eingabe — das Jahr gehört zur Investitionsentscheidung.
+                      Gepflegt unter „Bau & Infrastruktur (Investitionsplan)". */}
+                  <td className="num px-2 py-1.5 text-right text-nx-text-muted"
+                    title={t("Anschaffungsjahr — änderbar im Investitionsplan (Bau & Infrastruktur)")}>
+                    {START_YEAR + (it.jahr || 0)}
                   </td>
                   <td className="num px-2 py-1.5 text-right">{fmtMoney(n0)} €</td>
                   <td className="num px-2 py-1.5 text-right">
@@ -398,7 +423,7 @@ function PlanFinanzierung({ domain, patch }: { domain: any; patch: (fn: (d: any)
         </table>
       </div>
       <div className="px-4 py-2 text-[11px] text-nx-text-muted">
-        {t("Jede Zeile wird in ihrem Anschaffungsjahr aktiviert (CAPEX-Inflationsindex), über die Nutzungsdauer abgeschrieben und mit ihrer FK-Quote als eigener Investitionskredit (Annuität, Zins & Laufzeit wie hier) finanziert — Änderungen wirken sofort auf GuV, Bilanz, Cashflow und Liquidität. Positionen pflegen: Investitionen (Neuanschaffungen).")}
+        {t("Jede Zeile wird in ihrem Anschaffungsjahr aktiviert (CAPEX-Inflationsindex), über die Nutzungsdauer abgeschrieben und mit ihrer FK-Quote als eigener Investitionskredit (Annuität, Zins & Laufzeit wie hier) finanziert — Änderungen wirken sofort auf GuV, Bilanz, Cashflow und Liquidität. Menge, Preis, Anschaffungsjahr, AfA und Zuschuss stehen im Investitionsplan („Bau & Infrastruktur\u201c) bzw. bei der Kostenstelle Lager & Packhaus.")}
       </div>
     </section>
   );

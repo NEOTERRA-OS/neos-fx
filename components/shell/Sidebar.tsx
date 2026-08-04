@@ -2,93 +2,43 @@
 import React from "react";
 import { NeoterraLogo } from "./NeoterraLogo";
 import { t } from "../../lib/i18n";
+import { IA, type ViewId } from "./ia";
+
+export type { ViewId };
 import {
-  LayoutDashboard, Sprout, Route, BookOpen, ClipboardList, Tractor, Gauge, CalendarRange, RefreshCw,
-  TrendingUp, Users, Briefcase, Clock, Landmark, BadgeEuro, Building2, Workflow, ScrollText,
-  SlidersHorizontal, LineChart, Scale, Activity, Wallet, Percent, PieChart, GitCompare, Calculator,
-  CircleDollarSign, Save, Circle, Coins, ArrowUpFromDot, Network, FlaskConical, ClipboardCheck, MessageSquare, UserCog, Handshake, Warehouse, type LucideIcon,
+  LayoutDashboard, Sprout, BookOpen, ClipboardList, Tractor, CalendarRange,
+  Users, Briefcase, Landmark, BadgeEuro, Building2, ScrollText,
+  SlidersHorizontal, LineChart, Scale, Activity, Wallet, Percent, GitCompare, Calculator,
+  CircleDollarSign, Save, Coins, FlaskConical, ClipboardCheck, MessageSquare, UserCog,
+  Warehouse, type LucideIcon,
 } from "lucide-react";
 
 /** NEOS Sidebar — pixelgenau nach NEOS Sidebar DS (extrahiert aus NEOS Snap/Index).
  *  Klassen aus design/neos-sidebar.css (.nsb / .nsb-brand / .nsb-grp / .nsb-item …).
  *  Chrome immer Marke (Light #2C3C2B / Dark #080C08), Aktiv-Kachel flaches Gelb. */
 
-export type ViewId =
-  | "dashboard" | "preise" | "anbauplan" | "maschinen" | "leistung"
-  | "annahmenSheet" | "personal" | "arbeitszeit" | "finanzierung" | "subventionen" | "holding" | "eroeffnung" | "kulturkalk" | "investitionen"
-  | "einsatz" | "bewertung" | "contribution" | "overhead" | "verwaltung"
-  | "mehrjahr" | "ersatz" | "liquiditaet" | "shareholder" | "pacht"
-  | "gesellschaften" | "lohnarbeit" | "capexScenarien" | "pnl" | "balance" | "cashflow" | "produktkatalog" | "annahmen" | "kommentare" | "team"
-  | "studio" | "abnahme" | "lagerkst" | "wiedervorlage" | "istabgleich";
+/* Die Menuestruktur liegt in `ia.ts` — als Daten, ohne React, damit ein Test
+ *  sie pruefen kann. Hier steht nur noch, wie sie aussieht. */
 
-type Item = { id: string; label: string; view?: ViewId };
-type Group = { title: string; items: Item[] };
-
-const IA: Group[] = [
-  { title: "Steuerung", items: [
-    { id: "dashboard", label: "Executive Dashboard", view: "dashboard" },
-  ]},
-  { title: "Annahmen & Kulturen", items: [
-    { id: "annahmenSheet", label: "Annahmen", view: "annahmenSheet" },
-    { id: "anbauplan", label: "Anbauplan · Flächen, Erträge, Sorten", view: "anbauplan" },
-    { id: "kulturkalk", label: "Maßnahmen & Kosten je Kultur", view: "kulturkalk" },
-    { id: "produktkatalog", label: "Produktkatalog (Dünger · PSM · Pflanzgut)", view: "produktkatalog" },
-    { id: "lagerkst", label: "Lager & Packhaus (Kostenstelle)", view: "lagerkst" },
-  ]},
-  /* BELEG & RUECKMELDUNG — die Ist-Seite des Modells. Sie steht bewusst als eigene
-     Gruppe und nicht unter "Verwaltung": zwei Drittel der Ertragsfaktoren sind
-     Annahmen, und die Frage, welche davon inzwischen gemessen sind, ist eine
-     Planungsfrage, keine Ablage. */
-  { title: "Beleg & Rückmeldung", items: [
-    { id: "wiedervorlage", label: "Wiedervorlage — was ist belegt?", view: "wiedervorlage" },
-    { id: "istabgleich", label: "Plan ↔ Ist (Rückmeldung aus dem Feld)", view: "istabgleich" },
-  ]},
-  { title: "Maschinen & Flotte", items: [
-    { id: "maschinen", label: "Maschinenpark", view: "maschinen" },
-    { id: "einsatz", label: "Einsatzplanung", view: "einsatz" },
-  ]},
-  { title: "Personal", items: [
-    { id: "personal", label: "Personalplanung", view: "personal" },
-    { id: "overhead", label: "Overhead / SG&A", view: "overhead" },
-  ]},
-  { title: "Financials", items: [
-    { id: "finanzierung", label: "Finanzierung", view: "finanzierung" },
-    { id: "subventionen", label: "Subventionen", view: "subventionen" },
-      { id: "holding", label: "Holding (Deutschland)", view: "holding" },
-    { id: "eroeffnung", label: "Eröffnungsbilanz", view: "eroeffnung" },
-    { id: "pacht", label: "Pacht", view: "pacht" },
-    { id: "pnl", label: "GuV", view: "pnl" },
-    { id: "balance", label: "Bilanz", view: "balance" },
-    { id: "cashflow", label: "Cashflow", view: "cashflow" },
-    { id: "liquiditaet", label: "Liquidität & USt/TVA", view: "liquiditaet" },
-  ]},
-  { title: "Analyse", items: [
-    { id: "studio", label: "Szenario-Studio", view: "studio" },
-    { id: "val", label: "Bewertung (DCF)", view: "bewertung" },
-    { id: "shareholder", label: "Equity & Ausschüttung", view: "shareholder" },
-  ]},
-  { title: "Verwaltung", items: [
-    { id: "kommentare", label: "Kommentare", view: "kommentare" },
-    { id: "team", label: "Team & Zugriff", view: "team" },
-    { id: "verwaltung", label: "Speichern & Versionen", view: "verwaltung" },
-  ]},
-];
-
-/** Sidebar-Icons — echte Lucide-Icons (konsistent, currentColor). */
-const ICON: Record<string, LucideIcon> = {
-  annahmenSheet: SlidersHorizontal, dashboard: LayoutDashboard, anbauplan: Sprout, kulturkalk: ClipboardList, produktkatalog: FlaskConical, hebel: ArrowUpFromDot, abnahme: Handshake, lagerkst: Warehouse,
-  maschinen: Tractor, investitionen: Coins, leistung: Gauge, einsatz: CalendarRange,
-  capexScenarien: GitCompare,
-  ersatz: RefreshCw, mehrjahr: TrendingUp, personal: Users, overhead: Briefcase, arbeitszeit: Clock,
-  lohnarbeit: Handshake, finanzierung: Landmark, subventionen: BadgeEuro, gesellschaften: Network, holding: Building2, eroeffnung: BookOpen,
-  pacht: ScrollText, preise: SlidersHorizontal, pnl: LineChart, balance: Scale, cashflow: Activity,
-  liquiditaet: Wallet, contribution: PieChart, studio: SlidersHorizontal, val: Calculator,
-  wiedervorlage: ClipboardCheck, istabgleich: GitCompare,
-  shareholder: CircleDollarSign, verwaltung: Save, annahmen: ClipboardCheck, kommentare: MessageSquare, team: UserCog,
+/** Sidebar-Icons. `Record<ViewId, …>` und nicht `Record<string, …>`: eine neue
+ *  Ansicht ohne Icon ist damit ein Compilerfehler statt eines grauen Kreises. */
+const ICON: Record<ViewId, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  annahmenSheet: SlidersHorizontal, wiedervorlage: ClipboardCheck, anbauplan: Sprout,
+  kulturkalk: ClipboardList, produktkatalog: FlaskConical,
+  maschinen: Tractor, maschinenBestand: Coins, bauInvest: Building2, einsatz: CalendarRange,
+  personal: Users, overhead: Briefcase,
+  lagerkst: Warehouse,
+  finanzierung: Landmark, subventionen: BadgeEuro, holding: Building2, eroeffnung: BookOpen,
+  pacht: ScrollText, vat: Percent, pnl: LineChart, balance: Scale, cashflow: Activity,
+  liquiditaet: Wallet,
+  istabgleich: GitCompare,
+  studio: SlidersHorizontal, bewertung: Calculator, shareholder: CircleDollarSign,
+  kommentare: MessageSquare, team: UserCog, verwaltung: Save,
 };
 
-const Ic = ({ id }: { id: string }) => {
-  const Comp = ICON[id] ?? Circle;
+const Ic = ({ view }: { view: ViewId }) => {
+  const Comp = ICON[view];
   return <Comp size={18} strokeWidth={2} aria-hidden />;
 };
 
@@ -110,14 +60,20 @@ export function Sidebar({
         <React.Fragment key={g.title}>
           <div className="nsb-grp">{t(g.title)}</div>
           {g.items.map((it) => (
-            <button
-              key={it.id}
-              className={"nsb-item" + (it.view && it.view === active ? " is-active" : "")}
-              onClick={() => it.view && onSelect(it.view)}
-            >
-              <span className="nsb-ic"><Ic id={it.id} /></span>
-              <span>{t(it.label)}</span>
-            </button>
+            <React.Fragment key={it.id}>
+              {it.trenner && (
+                <div className="nsb-grp" style={{ opacity: 0.62, marginTop: 10 }}>{t(it.trenner)}</div>
+              )}
+              <button
+                className={"nsb-item" + (it.view === active ? " is-active" : "")}
+                onClick={() => onSelect(it.view)}
+                title={it.ausgabe ? t("Ausgabe — hier wird nichts eingegeben") : undefined}
+                style={it.ausgabe && it.view !== active ? { opacity: 0.72 } : undefined}
+              >
+                <span className="nsb-ic"><Ic view={it.view} /></span>
+                <span>{t(it.label)}</span>
+              </button>
+            </React.Fragment>
           ))}
         </React.Fragment>
       ))}

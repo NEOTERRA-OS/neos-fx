@@ -5,14 +5,14 @@ import { computeModel } from "../../core/engine";
 import { aggregateComputed } from "../../core/aggregate";
 import {
   deriveMaschinenpark, setMachineOutsourced, setMachineRented, buildModelState, START_YEAR,
-  type MaschinenPfad, type CapexPlanItem, type Domain,
+  type MaschinenPfad, type Domain,
 } from "../../store/model";
 import { machineIdOfCapex } from "../../store/capexId";
-import { NumberInput, TextInput } from "./NumberInput";
+import { NumberInput } from "./NumberInput";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { cropColor } from "./cropCalc";
 import { t } from "../../lib/i18n";
-import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
+import {ChevronDown, ChevronRight} from "lucide-react";
 
 /** MASCHINENPARK — ein Screen für den ganzen Weg.
  *
@@ -428,7 +428,12 @@ export function MaschinenparkView() {
       </section>
 
       <BeschaffungsVergleich park={park} />
-      <WeitereInvestitionen />
+      {/* Verweis statt zweiter Tabelle: Wetterstation, RTK-Basis, Sensorik/FMS
+          und alles ohne Flaechenleistung stehen im Investitionsplan. */}
+      <div className="rounded-tile border px-4 py-3 text-[11.5px] text-nx-text-muted"
+        style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
+        {t("Anschaffungen OHNE Flächenleistung — Wetterstation, RTK-Basis, Vermessungsfahrzeug, Werkstattausrüstung, Sensorik/FMS — stehen unter „Bau & Infrastruktur (Investitionsplan)\u201c. Diese Tabelle hier leitet ausschließlich den Maschinenbedarf aus den Arbeitsgängen ab; eine Maschine, die in beiden stünde, wäre zweimal im CAPEX.")}
+      </div>
     </div>
   );
 }
@@ -597,127 +602,14 @@ function BeschaffungsVergleich({ park }: { park: MaschinenPfad[] }) {
   );
 }
 
-/** WEITERE ANSCHAFFUNGEN — alles, was keine Feldmaschine mit Flächenleistung ist.
- *
- *  Die Tabelle oben leitet sich aus den Arbeitsgängen ab: eine Klasse taucht nur auf, wenn
- *  eine Kultur sie fährt. Eine Wetterstation fährt nichts, ein Polaris Ranger mit
- *  RTK-Vermessung und Bodenprobennahme auch nicht — beide haben trotzdem CAPEX, AfA und
- *  Finanzierung. Sie gehören deshalb als freie Positionen daneben, nicht in die Bedarfs-
- *  ableitung hinein.
- *
- *  Die Zeilen laufen über domain.capexPlan und zählen nur, wenn ihr Block scharfgeschaltet
- *  ist (capexPlanActive). Das ist die Hybrid-Logik des Modells: entweder der pauschale
- *  Auto-Block oder die Detailzeilen — nie beides, sonst wird doppelt gezählt.
- */
-function WeitereInvestitionen() {
-  const { domain, patch } = useModelStore();
-  const readOnly = useModelStore((s) => s.readOnly);
-  const years = Math.max(1, domain.growth?.years ?? 1);
-  const zeilen = (domain.capexPlan ?? []).filter((it) => it.block === "maschinen");
-  const aktiv = domain.capexPlanActive?.maschinen ?? false;
-
-  const upd = (id: string, fn: (it: CapexPlanItem) => void) => patch((d) => {
-    const it = (d.capexPlan ?? []).find((x) => x.id === id); if (it) fn(it);
-  });
-  const add = () => patch((d) => {
-    d.capexPlan = d.capexPlan ?? [];
-    d.capexPlan.push({
-      id: "cx-" + Math.max(0, ...d.capexPlan.map((x) => Number(/(\d+)$/.exec(x.id)?.[1] ?? 0))) + 1,
-      block: "maschinen", bezeichnung: "Neue Anschaffung", anlagenklasse: "technik",
-      driver: "perStueck", menge: 1, einheit: "Stk", eurProEinheitCent: 0,
-      afaYears: 8, restwertPct: 0.1, jahr: 0, fkQuote: 0.5, zins: 0.06, laufzeitJahre: 7,
-      subventionPct: 0, bestand: false, kategorie: "maschinen",
-    });
-  });
-  const del = (id: string) => patch((d) => { d.capexPlan = (d.capexPlan ?? []).filter((x) => x.id !== id); });
-
-  const netOf = (it: CapexPlanItem) =>
-    it.bestand ? 0 : Math.round(it.menge * it.eurProEinheitCent * (1 - Math.max(0, Math.min(1, it.subventionPct))));
-  const summe = zeilen.reduce((s, it) => s + netOf(it), 0);
-  const th = "px-2 py-2 caption text-[10px] text-nx-text-muted";
-
-  return (
-    <section className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-surface)" }}>
-      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2.5" style={{ borderColor: "var(--nx-border)" }}>
-        <h3 className="text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{t("Weitere Anschaffungen")}</h3>
-        <span className="text-[11px] text-nx-text-muted">
-          {t("Alles ohne Flächenleistung — Wetterstation, RTK-Basis, Vermessungsfahrzeug, Werkstatt, IoT. Freie Positionen mit eigenem Anschaffungsjahr, AfA und Finanzierung.")}
-        </span>
-        <label className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold"
-          style={{ color: aktiv ? "var(--nx-green)" : "var(--nx-text-muted)" }}
-          title={t("Nur scharfgeschaltete Zeilen fließen in CAPEX, Bilanz und Finanzierung. Ausgeschaltet sind sie reine Planung.")}>
-          <input type="checkbox" checked={aktiv} disabled={readOnly}
-            onChange={(e) => patch((d) => { d.capexPlanActive = { ...(d.capexPlanActive ?? {}), maschinen: e.target.checked }; })} />
-          {aktiv ? t("zählt im Modell") : t("nur Planung")}
-        </label>
-        <span className="num text-[13px] font-semibold" style={{ color: "var(--nx-brand-lift)" }}>{fmtMoney(summe)} €</span>
-      </div>
-      <div className="overflow-x-auto px-2 py-1">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr>
-              <th className={th + " text-left"} style={{ minWidth: 220 }}>{t("Position")}</th>
-              <th className={th + " text-right"}>{t("Menge")}</th>
-              <th className={th + " text-left"}>{t("Einheit")}</th>
-              <th className={th + " text-right"}>{t("€/Einheit")}</th>
-              <th className={th + " text-right"}>{t("Jahr")}</th>
-              <th className={th + " text-right"}>{t("AfA")}</th>
-              <th className={th + " text-right"}>{t("Zuschuss")}</th>
-              <th className={th + " text-right"}>{t("FK-Quote")}</th>
-              <th className={th + " text-center"}>{t("Bestand")}</th>
-              <th className={th + " text-right"}>{t("netto")}</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {zeilen.map((it) => (
-              <tr key={it.id} style={{ borderTop: "1px solid var(--nx-border-divider)", opacity: it.bestand ? 0.55 : 1 }}>
-                <td className="px-2 py-1.5"><TextInput value={it.bezeichnung} width={210} onCommit={(v) => upd(it.id, (x) => { x.bezeichnung = v; })} /></td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={it.menge} width={48} onCommit={(v) => upd(it.id, (x) => { x.menge = v; })} /></td>
-                <td className="px-1 py-1.5"><TextInput value={it.einheit} width={52} onCommit={(v) => upd(it.id, (x) => { x.einheit = v; })} /></td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={it.eurProEinheitCent} unit="money" width={86} onCommit={(v) => upd(it.id, (x) => { x.eurProEinheitCent = v; })} /></td>
-                <td className="px-1 py-1.5 text-right">
-                  <select value={it.jahr} disabled={readOnly}
-                    className="rounded-control border px-1 text-[11.5px]"
-                    style={{ height: 28, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-locate)" }}
-                    onChange={(e) => upd(it.id, (x) => { x.jahr = parseInt(e.target.value, 10); })}>
-                    {Array.from({ length: years }, (_, y) => <option key={y} value={y}>{START_YEAR + y}</option>)}
-                  </select>
-                </td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={it.afaYears} unit="years" suffix="" width={40} onCommit={(v) => upd(it.id, (x) => { x.afaYears = Math.max(1, Math.round(v)); })} /></td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={Math.round(it.subventionPct * 100)} width={40} unit="percent" onCommit={(v) => upd(it.id, (x) => { x.subventionPct = v / 100; })} /></td>
-                <td className="px-1 py-1.5 text-right"><NumberInput value={Math.round(it.fkQuote * 100)} width={40} unit="percent" onCommit={(v) => upd(it.id, (x) => { x.fkQuote = v / 100; })} /></td>
-                <td className="px-2 py-1.5 text-center">
-                  <input type="checkbox" checked={it.bestand} disabled={readOnly}
-                    title={t("bereits vorhanden — kein Neu-CAPEX")}
-                    onChange={(e) => upd(it.id, (x) => { x.bestand = e.target.checked; })} />
-                </td>
-                <td className="num px-2 py-1.5 text-right font-semibold">{fmtMoney(netOf(it))}</td>
-                <td className="px-1 py-1.5 text-right">
-                  {!readOnly && <button title={t("Position entfernen")} className="text-nx-text-muted hover:text-nx-error" onClick={() => del(it.id)}><X size={12} /></button>}
-                </td>
-              </tr>
-            ))}
-            {!zeilen.length && (
-              <tr><td colSpan={11} className="px-3 py-6 text-center text-[12px] text-nx-text-muted">{t("Noch keine freie Position angelegt.")}</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex items-center gap-3 border-t px-4 py-2" style={{ borderColor: "var(--nx-border)" }}>
-        {!readOnly && (
-          <button className="inline-flex items-center gap-1.5 rounded-control border px-3 text-[11.5px] font-semibold"
-            style={{ height: 28, borderColor: "var(--nx-brand-lift)", color: "var(--nx-brand-lift)" }} onClick={add}>
-            <Plus size={12} strokeWidth={2.5} aria-hidden />{t("Position hinzufügen")}
-          </button>
-        )}
-        <span className="text-[10.5px] text-nx-text-muted">
-          {t("Anschaffungsjahr steuert das Phasing, AfA die Abschreibung, FK-Quote die Finanzierung (Rest bar). „Bestand\" heißt: schon da, kein Neu-CAPEX.")}
-        </span>
-      </div>
-    </section>
-  );
-}
+/* „WEITERE ANSCHAFFUNGEN" STAND BIS 04.08.2026 HIER — eine Tabelle ueber
+ *  `domain.capexPlan`, hart auf `block === "maschinen"` gefiltert, also auf
+ *  EINE Zeile (das FMS/IoT-Paket). Dieselbe Struktur traegt aber 27 Positionen
+ *  in fuenf Bloecken; die uebrigen 26 hatten gar keinen Editor. Statt die
+ *  Tabelle hier zu belassen und daneben eine zweite zu bauen, steht sie jetzt
+ *  einmal unter „Bau & Infrastruktur (Investitionsplan)" und deckt alle
+ *  Bloecke ab. Der Maschinenpark bleibt, was er ist: die Ableitung des
+ *  Maschinenbedarfs aus den Arbeitsgaengen. */
 
 function Box({ titel, children }: { titel: string; children: React.ReactNode }) {
   return (

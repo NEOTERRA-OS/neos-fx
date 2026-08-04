@@ -7,7 +7,7 @@ import {
   machineCapPerUnitHours, machineDemandHoursOfYear, deriveCropAreasMY, START_YEAR,
 } from "../../store/model";
 import { personalMonatsgewichte, CROP_CAL } from "../../store/model";
-import { NumberInput } from "./NumberInput";
+
 import { Feld, FeldRoh } from "./Feld";
 import { JahrWahl } from "./JahrWahl";
 import { fmtMoney, fmtNumber } from "../../design/format";

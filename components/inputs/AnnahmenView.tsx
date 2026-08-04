@@ -12,6 +12,7 @@ import { einheit } from "../../design/units";
 import { NumberInput, TextInput } from "./NumberInput";
 import { CommentsPanel, threadOf } from "./CommentsPanel";
 import { t, getLang } from "../../lib/i18n";
+import { logMeta } from "../../store/audit";
 import { MessageSquare, RotateCcw, ChevronDown, ChevronRight, Search, Star, Flag, X, Plus } from "lucide-react";
 import { TextFeld, Auswahl, Aktion } from "../primitives/Control";
 
@@ -99,18 +100,8 @@ const zuKlaeren = (r: AssumptionRow) => {
 
 /* ------------------------------------------------------------------- Audit */
 
-/** Änderung mit Bearbeiter und Zeitstempel in der Historie der Annahme ablegen.
- *  Gilt jetzt auch für WERTE — vorher wurden nur Review-Angaben protokolliert, obwohl
- *  gerade die stille Zahlenänderung diejenige ist, die man später rekonstruieren will. */
-function logMeta(d: Domain, key: string, by: string, field: string, from: string, to: string) {
-  const a = d.assumptions[key]; if (!a) return;
-  a.meta = a.meta ?? {};
-  a.meta.updatedBy = by;
-  a.meta.updatedAt = new Date().toISOString();
-  a.meta.history = a.meta.history ?? [];
-  a.meta.history.push({ ts: a.meta.updatedAt, by, field, from: from || undefined, to: to || undefined });
-  if (a.meta.history.length > 25) a.meta.history = a.meta.history.slice(-25);
-}
+/* `logMeta` liegt seit 04.08.2026 in `store/audit.ts` und wird auch vom
+   Baustein `Feld` gerufen — sonst protokolliert nur DIESE Ansicht. */
 
 /* -------------------------------------------------------------------- Zellen */
 

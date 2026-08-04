@@ -3,7 +3,7 @@ import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
 import { buildModelState, START_YEAR } from "../../store/model";
 import { computeModel } from "../../core/engine";
-import { npv, irr } from "../../design/finance";
+import {irr} from "../../design/finance";
 import { fmtMoney, fmtNumber, fmtPct } from "../../design/format";
 import { t } from "../../lib/i18n";
 import { X } from "lucide-react";

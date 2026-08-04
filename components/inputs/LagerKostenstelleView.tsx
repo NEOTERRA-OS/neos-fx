@@ -6,6 +6,7 @@ import { computeStorage } from "../../core/engine";
 import { fmtMoney, fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";
 import { AlertTriangle } from "lucide-react";
+import { CapexPositionen } from "./CapexPositionen";
 
 /** Kostenstelle Lager & Packhaus — Mengengerüst, Belegung, Deckungsbeitrag.
  *
@@ -18,6 +19,15 @@ import { AlertTriangle } from "lucide-react";
 
 const MON = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 
+/* SZENARIO-ZIEL. Bis 04.08.2026 schrieben die Felder dieser Ansicht IMMER nach
+ *  `baseScenarioId`, egal welches Szenario oben in der Leiste stand. Das ist
+ *  stiller Datenverlust: `store.active` kann je Szenario verschieden stehen. Wer auf
+ *  "Best" schaltet, 10 eintippt und Enter drueckt, aendert BASE — und das Feld
+ *  springt vor seinen Augen auf 7 zurueck, weil es weiter Best liest. Dieselbe
+ *  Zahl im Annahmen-Register getippt wirkt korrekt.
+ *
+ *  Geschrieben wird jetzt in das AKTIVE Szenario, wie es der gemeinsame
+ *  Feld-Baustein (`components/inputs/Feld.tsx`) seit jeher tut. */
 export function LagerKostenstelleView() {
   const { domain, patch } = useModelStore();
   const sc = useModelStore((s) => s.view.scenarioId);
@@ -100,7 +110,7 @@ export function LagerKostenstelleView() {
               <input type="checkbox" checked={lagerAktiv}
                 onChange={(e) => patch((d) => {
                   const a = d.assumptions["store.active"]; if (!a) return;
-                  const prof = a.scenarioProfiles[d.baseScenarioId];
+                  const prof = a.scenarioProfiles[sc];
                   if (prof && prof.kind === "constant") prof.value = e.target.checked ? 1 : 0;
                 })} />
               {lagerAktiv ? t("Lagerbau aktiv") : t("Lagerbau ausgesetzt")}
@@ -116,7 +126,7 @@ export function LagerKostenstelleView() {
                     <input type="checkbox" checked={on}
                       onChange={(e) => patch((d) => {
                         const a2 = d.assumptions[key]; if (!a2) return;
-                        const prof = a2.scenarioProfiles[d.baseScenarioId];
+                        const prof = a2.scenarioProfiles[sc];
                         if (prof && prof.kind === "constant") prof.value = e.target.checked ? 1 : 0;
                       })} />
                     {t(lbl)}
@@ -277,6 +287,23 @@ export function LagerKostenstelleView() {
           {t("Nicht enthalten: die Kapitalbindung der Ware. Im Dienstleistungsmodell trägt sie der Abnehmer — das ist der eigentliche Vorteil dieser Struktur gegenüber dem Eigenlager. Die Lagerverluste stehen ungedeckelt; eine Schwundtoleranz im Verwahrvertrag würde sie begrenzen.")}
         </div>
       </div>
+
+      {/* --- Investition ------------------------------------------------------
+          NEU AM 04.08.2026. Neun Positionen — Schüttlager, Kühl-/CA-Lager,
+          Curing, Gebäudehülle und fünf Packhauslinien, zusammen rund 27 Mio € —
+          standen im Modell, trieben die Abschreibung dieser Kostenstelle und
+          waren von keiner Ansicht aus änderbar. Die Bauabschnitte (`jahr`) sind
+          ausdrücklich ein Platzhalter für die echte Projektplanung; wer sie nicht
+          setzen kann, sieht das ganze Programm in einem Jahr anfallen und den
+          Revolver durchgezogen. Deshalb gehören sie HIERHIN: an die Rechnung,
+          deren Abschreibung sie sind. */}
+      <div className="px-1 pt-2">
+        <h3 className="text-[13px] font-semibold">{t("Investition der Kostenstelle")}</h3>
+        <p className="caption mt-0.5 mb-2 text-[10.5px] text-nx-text-muted">
+          {t("Bauabschnitte sind Platzhalter, bis der Bauzeitenplan steht. FK-Quote, Zins und Laufzeit stehen in der Finanzierung.")}
+        </p>
+      </div>
+      <CapexPositionen blocks={["lager", "packhaus"]} />
     </div>
   );
 }

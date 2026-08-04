@@ -3,7 +3,13 @@ import React from "react";
 import { useModelStore, selectComputedMonthly } from "../../store/modelStore";
 import { fmtMoney } from "../../design/format";
 import { t } from "../../lib/i18n";
-import { VatView } from "./VatView";
+
+/* USt/TVA STAND BIS 04.08.2026 HIER MIT DRIN. Die Liquiditätsansicht ist eine
+ * reine Ausgabe — bis auf den eingebetteten USt-Editor ganz unten, der Sätze,
+ * Behandlung je Kultur und Erstattungs-Timing ändert. Wer eine Eingabe suchte,
+ * fand sie unter einer Überschrift, die „Liquiditätsplanung" hiess; wer die
+ * Ausgabe las, scrollte an Eingabefeldern vorbei. Jetzt ist die USt eine eigene
+ * Menüzeile („USt / TVA"), und diese Ansicht gibt nur noch aus. */
 
 /** Liquiditätsplanung — monatlich & fortlaufend über den gesamten Planungshorizont.
  *  Rollierende Kassen-/Linienplanung: Anfangskasse → operativer/investiver/USt-/Finanzierungs-
@@ -149,9 +155,6 @@ export function LiquiditaetView() {
       <div className="px-1 text-[11px] text-nx-text-muted">
         {t("Fortlaufend über ")}{n}{t(" Monate: Anfangskasse → operativer + investiver + USt- + Finanzierungs-Cashflow → Revolver gleicht Lücken bis zur Linie aus → Endkasse. „Verfügbare Liquidität\" = Endkasse + freie Kreditlinie; der Tiefpunkt zeigt den maximalen Finanzierungsbedarf (Saison-Swing, CAPEX-/Avans-/USt-Spitzen).")}
       </div>
-
-      {/* USt/TVA-Mechanik gehört zur Liquidität (reines Cash-Timing) — keine eigene Seite mehr. */}
-      <VatView />
     </div>
   );
 }

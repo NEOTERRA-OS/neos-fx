@@ -13,6 +13,7 @@ import { t } from "../../lib/i18n";
 import { Lock } from "lucide-react";
 import { MaschinenView } from "../inputs/MaschinenView";
 import { MaschinenparkView } from "../inputs/MaschinenparkView";
+import { BauInvestView } from "../inputs/BauInvestView";
 import { PersonalView } from "../inputs/PersonalView";
 import { FinanzierungView } from "../inputs/FinanzierungView";
 import { SubventionenView } from "../inputs/SubventionenView";
@@ -30,11 +31,53 @@ import { OverheadView } from "../inputs/OverheadView";
 import { EinsatzView } from "../inputs/EinsatzView";
 import { VerwaltungView } from "../inputs/VerwaltungView";
 import { LiquiditaetView } from "../inputs/LiquiditaetView";
+import { VatView } from "../inputs/VatView";
 import { ExecutiveDashboard } from "../dashboard/ExecutiveDashboard";
 import { CheckPanel } from "../statements/CheckPanel";
 import { useModelStore, selectComputed, selectComputedAnnual } from "../../store/modelStore";
 import { deriveMassnahmenChecks, type Domain } from "../../store/model";
 import { autoLoadLatest, autoSave, getMyMaxRole, localLoad, localSave } from "../../store/persistence";
+
+/* JEDE ViewId GENAU EINE ANSICHT.
+ *
+ * Bis 04.08.2026 stand hier eine Kette aus 34 Ternaeren. Sie fuehrte SECHS
+ * ViewIds auf dieselbe `MaschinenparkView` (maschinen, leistung, investitionen,
+ * capexScenarien, ersatz, lohnarbeit) und drei weitere auf `AnnahmenView` —
+ * derselbe Bildschirm unter neun Namen, das ist die Doppelung, die im Menue
+ * auffiel. Am Ende der Kette stand ein `else`, das JEDE unbekannte ViewId
+ * stillschweigend an die Abschluss-Tabelle gab.
+ *
+ * `Record<Exclude<...>>` ist der Grund, warum das nicht wiederkommt: eine neue
+ * ViewId ohne Ansicht ist ab jetzt ein Compilerfehler, keine leere Seite. */
+type EigeneView = Exclude<ViewId, "dashboard" | "pnl" | "balance" | "cashflow">;
+const ANSICHT: Record<EigeneView, () => React.ReactElement> = {
+  anbauplan: () => <AnbauplanView />,
+  kulturkalk: () => <KulturKalkulationView />,
+  produktkatalog: () => <ProduktkatalogView />,
+  annahmenSheet: () => <AnnahmenView />,
+  wiedervorlage: () => <WiedervorlageView />,
+  istabgleich: () => <IstAbgleichView />,
+  maschinen: () => <MaschinenparkView />,
+  maschinenBestand: () => <MaschinenView />,
+  bauInvest: () => <BauInvestView />,
+  einsatz: () => <EinsatzView />,
+  personal: () => <PersonalView />,
+  overhead: () => <OverheadView />,
+  lagerkst: () => <LagerKostenstelleView />,
+  finanzierung: () => <FinanzierungView />,
+  subventionen: () => <SubventionenView />,
+  holding: () => <HoldingView />,
+  eroeffnung: () => <EroeffnungsbilanzView />,
+  pacht: () => <PachtView />,
+  vat: () => <VatView />,
+  liquiditaet: () => <LiquiditaetView />,
+  studio: () => <ScenarioStudioView />,
+  bewertung: () => <BewertungView />,
+  shareholder: () => <ShareholderView />,
+  kommentare: () => <KommentareView />,
+  team: () => <TeamAdminView />,
+  verwaltung: () => <VerwaltungView />,
+};
 
 export function AppShell() {
   const [theme, setTheme] = React.useState<"light" | "dark">("dark"); // Default: Dark Mode
@@ -124,7 +167,7 @@ export function AppShell() {
   /* Breite Ansichten laufen ohne die Prüfliste rechts. Wiedervorlage und Plan↔Ist
      gehören dazu: sie SIND eine Prüfliste — daneben noch eine zweite zu stellen,
      würde nur die Frage aufwerfen, welche der beiden gilt. */
-  const BREITE_VIEWS: ViewId[] = ["annahmen", "annahmenSheet", "studio", "maschinen", "leistung", "investitionen", "capexScenarien", "ersatz", "lohnarbeit", "wiedervorlage", "istabgleich"];
+  const BREITE_VIEWS: ViewId[] = ["annahmenSheet", "studio", "maschinen", "maschinenBestand", "bauInvest", "lagerkst", "wiedervorlage", "istabgleich"];
   const breit = BREITE_VIEWS.includes(view);
 
   React.useEffect(() => {
@@ -149,41 +192,9 @@ export function AppShell() {
             <ExecutiveDashboard />
           ) : (
             <div className={breit ? "" : "grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]"}>
-              {view === "preise" || view === "gesellschaften" ? <AnnahmenView />
-                : view === "abnahme" ? <AnbauplanView />
-                : view === "contribution" ? <ExecutiveDashboard />
-                : view === "anbauplan" ? <AnbauplanView />
-                : view === "kulturkalk" ? <KulturKalkulationView />
-                : view === "produktkatalog" ? <ProduktkatalogView />
-                : view === "annahmen" ? <AnnahmenView />
-                : view === "kommentare" ? <KommentareView />
-                : view === "team" ? <TeamAdminView />
-                : view === "capexScenarien" ? <MaschinenparkView />
-                : view === "maschinen" ? <MaschinenparkView />
-                : view === "investitionen" ? <MaschinenparkView />
-                : view === "leistung" ? <MaschinenparkView />
-                : view === "personal" ? <PersonalView />
-                : view === "overhead" ? <OverheadView />
-                : view === "finanzierung" ? <FinanzierungView />
-                : view === "subventionen" ? <SubventionenView />
-                : view === "mehrjahr" ? <AnbauplanView />
-                : view === "ersatz" ? <MaschinenparkView />
-                : view === "liquiditaet" ? <LiquiditaetView />
-                : view === "annahmenSheet" ? <AnnahmenView />
-                : view === "wiedervorlage" ? <WiedervorlageView />
-                : view === "istabgleich" ? <IstAbgleichView />
-                : view === "lohnarbeit" ? <MaschinenparkView />
-                : view === "holding" ? <HoldingView />
-                : view === "eroeffnung" ? <EroeffnungsbilanzView />
-                : view === "arbeitszeit" ? <PersonalView />
-                : view === "einsatz" ? <EinsatzView />
-                : view === "studio" ? <ScenarioStudioView />
-                : view === "lagerkst" ? <LagerKostenstelleView />
-                : view === "bewertung" ? <BewertungView />
-                : view === "shareholder" ? <ShareholderView />
-                : view === "pacht" ? <PachtView />
-                : view === "verwaltung" ? <VerwaltungView />
-                : <StatementView view={view} computed={computed} currency={currency} />}
+              {view === "pnl" || view === "balance" || view === "cashflow"
+                ? <StatementView view={view} computed={computed} currency={currency} />
+                : ANSICHT[view]()}
               {!breit && <CheckPanel checks={allChecks} />}
             </div>
           )}

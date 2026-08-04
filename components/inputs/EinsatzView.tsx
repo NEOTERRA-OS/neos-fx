@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { useModelStore, readAssumption, selectScopedDomain } from "../../store/modelStore";
+import {useModelStore, selectScopedDomain} from "../../store/modelStore";
 import { deriveEinsatzplan, CROP_NAME } from "../../store/model";
 import { fmtNumber } from "../../design/format";
 import { t } from "../../lib/i18n";

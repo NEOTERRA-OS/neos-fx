@@ -14,7 +14,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SEED, VALUE_CROP_IDS, deriveCropMassnahmen, exportMassnahmenplan, migrateDomain,
-  flaechenMemo, schlaegeOf, deriveWiedervorlage, deriveIstAbgleich, type Domain,
+  flaechenMemo, schlaegeOf, deriveWiedervorlage, deriveAssumptionRegister, deriveIstAbgleich, type Domain,
 } from "../../store/model";
 import { parseMeasureId, istAltId, BEZUG_JE_FACH, measureIdForLine } from "../../store/measureId";
 import { DUENGER_GABEN } from "../../store/duengerplan.generated";
@@ -258,9 +258,22 @@ describe("Flächenbezug · Feld und Schlag", () => {
 });
 
 describe("Ist-Daten", () => {
-  it("führt jede Annahme ohne Messung als Wiedervorlage", () => {
+  it("führt GENAU die Annahmen des Registers als Wiedervorlage — dieselbe Zeilenmenge", () => {
+    /* GEÄNDERT AM 04.08.2026, und die alte Fassung war das Problem. Sie prüfte
+     *  gegen `Object.keys(SEED.assumptions)`, also gegen die ROHE Domäne: 271
+     *  Schlüssel. Das Annahmen-Register filtert davon zwei Klassen weg (Annahmen
+     *  zu Kulturen, die der Betrieb nicht anbaut; und `pers.*.n`, das der
+     *  Composer ohnehin überschreibt) und zeigte 219. Die Wiedervorlage zeigte
+     *  271 — beide behaupteten, dieselbe Liste zu sein, mit verschiedenen
+     *  Fortschrittsbalken darüber. Der Test bestätigte die falsche der beiden.
+     *
+     *  Jetzt hängen beide am selben Filter `zeigbareAnnahme`, und geprüft wird
+     *  die EIGENSCHAFT, nicht die Zahl: identische Schlüsselmenge. Ein künftiger
+     *  Filter, der nur an einer der beiden Stellen greift, schlägt hier an. */
     const w = deriveWiedervorlage(SEED, SZ);
-    expect(w.length).toBe(Object.keys(SEED.assumptions).length);
+    const reg = deriveAssumptionRegister(SEED, SZ);
+    expect([...w.map((r) => r.key)].sort()).toEqual([...reg.map((r) => r.key)].sort());
+    expect(w.length).toBeLessThan(Object.keys(SEED.assumptions).length);  // es WIRD gefiltert
     expect(w.every((r) => r.istAnzahl === 0)).toBe(true);
     expect(w[0].handlung).toBe("belegen");   // Dringendstes zuerst
   });

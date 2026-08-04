@@ -1,9 +1,6 @@
 "use client";
 import React from "react";
-import {
-  type CatalogProduct, type ProductCategory, PRODUCT_CATEGORY_LABEL, PSM_TYPE_LABEL,
-  suggestProducts, categoriesForOp,
-} from "../../store/productCatalog";
+import {type CatalogProduct, PRODUCT_CATEGORY_LABEL, PSM_TYPE_LABEL, suggestProducts, categoriesForOp} from "../../store/productCatalog";
 import { t } from "../../lib/i18n";
 import { Check, X } from "lucide-react";
 

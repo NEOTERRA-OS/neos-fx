@@ -6,6 +6,7 @@ import { fmtEditable, parseDe } from "../../design/format";
 import { einheit, zurAnzeige, ausAnzeige } from "../../design/units";
 import type { Unit } from "../../core/types";
 import { t } from "../../lib/i18n";
+import { logMeta } from "../../store/audit";
 
 /* --------------------------------------------------------------------------
  * FELD — der eine Zahleneingabe-Baustein der App.
@@ -80,6 +81,7 @@ export function Feld({ akey, breite = 96, einheitZeigen = true }: {
   akey: string; breite?: number; einheitZeigen?: boolean;
 }) {
   const { domain, view, patch } = useModelStore();
+  const editor = useModelStore((s) => s.editor);
   const a = domain.assumptions[akey];
   const scenarioId = view.scenarioId;
   const roh = readAssumption(domain, akey, scenarioId);
@@ -97,7 +99,19 @@ export function Feld({ akey, breite = 96, einheitZeigen = true }: {
     if (s === anzeige) return;
     const num = parseDe(s);
     if (num === null) return;
-    patch((d) => { d.assumptions[akey].scenarioProfiles[scenarioId] = { kind: "constant", value: ausAnzeige(unit, num) }; });
+    patch((d) => {
+      d.assumptions[akey].scenarioProfiles[scenarioId] = { kind: "constant", value: ausAnzeige(unit, num) };
+      /* JEDE Wertänderung wird protokolliert, gleich aus welcher Ansicht.
+       *  Bis 04.08.2026 tat das nur das Annahmen-Register; dieselbe Zahl über
+       *  dasselbe Feld in der Personalplanung oder im Anbauplan geändert, ließ
+       *  keine Spur. Eine lückenhafte Historie ist schlimmer als keine — man
+       *  liest aus ihr „nicht geändert", wo „woanders geändert" gilt.
+       *  Festgehalten wird, was auf dem Bildschirm stand: Anzeigetext, nicht
+       *  Rohwert, und der Szenarioname, damit Basis und Best/Worst nicht
+       *  dieselbe Zeile teilen. */
+      const szName = d.scenarios.find((x) => x.id === scenarioId)?.name ?? scenarioId;
+      logMeta(d, akey, editor, `${t("Wert")} ${szName}`, anzeige, s.trim());
+    });
   };
 
   return (

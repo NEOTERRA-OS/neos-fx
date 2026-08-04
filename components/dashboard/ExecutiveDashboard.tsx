@@ -1,12 +1,10 @@
 "use client";
 import React from "react";
 import { useModelStore, selectComputedAnnual, selectComputedMonthly } from "../../store/modelStore";
-import { deriveContribution, effectiveGrowth, deriveCropAreasMY, deriveMassnahmenChecks, setCropPathHa, rampCropPath, VALUE_CROP_IDS, START_YEAR } from "../../store/model";
-import { useModelStore as useStore, readAssumption } from "../../store/modelStore";
+import { deriveContribution, deriveCropAreasMY, deriveMassnahmenChecks, VALUE_CROP_IDS, START_YEAR } from "../../store/model";
 import { cropName, cropColor, cropYield, cropLoss } from "../inputs/cropCalc";
-import { NumberInput } from "../inputs/NumberInput";
 import { CheckPanel } from "../statements/CheckPanel";
-import { fmtMoney, fmtNumber, fmtPct, fmtFactor } from "../../design/format";
+import { fmtMoney, fmtNumber } from "../../design/format";
 import type { ComputedModel } from "../../core/types";
 import { t } from "../../lib/i18n";
 

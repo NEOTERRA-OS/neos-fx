@@ -5,13 +5,11 @@ import type { Domain, CatalogEntry } from "../../store/model";
 import { fmtMoney, fmtNumber, fmtEditable, parseDe } from "../../design/format";
 import { Feld } from "./Feld";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
-import { deriveCropAreasMY, setCropPathHa, rampCropPath, deriveContribution, START_YEAR,
-  sortenAnteileOf, sortenVerteilung, schlaegeOf, sortenRegisterOf, sortenEintrag,
-  type CropPolicy } from "../../store/model";
+import {deriveCropAreasMY, setCropPathHa, rampCropPath, deriveContribution, START_YEAR, sortenAnteileOf, sortenVerteilung, schlaegeOf, sortenRegisterOf, sortenEintrag} from "../../store/model";
 import { t } from "../../lib/i18n";
 import { JahrWahl, JAHR_DEFAULT } from "./JahrWahl";
 import { Droplets, Sun, X, ChevronDown, ChevronRight, Sprout, Plus, TriangleAlert } from "lucide-react";
-import { TextFeld, Aktion } from "../primitives/Control";
+import {Aktion} from "../primitives/Control";
 
 /** Feldkosten €/ha einer Kultur = Σ opLine (Menge/ha × Stücksatz), aus dem KATALOG gezogen. */
 function fieldCostPerHaCent(domain: Domain, entry: CatalogEntry, scenarioId: string): number {
@@ -271,7 +269,6 @@ export function AnbauplanView() {
     </div>
   );
 }
-
 
 /**
  * SORTENANTEILE je Kultur.
@@ -533,7 +530,6 @@ function SortenKarte({
     </div>
   );
 }
-
 
 /** AGRONOMISCHER BLOCK einer Kultur — Ertrag, Verlust, Qualität, Preis und was daraus fällt.
  *

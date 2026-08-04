@@ -1148,30 +1148,49 @@ export const CROP_NAME: Record<CropId, string> = {
 };
 
 /**
- * Agronomie-Direktkosten €/ha je Kultur (Referenz A):
- * [Saatgut/Pflanzgut, Düngung, Pflanzenschutz, Beregnung(Wasser+Energie), Material/Lager, Handarbeit]
+ * MATERIAL/LAGER und HANDARBEIT in €/ha je Kultur — die letzten zwei Spalten
+ * einer Tabelle, die einmal sechs hatte.
+ *
+ * WAS AM 04.08.2026 WEGFIEL. `AGRO_COSTS` trug [Saatgut, Düngung, PSM,
+ * Beregnung, Material, Handarbeit]. Die ersten VIER Spalten wurden von keiner
+ * Zeile mehr gelesen — sie stammten aus der Pauschalkalkulation „Referenz A"
+ * und sind seither Stück für Stück durch echte Mengengerüste ersetzt worden:
+ *
+ *   Saatgut    → `saatLines()`, eine Zeile je Sorte, Menge × Pflanzgutpreis
+ *   Düngung    → `DUENGER_GABEN` aus dem Kompendium, eine Zeile je Gabe,
+ *                kg Ware × Produktpreis
+ *   PSM        → `PSM_PROGRAMM`, Spritzfolge je Kultur
+ *   Beregnung  → `BEWAESSERUNG_MM` × Wasser- und Energiepreis
+ *
+ * Die toten Spalten standen trotzdem noch da, wurden bei jeder Kalkulation
+ * mitgelesen und sahen aus wie eine zweite Meinung zu denselben Kosten. Sie
+ * waren aber keine: bei Pommes nannte die Spalte „Düngung" 614 €/ha, der
+ * produktscharfe Plan kommt auf 1.676 — eine Abweichung von über 1.000 €/ha,
+ * die niemandem auffallen konnte, weil die Zahl nirgends erschien. Wer sie
+ * beim Lesen des Codes doch fand, musste annehmen, das Modell rechne mit ihr.
+ *
+ * Eine Zahl, die niemand liest, ist keine Reserve — sie ist eine Falle für den
+ * nächsten Leser. Die zwei übrigen Spalten stehen hier, WEIL sie gelesen
+ * werden (OP-MAT und OP-HAND); für sie gibt es noch kein Mengengerüst.
  */
-const AGRO_COSTS: Record<CropId, [number, number, number, number, number, number]> = {
-  // Zwischenfrucht: Saatgut, eine N-Startgabe, Beregnung zum Auflauf. Kein PSM,
-  //  keine Handarbeit, kein Material — sie wird eingearbeitet, nicht geerntet.
-  zwischenfrucht:    [110,  75,   0, 140,   0,   0], // Σ 325
-
-  weizen:            [ 99, 288, 210, 300,   0,  60], // Σ 957
-  gerste_zw:         [ 95, 258, 180, 280,   0,  70], // Σ 883
-  soja_luzerne:      [180, 190, 130, 320,   0, 120], // Σ 940
-  winterraps:        [ 72, 235, 165, 110,   0,  30], // Σ 612 (DB ~1.270 bei 4,0 t × 470 €)
-  mais:              [250, 320, 130, 300,   0,  30], // Σ 1030 (DB ~1.820 bei 15 t × 190 €, bewässert)
-  tomate:            [900,1217,1100, 462,   0, 650], // Σ 4329
-  kartoffel_pommes:  [1003, 614, 650, 555, 600, 350], // Σ 3772
-  kartoffel_chips:   [1233, 652, 670, 555, 672, 380], // Σ 4162
-  zwiebel_moehre:    [600, 500, 650, 500,   0, 550], // Σ 2800
-  suesskartoffel:    [3600, 450, 350, 480, 250, 900], // Σ 6030 (Slips teuer, Handernte-Anteil)
-  knoblauch:         [2700, 420, 400, 240, 200, 900], // Σ 4860 (Pflanzknoblauch ~900 kg/ha)
-  knollensellerie:   [3000, 520, 500, 560, 150, 400], // Σ 5130 (Jungpflanzen ~60k/ha)
-  weizen_dry:        [ 80, 150, 110,   0,   0,  40], // Σ 380 rain-fed (weniger N/PSM, keine Beregnung)
-  gerste_dry:        [ 72, 130,  95,   0,   0,  35], // Σ 332
-  raps_dry:          [ 60, 150, 120,   0,   0,  25], // Σ 355
-  sonnenblume:       [100, 130, 120,   0,   0,  25], // Σ 375 rain-fed (Hybridsaat, niedriger N, ClearField+Sclerotinia)
+const NACHERNTE_COSTS: Record<CropId, { material: number; handarbeit: number }> = {
+  zwischenfrucht:    { material:   0, handarbeit:   0 },  // wird eingearbeitet, nicht geerntet
+  weizen:            { material:   0, handarbeit:  60 },
+  gerste_zw:         { material:   0, handarbeit:  70 },
+  soja_luzerne:      { material:   0, handarbeit: 120 },
+  winterraps:        { material:   0, handarbeit:  30 },
+  mais:              { material:   0, handarbeit:  30 },
+  tomate:            { material:   0, handarbeit: 650 },
+  kartoffel_pommes:  { material: 600, handarbeit: 350 },  // Kisten, Netze, Lagerzusatz
+  kartoffel_chips:   { material: 672, handarbeit: 380 },
+  zwiebel_moehre:    { material:   0, handarbeit: 550 },
+  suesskartoffel:    { material: 250, handarbeit: 900 },  // hoher Handernte-Anteil
+  knoblauch:         { material: 200, handarbeit: 900 },
+  knollensellerie:   { material: 150, handarbeit: 400 },
+  weizen_dry:        { material:   0, handarbeit:  40 },
+  gerste_dry:        { material:   0, handarbeit:  35 },
+  raps_dry:          { material:   0, handarbeit:  25 },
+  sonnenblume:       { material:   0, handarbeit:  25 },
 };
 
 /** Fixkosten je ha (Referenz A): Pacht (alle) + Overhead/Versich./Zins je Kultur. */
@@ -2225,7 +2244,6 @@ export const SORTENPLAN_VORSCHLAG: Record<string, SortenAnteil[]> = {
 
 function buildCropOps(cropId: CropId): OpSeed[] {
   const cal = CROP_CAL[cropId];
-  const c = AGRO_COSTS[cropId];
   const one = (label: string, ct: CostType, val: number): OpLineSeed[] => [L(label, ct, val, "price.per_euro")];
   const seed = SEED_PROGRAM[cropId];
   const mm = BEWAESSERUNG_MM[cropId];
@@ -2268,7 +2286,7 @@ function buildCropOps(cropId: CropId): OpSeed[] {
         mid: measureIdForLine(cropId, "OP-DUENG", `${g.cfgId} ${g.kurz} ${g.massnahme}`),
       });
     }
-    return bauOps(cropId, cal, c, seed, mm, duengLines);
+    return bauOps(cropId, cal, seed, mm, duengLines);
   }
   DUENGUNG_PROGRAM[cropId].forEach((g) => {
     const kN = g.fert ? "fert.n_fert" : "fert.n";
@@ -2283,7 +2301,7 @@ function buildCropOps(cropId: CropId): OpSeed[] {
     if (g.s) duengLines.push({ ...L(`${g.label} · S`, "fertilizer", g.s, "fert.s", "kg S/ha"), mid });
   });
   // PSM: je Überfahrt Mittelkosten €/ha (editierbar). Wirkstoffe im Label (EU/RO zugelassen 2025/26).
-  return bauOps(cropId, cal, c, seed, mm, duengLines);
+  return bauOps(cropId, cal, seed, mm, duengLines);
 }
 
 /**
@@ -2329,8 +2347,9 @@ const fmt1 = (v: number) => (Math.round(v * 10) / 10).toString().replace(".", ",
 /** Die sechs Bloecke einer Kultur. Ausgelagert, damit der produktscharfe und der
  *  Mischpreis-Pfad garantiert dieselbe Struktur liefern — sonst waere der
  *  Unterschied zwischen ihnen mehr als nur die Duengezeile. */
-function bauOps(cropId: CropId, cal: typeof CROP_CAL[CropId], c: readonly number[],
+function bauOps(cropId: CropId, cal: typeof CROP_CAL[CropId],
                 seed: { qty: number; unit: string }, mm: number, duengLines: OpLineSeed[]): OpSeed[] {
+  const nach = NACHERNTE_COSTS[cropId];
   const psmLines: OpLineSeed[] = PSM_PROGRAM[cropId].map((p) =>
     ({ ...L(p.label, "crop_protection", p.eurHa, "psm.per_euro", "€/ha (Mittel)"), passes: p.passes ?? 1, mid: measureIdForLine(cropId, "OP-PSM", p.label) }));
   return [
@@ -2338,8 +2357,8 @@ function bauOps(cropId: CropId, cal: typeof CROP_CAL[CropId], c: readonly number
     { code: "OP-DUENG", label: "Düngung (Gaben)",             costPeriods: [clampP(cal.dueng ?? cal.plant + 1)], lines: duengLines },
     { code: "OP-PSM",   label: "Pflanzenschutz (BBCH)",       costPeriods: [clampP(cal.psm ?? cal.plant + 2)], lines: psmLines },
     { code: "OP-BEREG", label: "Bewässerung (mm × €/mm·ha)",  costPeriods: [clampP(cal.bereg ?? cal.plant + 3)], lines: [{ ...L(`Bewässerung`, "other", mm, "irrig.eur_mm", "mm/ha"), mid: measureIdForLine(cropId, "OP-BEREG", "Bewässerung") }] },
-    { code: "OP-MAT",   label: "Material/Lager",              costPeriods: cal.harvest.slice(),     lines: [{ ...L("Material/Lager", "other", c[4], "price.per_euro", "€/ha"), mid: measureIdForLine(cropId, "OP-MAT", "Material/Lager") }] },
-    { code: "OP-HAND",  label: "Handarbeit (nicht-maschinell)", costPeriods: cal.harvest.slice(),   lines: [{ ...L("Handarbeit", "labor", c[5], "price.per_euro", "€/ha"), mid: measureIdForLine(cropId, "OP-HAND", "Handarbeit") }] },
+    { code: "OP-MAT",   label: "Material/Lager",              costPeriods: cal.harvest.slice(),     lines: [{ ...L("Material/Lager", "other", nach.material, "price.per_euro", "€/ha"), mid: measureIdForLine(cropId, "OP-MAT", "Material/Lager") }] },
+    { code: "OP-HAND",  label: "Handarbeit (nicht-maschinell)", costPeriods: cal.harvest.slice(),   lines: [{ ...L("Handarbeit", "labor", nach.handarbeit, "price.per_euro", "€/ha"), mid: measureIdForLine(cropId, "OP-HAND", "Handarbeit") }] },
   ];
 }
 
@@ -2359,7 +2378,7 @@ export const STORAGE_CROP_IDS: string[] = ["kartoffel_pommes", "kartoffel_chips"
 
 /** ARBEITSKATALOG der App — NUR die Wertkulturen. Die Stammdaten der übrigen Kulturen
  *  (Ackerbau, Trockenrotation, Sonnenblume) bleiben vollständig im Modell hinterlegt:
- *  CROP_CAL, CROP_NAME, AGRO_COSTS, ARBEITSGAENGE, OVERHEAD_PER_HA und die yield./price./loss.-
+ *  CROP_CAL, CROP_NAME, NACHERNTE_COSTS, ARBEITSGAENGE, OVERHEAD_PER_HA und die yield./price./loss.-
  *  Annahmen sind unverändert da und jederzeit reaktivierbar. Sie erscheinen nur nicht mehr in
  *  Anbauplan, Maßnahmen, Kalkulation, Contribution und Produktkatalog — dort würden sie eine
  *  Betriebsstruktur zeigen, die das Solo-Modell nicht mehr hat. */
@@ -4797,19 +4816,52 @@ export function assumptionCategory(key: string): string {
 const constValueOf = (prof: { kind: string; value?: number } | undefined): number | null =>
   prof && prof.kind === "constant" && typeof prof.value === "number" ? prof.value : null;
 
+/**
+ * Welche Annahmen ueberhaupt in einer Liste erscheinen duerfen.
+ *
+ * BEWUSST GEMEINSAM fuer das Annahmen-Register UND die Wiedervorlage. Vorher
+ * hatte nur das Register einen Filter: es zeigte 219 Zeilen, die Wiedervorlage
+ * 271. Zwei Listen ueber dieselbe Menge, mit verschiedenen Zaehlern und
+ * verschiedenen Fortschrittsbalken — der Nutzer haette nie erfahren, welche der
+ * beiden Zahlen die Wahrheit ist.
+ *
+ * Zwei Ausschluesse:
+ *
+ *   FREMDE KULTUR   yield./price./loss./qual./seed. einer Kultur, die der
+ *                   Betrieb nicht anbaut. Der Wert bleibt in der Domaene
+ *                   hinterlegt, er erscheint nur nicht.
+ *
+ *   SCHEINEDITOR    `pers.*.n`. Die Kopfzahl faellt aus Treiber und Verhaeltnis
+ *                   und wird vom Composer bei jedem Rechenlauf ueberschrieben.
+ *                   Wer sie im Register eintippt, verliert die Eingabe
+ *                   kommentarlos. Ein Feld, das nichts tut, ist schlimmer als
+ *                   kein Feld — es kostet Vertrauen in alle anderen. Gepflegt
+ *                   wird sie in der Personalplanung; die BRUTTOGEHAELTER
+ *                   (`pers.*.gross`) bleiben, denn die sind echte Annahmen.
+ */
+export function zeigbareAnnahme(domain: Domain, key: string): boolean {
+  if (/^pers\.[a-z_]+\.n$/.test(key)) return false;
+  const cid = key.split(".").slice(1).join(".");
+  const fremd = !!cid && !VALUE_CROP_IDS.includes(cid)
+    && ["yield", "price", "loss", "qual", "seed"].includes(key.split(".")[0])
+    && CROP_IDS.includes(cid as CropId);
+  return !fremd;
+}
+
 export function deriveAssumptionRegister(domain: Domain, scenarioId: string): AssumptionRow[] {
   const rows: AssumptionRow[] = [];
-  // Kulturbezogene Annahmen (yield./price./loss./qual./seed.<cropId>) nur für die Wertkulturen.
-  //  Die Werte der übrigen Kulturen bleiben in domain.assumptions hinterlegt — sie erscheinen
-  //  nur nicht mehr im Register, weil der Betrieb sie nicht anbaut.
-  const fremdeKultur = (key: string) => {
-    const cid = key.split(".").slice(1).join(".");
-    return !!cid && !VALUE_CROP_IDS.includes(cid)
-      && ["yield", "price", "loss", "qual", "seed"].includes(key.split(".")[0])
-      && CROP_IDS.includes(cid as CropId);
-  };
+  /* SCHEINEDITOREN. `pers.*.n` steht als Annahme in der Domaene, wird aber vom
+   *  Composer bei JEDEM Rechenlauf aus `personalFteOfYear` ueberschrieben — die
+   *  Kopfzahl faellt aus Treiber und Verhaeltnis, nicht aus einem Eingabefeld.
+   *  Im Register sah sie trotzdem editierbar aus. Wer dort 6 FTE eintippt,
+   *  bekommt beim naechsten Lauf wieder den Treiberwert, ohne Meldung.
+   *
+   *  Ein Feld, das nichts tut, ist schlimmer als kein Feld: es kostet Vertrauen
+   *  in alle anderen. Die Kopfzahlen werden in der Personalplanung gepflegt —
+   *  ueber das Verhaeltnis oder als Handeingabe je Jahr. Ihre BRUTTOGEHAELTER
+   *  (`pers.*.gross`) bleiben im Register, denn die sind echte Annahmen. */
   for (const key of Object.keys(domain.assumptions)) {
-    if (fremdeKultur(key)) continue;
+    if (!zeigbareAnnahme(domain, key)) continue;
     const a = domain.assumptions[key];
     const activeProf = a.scenarioProfiles[scenarioId] ?? a.scenarioProfiles[domain.baseScenarioId];
     rows.push({
@@ -4971,6 +5023,9 @@ export const IST_TOLERANZ = 0.1;
 export function deriveWiedervorlage(domain: Domain, scenarioId: string): WiedervorlageRow[] {
   const rows: WiedervorlageRow[] = [];
   for (const key of Object.keys(domain.assumptions)) {
+    // DERSELBE Filter wie im Register — sonst zaehlen zwei Listen dieselbe Sache
+    //  verschieden, und keine von beiden ist widerlegbar.
+    if (!zeigbareAnnahme(domain, key)) continue;
     const a = domain.assumptions[key];
     const prof = a.scenarioProfiles[scenarioId] ?? a.scenarioProfiles[domain.baseScenarioId];
     const planwert = constValueOf(prof as { kind: string; value?: number });
