@@ -30,7 +30,7 @@
  *  Quelle: NEOS-FX-Kostenkalkulation-Referenz.md, Abschnitte A–F.
  * ============================================================================
  */
-import { buildFelder, buildBeregnungseinheiten, buildSchlaege } from "./schlaege";
+import { buildFelder, buildBeregnungseinheiten, buildSchlaege, sortenSlug } from "./schlaege";
 import {
   measureIdForLine, measureIdForMachine, parseMeasureId, istAltId,
   BEZUG_JE_FACH, FACH_JE_OP, type Fachbereich,
@@ -81,6 +81,7 @@ import type {
 export type { OfftakeContract, HarvestAdvancePolicy } from "../core/types";
 import { DEFAULT_PRODUCTS, type CatalogProduct } from "./productCatalog";
 import { DUENGER_GABEN, DUENGER_PRODUKTE } from "./duengerplan.generated";
+import { SORTEN_REGISTER, type SortenEintrag } from "./sorten.generated";
 export type { CatalogProduct } from "./productCatalog";
 
 /* --------------------------------------------------------------------------
@@ -2204,6 +2205,24 @@ export function naehrstoffZufuhr(cropId: string): { n: number; p2o5: number; k2o
   return z;
 }
 
+/* Steht ABSICHTLICH hier oben und nicht bei den uebrigen Flaechenfunktionen:
+ *  `buildCropOps` baut den Kostenkatalog beim Modulaufbau und braucht die
+ *  Sortenanteile fuer die Pflanzgutzeilen. Ein `const` weiter unten waere zu
+ *  diesem Zeitpunkt noch nicht initialisiert — genau daran ist der erste
+ *  Anlauf gescheitert. */
+export const SORTENPLAN_VORSCHLAG: Record<string, SortenAnteil[]> = {
+  kartoffel_pommes: [
+    { sorte: "Markies", anteil: 0.40, rolle: "vorgezogene Hauptkultur", vorlaeufig: true },
+    { sorte: "Quintera", anteil: 0.35, rolle: "second early, hohe TS", vorlaeufig: true },
+    { sorte: "Zorba", anteil: 0.25, rolle: "Hauptkultur, Rang 1 Nedeia", vorlaeufig: true },
+  ],
+  kartoffel_chips: [
+    { sorte: "Chipsy", anteil: 0.55, rolle: "Hauptsorte, Rang 1 an beiden Standorten", vorlaeufig: true },
+    { sorte: "Lady Avalon", anteil: 0.30, rolle: "Rang 3, vollständige Datenbasis", vorlaeufig: true },
+    { sorte: "Lady Alicia", anteil: 0.15, rolle: "Rang 2, aber nur 48 % Datenbasis", vorlaeufig: true },
+  ],
+};
+
 function buildCropOps(cropId: CropId): OpSeed[] {
   const cal = CROP_CAL[cropId];
   const c = AGRO_COSTS[cropId];
@@ -2267,6 +2286,43 @@ function buildCropOps(cropId: CropId): OpSeed[] {
   return bauOps(cropId, cal, c, seed, mm, duengLines);
 }
 
+/**
+ * PFLANZGUT JE SORTE statt je Kultur.
+ *
+ * `seed.kartoffel_pommes` war EINE Zahl (390 EUR/t) fuer drei Sorten. Markies,
+ * Quintera und Zorba haben drei verschiedene Pflanzgutkosten und drei
+ * verschiedene Ablagestaerken — die eine Zahl kann nur fuer eine von ihnen
+ * stimmen. Und weil die Aussaat eine SCHLAG-Massnahme ist (der Legetermin ist
+ * sortenabhaengig), gehoert die Trennung ohnehin auf diese Ebene.
+ *
+ * Die Menge wird mit dem Sortenanteil gewichtet: 2,8 t/ha bei 40 % Markies
+ * ergeben 1,12 t/ha auf die Kulturflaeche gerechnet. Summieren sich die Anteile
+ * auf 1, ist die Gesamtmenge unveraendert — genau das prueft ein Test.
+ *
+ * SOLANGE KEIN SORTENPREIS VORLIEGT, gilt der Kulturpreis. Es wird hier nichts
+ * erfunden; das Feld `pflanzgutCent` steht bereit, damit ein Angebot ankommen
+ * kann. Bis dahin ist die Aufteilung ehrlich genau so grob wie die Datenlage.
+ */
+function saatLines(cropId: CropId, seed: { qty: number; unit: string }): OpLineSeed[] {
+  const anteile = SORTENPLAN_VORSCHLAG[cropId] ?? [];
+  const summe = anteile.reduce((s, a) => s + Math.max(0, a.anteil), 0);
+  if (!anteile.length || summe <= 0) {
+    return [{ ...L(`Saatgut/Pflanzgut (Saatstärke)`, "seed", seed.qty, `seed.${cropId}`, `${seed.unit}/ha`),
+              mid: measureIdForLine(cropId, "OP-SAAT", "Saatgut") }];
+  }
+  return anteile.filter((a) => a.anteil > 0).map((a) => {
+    const q = Math.round((seed.qty * (a.anteil / summe)) * 1000) / 1000;
+    const reg = sortenEintrag(cropId, a.sorte);
+    const rangText = reg?.rang?.NEDEIA ? ` · Rang ${reg.rang.NEDEIA.rang} Nedeia` : "";
+    return {
+      ...L(`Pflanzgut ${a.sorte}${rangText}`, "seed", q,
+           a.pflanzgutCent != null ? pflanzgutPreisKey(cropId, a.sorte) : `seed.${cropId}`,
+           `${seed.unit}/ha`),
+      mid: measureIdForLine(cropId, "OP-SAAT", "Pflanzgut", a.sorte),
+    };
+  });
+}
+
 /** Ein Nachkommastelle, ohne Locale — die Zahl steht in einem Label, nicht in einer Spalte. */
 const fmt1 = (v: number) => (Math.round(v * 10) / 10).toString().replace(".", ",");
 
@@ -2278,7 +2334,7 @@ function bauOps(cropId: CropId, cal: typeof CROP_CAL[CropId], c: readonly number
   const psmLines: OpLineSeed[] = PSM_PROGRAM[cropId].map((p) =>
     ({ ...L(p.label, "crop_protection", p.eurHa, "psm.per_euro", "€/ha (Mittel)"), passes: p.passes ?? 1, mid: measureIdForLine(cropId, "OP-PSM", p.label) }));
   return [
-    { code: "OP-SAAT",  label: "Saatgut/Pflanzgut",           costPeriods: [clampP(cal.plant)],     lines: [{ ...L(`Saatgut/Pflanzgut (Saatstärke)`, "seed", seed.qty, `seed.${cropId}`, `${seed.unit}/ha`), mid: measureIdForLine(cropId, "OP-SAAT", "Saatgut") }] },
+    { code: "OP-SAAT",  label: "Saatgut/Pflanzgut",           costPeriods: [clampP(cal.plant)],     lines: saatLines(cropId, seed) },
     { code: "OP-DUENG", label: "Düngung (Gaben)",             costPeriods: [clampP(cal.dueng ?? cal.plant + 1)], lines: duengLines },
     { code: "OP-PSM",   label: "Pflanzenschutz (BBCH)",       costPeriods: [clampP(cal.psm ?? cal.plant + 2)], lines: psmLines },
     { code: "OP-BEREG", label: "Bewässerung (mm × €/mm·ha)",  costPeriods: [clampP(cal.bereg ?? cal.plant + 3)], lines: [{ ...L(`Bewässerung`, "other", mm, "irrig.eur_mm", "mm/ha"), mid: measureIdForLine(cropId, "OP-BEREG", "Bewässerung") }] },
@@ -2949,18 +3005,35 @@ export function flaechenMemo(domain: Domain): FlaechenBild {
  * Zweitkultur" nicht ausdruecken. Es ist aber der Grund, warum Markies hier
  * nicht die ganze Flaeche bekommt.
  * ------------------------------------------------------------------------ */
-export const SORTENPLAN_VORSCHLAG: Record<string, SortenAnteil[]> = {
-  kartoffel_pommes: [
-    { sorte: "Markies", anteil: 0.40, rolle: "vorgezogene Hauptkultur", vorlaeufig: true },
-    { sorte: "Quintera", anteil: 0.35, rolle: "second early, hohe TS", vorlaeufig: true },
-    { sorte: "Zorba", anteil: 0.25, rolle: "Hauptkultur, Rang 1 Nedeia", vorlaeufig: true },
-  ],
-  kartoffel_chips: [
-    { sorte: "Chipsy", anteil: 0.55, rolle: "Hauptsorte, Rang 1 an beiden Standorten", vorlaeufig: true },
-    { sorte: "Lady Avalon", anteil: 0.30, rolle: "Rang 3, vollständige Datenbasis", vorlaeufig: true },
-    { sorte: "Lady Alicia", anteil: 0.15, rolle: "Rang 2, aber nur 48 % Datenbasis", vorlaeufig: true },
-  ],
-};
+
+/** Das Sortenregister aus dem Kompendium — die Auswahl, aus der geplant wird.
+ *  FX pflegt keine Sortenkunde; es waehlt. */
+export function sortenRegisterOf(cropId: string): SortenEintrag[] {
+  return SORTEN_REGISTER.filter((s) => s.cropId === cropId);
+}
+
+/** Registereintrag zu einem Namen — die Bruecke zwischen Plan und Wissensbasis. */
+export function sortenEintrag(cropId: string, sorte: string): SortenEintrag | undefined {
+  return SORTEN_REGISTER.find((s) => s.cropId === cropId && s.sorte.toLowerCase() === sorte.toLowerCase());
+}
+
+/** Annahme-Schluessel des Pflanzgutpreises EINER Sorte. Bewusst eine
+ *  Funktionsdeklaration — die Annahmeliste ruft sie beim Modulaufbau. */
+export function pflanzgutPreisKey(cropId: string, sorte: string): string {
+  return `seed.${cropId}.${sortenSlug(sorte).toLowerCase()}`;
+}
+
+/** Sorten des Plans, die im Register NICHT vorkommen. Ein Tippfehler erzeugt
+ *  sonst still einen neuen Schlag statt einer Warnung. */
+export function unbekannteSorten(domain: Domain): { cropId: string; sorte: string }[] {
+  const out: { cropId: string; sorte: string }[] = [];
+  for (const a of domain.anbauplan) {
+    for (const s of sortenAnteileOf(domain, a.cropId)) {
+      if (!sortenEintrag(a.cropId, s.sorte)) out.push({ cropId: a.cropId, sorte: s.sorte });
+    }
+  }
+  return out;
+}
 
 /** Sortenanteile einer Kultur — Plan des Betriebs, sonst der Vorschlag, sonst leer.
  *  Eine LEERE Liste ist eine gueltige Antwort und heisst "diese Kultur wird nicht

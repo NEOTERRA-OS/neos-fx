@@ -43,7 +43,7 @@ const B12: Record<string, string> = {
 
   // — Treiber: Ertrag —
   "Ertrag Industrietomate": "Yield processing tomato",
-  "Ertrag Kartoffel (Pommes/Markies)": "Yield potato (fries/Markies)",
+  "Ertrag Kartoffel (Pommes, Sortenmittel)": "Yield potato (fries, variety mean)",
   "Ertrag Kartoffel (Chips)": "Yield potato (chips)",
   "Ertrag Zwiebel/Möhre": "Yield onion/carrot",
   "Ertrag Rotations-/Break Crops (alle)": "Yield rotation/break crops (all)",

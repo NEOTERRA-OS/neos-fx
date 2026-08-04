@@ -755,6 +755,12 @@ export interface SortenAnteil {
   anteil: number;
   /** Rolle im Anbaukonzept, rein beschreibend (z. B. "vorgezogene Hauptkultur"). */
   rolle?: string;
+  /** Pflanzgutpreis DIESER Sorte, CENT je Kultur-Einheit (t bzw. 1000 Pfl.).
+   *  Fehlt er, gilt der Kulturpreis `seed.<cropId>` — und genau das ist der
+   *  heutige Zustand: EINE Zahl fuer drei Sorten mit drei verschiedenen
+   *  Pflanzgutkosten und Ablagestaerken. Das Feld steht da, damit ein
+   *  eingeholtes Angebot ankommen kann, ohne dass vorher etwas erfunden wird. */
+  pflanzgutCent?: number;
   /** true, solange der Anteil gesetzt und nicht entschieden ist. */
   vorlaeufig?: boolean;
 }

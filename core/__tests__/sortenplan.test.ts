@@ -19,8 +19,10 @@
 import { describe, it, expect } from "vitest";
 import {
   SEED, schlaegeOf, sortenAnteileOf, sortenVerteilung, sortenplanOf,
-  exportMassnahmenplan, flaechenMemo, type Domain,
+  exportMassnahmenplan, flaechenMemo, sortenEintrag, unbekannteSorten,
+  SORTENPLAN_VORSCHLAG, type Domain,
 } from "../../store/model";
+import { DEFAULT_PRODUCTS } from "../../store/productCatalog";
 import { normSortenanteile, sortenSlug, MIN_SCHLAG_HA } from "../../store/schlaege";
 
 const SZ = SEED.baseScenarioId;
@@ -176,5 +178,82 @@ describe("Der Maßnahmenplan wird sortenscharf", () => {
     const feldbezug = ex.auftraege.filter((a) => a.bezug === "feld");
     expect(feldbezug.length).toBeGreaterThan(0);
     expect(feldbezug.every((a) => a.sorte === null && a.schlagId === null)).toBe(true);
+  });
+});
+
+describe("Ein Register, nicht zwei", () => {
+  /* Die Sorten standen bis 04.08.2026 an zwei Orten ohne Berührung: im
+   *  Produktkatalog als wirkungslose Vorschlagsliste (Innovator, Lady Rosetta,
+   *  Stand 27.07.) und im Sortenplan als das, was wirklich rechnet
+   *  (Markies/Quintera/Zorba). Die Schnittmenge war leer.
+   *
+   *  Jetzt gibt es EIN Register, und es kommt aus dem Kompendium — dort liegen
+   *  die Fakten mit Quelle und Belegstatus. FX wählt daraus. */
+  it("kennt jede Sorte des Vorschlags im Register", () => {
+    for (const [cropId, liste] of Object.entries(SORTENPLAN_VORSCHLAG)) {
+      for (const s of liste) {
+        expect(sortenEintrag(cropId, s.sorte), `${cropId}: ${s.sorte}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("meldet eine Sorte, die im Register fehlt — statt still einen Schlag zu bauen", () => {
+    const d = klon(SEED);
+    d.sortenplan = { kartoffel_pommes: [{ sorte: "Markiess", anteil: 1 }] };   // Tippfehler
+    const unbekannt = unbekannteSorten(d);
+    expect(unbekannt.some((u) => u.sorte === "Markiess")).toBe(true);
+    // Der saubere Plan meldet nichts.
+    expect(unbekannteSorten(SEED)).toHaveLength(0);
+  });
+
+  it("führt kein Kartoffel-Sortenregister mehr im Produktkatalog", () => {
+    const sorten = DEFAULT_PRODUCTS.filter((p) => p.category === "seed_variety");
+    expect(sorten.some((p) => (p.crops ?? []).some((c) => c.startsWith("kartoffel")))).toBe(false);
+  });
+});
+
+describe("Pflanzgut je Sorte", () => {
+  it("teilt die Saatgutmenge nach dem Sortenanteil auf, ohne die Summe zu ändern", () => {
+    /* Drei Sorten mit 40/35/25 ergeben drei Zeilen zu 40/35/25 % der Saatstärke.
+     *  Die Summe muss die Saatstärke bleiben — sonst hätte die Aufteilung nicht
+     *  die Sorte sichtbar gemacht, sondern den Pflanzgutbedarf verändert. */
+    const e = SEED.catalog.find((c) => c.cropId === "kartoffel_pommes")!;
+    const saat = e.ops.find((o) => o.code === "OP-SAAT")!;
+    expect(saat.lines.length).toBe(sortenAnteileOf(SEED, "kartoffel_pommes").length);
+    const summe = saat.lines.reduce((s, l) => s + l.quantityPerHa, 0);
+    expect(summe).toBeCloseTo(2.8, 2);
+    expect(saat.lines.every((l) => /Pflanzgut /.test(l.label))).toBe(true);
+  });
+
+  it("weicht bei der Pflanzgutmenge vom Kompendium ab — festgehalten, nicht stillgelegt", () => {
+    /* BEFUND BEIM SCHREIBEN DIESES TESTS, nicht gesucht, sondern gestolpert.
+     *
+     *  FX rechnet 2,8 t/ha Pflanzgut für Pommes. Das Kompendium führt
+     *  `CROP.POTATO.SEED_RATE_T_HA` = 2,3 t/ha als BELEGT mit der Quelle
+     *  SRC-BETRIEB-2608 — also als Angabe des Betriebs, „rund 32.500 Pflanzen
+     *  je Hektar". Bei 390 €/t sind 0,5 t/ha Unterschied rund 195 €/ha, auf
+     *  2.500 ha Kartoffel also etwa 0,5 Mio € im Jahr.
+     *
+     *  Ich ändere die Zahl NICHT von mir aus: sie ist eine Betriebsangabe, und
+     *  welche der beiden gilt, entscheidet der Betrieb — 2,8 t/ha wäre bei
+     *  33.500 Pflanzen/ha (Agrico für Markies) eine schwerere Sortierung, und
+     *  das kann gewollt sein. Der Test hält die Abweichung fest, damit sie nicht
+     *  wieder aus dem Blick gerät. Er wird rot, sobald jemand eine der beiden
+     *  Seiten anfasst — und genau dann gehört die Frage entschieden. */
+    const e = SEED.catalog.find((c) => c.cropId === "kartoffel_pommes")!;
+    const saat = e.ops.find((o) => o.code === "OP-SAAT")!;
+    const fx = saat.lines.reduce((s, l) => s + l.quantityPerHa, 0);
+    const kompendium = 2.3;
+    expect(fx).toBeCloseTo(2.8, 2);
+    expect(Math.abs(fx - kompendium)).toBeCloseTo(0.5, 2);
+  });
+
+  it("gibt jeder Sorte eine eigene Maßnahmen-ID", () => {
+    const e = SEED.catalog.find((c) => c.cropId === "kartoffel_pommes")!;
+    const saat = e.ops.find((o) => o.code === "OP-SAAT")!;
+    const ids = new Set(saat.lines.map((l) => (l as { mid?: string }).mid));
+    expect(ids.size).toBe(saat.lines.length);
+    // Der feste Slug bleibt die Basis — die Sorte hängt nur hinten dran.
+    expect([...ids].every((i) => i!.includes(".AUSSAAT.SAATGUT_"))).toBe(true);
   });
 });

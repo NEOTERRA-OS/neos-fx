@@ -20,7 +20,19 @@ export type ProductCategory =
   | "biostimulant"    // Biostimulanzien
   | "psm"             // Pflanzenschutzmittel
   | "seed_treatment"  // Beizung / Saatgutbehandlung
-  | "seed_variety";   // Sorte / Hybride
+  | "seed_variety";   /* Sorte / Hybride — NUR NOCH fuer Kulturen ohne Sortenplan.
+                        *
+                        * Die Kartoffelsorten sind am 04.08.2026 hier ausgezogen. Sie
+                        * standen als reine Vorschlagsliste da (Innovator, Lady Rosetta),
+                        * ohne Wirkung auf irgendeine Zahl, und widersprachen dem
+                        * Sortenplan (Markies/Quintera/Zorba), der die Schlagbildung
+                        * treibt. Zwei Register fuer dieselbe Frage, ohne Beruehrung.
+                        *
+                        * Der Ort der Sortenkunde ist das KOMPENDIUM: 55 Sorten mit
+                        * Fakten, Quellen und Ranking. FX liest sie ueber
+                        * `store/sorten.generated.ts` und waehlt daraus im Anbauplan.
+                        * Ebenfalls entfernt: Weizen, Gerste, Raps, Mais und Soja —
+                        * Kulturen, die der Betrieb seit NEOTERRA-Solo nicht faehrt. */
 
 export type PsmType = "herbicide" | "fungicide" | "insecticide" | "growth_regulator";
 export type RoAuth = "yes" | "no" | "unknown";
@@ -182,15 +194,6 @@ export const DEFAULT_PRODUCTS: CatalogProduct[] = [
   N({ id: "beize-histick-soy", category: "seed_treatment", psmType: null, name: "HiStick Soy (Rhizobium)", manufacturer: "BASF", activeIngredients: [{ name: "Bradyrhizobium japonicum", content: "—" }], formulation: "Inokulant", crops: ["soja_luzerne"], targets: ["Rhizobium-Inokulant", "N-Fixierung", "Soja Erstanbau"], roAuthorized: "unknown", note: "Knöllchenbakterien-Impfung, wichtig auf Flächen ohne Soja-Vorgeschichte." }),
 
   // ===== SORTEN / HYBRIDEN =====
-  N({ id: "seed-glosa", category: "seed_variety", name: "Glosa (Winterweizen)", manufacturer: "INCDA Fundulea", crops: ["weizen"], targets: ["RO-Standardsorte", "Trockentoleranz", "Backqualität"], roAuthorized: "yes", note: "Führende rumänische Winterweizensorte, angepasst an Südrumänien." }),
-  N({ id: "seed-otilia", category: "seed_variety", name: "Otilia (Winterweizen)", manufacturer: "INCDA Fundulea", crops: ["weizen"], targets: ["RO-Sorte", "Ertragsstabilität"], roAuthorized: "yes", note: "Rumänische Winterweizensorte, verbreitet im Süden." }),
-  N({ id: "seed-cardinal", category: "seed_variety", name: "Cardinal (Wintergerste)", manufacturer: "INCDA Fundulea", crops: ["gerste_zw"], targets: ["RO-Sorte", "Winterhärte"], roAuthorized: "yes", note: "Rumänische Wintergersten-Sorte (Fundulea)." }),
-  N({ id: "seed-dk-exssence", category: "seed_variety", name: "DK Exssence (Winterraps-Hybride)", manufacturer: "DEKALB (Bayer)", crops: ["winterraps"], targets: ["Hybride", "TuYV-Resistenz", "zügige Jugendentwicklung"], roAuthorized: "yes", note: "Verbreiteter Winterraps-Hybrid mit TuYV-Resistenz." }),
-  N({ id: "seed-pioneer-p9911", category: "seed_variety", name: "Pioneer P9911 (Körnermais)", manufacturer: "Pioneer (Corteva)", crops: ["mais"], targets: ["FAO 390 Hybride", "bewässerungstauglich"], roAuthorized: "yes", note: "Körnermais-Hybrid ~FAO 390; in RO breit angebaut." }),
-  N({ id: "seed-dekalb-dkc5075", category: "seed_variety", name: "DEKALB DKC5075 (Körnermais)", manufacturer: "DEKALB (Bayer)", crops: ["mais"], targets: ["FAO 430 Hybride", "hohes Ertragspotenzial"], roAuthorized: "yes", note: "Späterer Körnermais-Hybrid (~FAO 430)." }),
-  N({ id: "seed-felix", category: "seed_variety", name: "Felix (Soja)", manufacturer: "INCDA Fundulea", crops: ["soja_luzerne"], targets: ["RO-Sorte", "frühe Reifegruppe"], roAuthorized: "yes", note: "Rumänische Soja-Sorte; Rhizobium-Impfung empfohlen." }),
-  N({ id: "seed-innovator", category: "seed_variety", name: "Innovator (Verarbeitungskartoffel)", manufacturer: "Agrico", crops: ["kartoffel_pommes"], targets: ["Pommes/Fritten", "langovale Knolle", "hohe TS"], roAuthorized: "unknown", note: "Führende Pommes-Sorte; RO über Vertragsproduktion." }),
-  N({ id: "seed-lady-rosetta", category: "seed_variety", name: "Lady Rosetta (Chips-Kartoffel)", manufacturer: "HZPC / Meijer", crops: ["kartoffel_chips"], targets: ["Chips", "hohe TS", "niedriger Zucker"], roAuthorized: "unknown", note: "Klassische Chips-Sorte (Alternativen: Hermes/Markies)." }),
   N({ id: "seed-heinz-h1015", category: "seed_variety", name: "Heinz H1015 (Industrietomate)", manufacturer: "HeinzSeed", crops: ["tomate"], targets: ["determiniert", "Verarbeitung/Paste"], roAuthorized: "unknown", note: "Determinierter Verarbeitungs-Hybrid (Alt.: HM.Clause/ISI)." }),
   N({ id: "seed-bejo-hystar", category: "seed_variety", name: "Zwiebel-Hybride Hystar F1", manufacturer: "Bejo", crops: ["zwiebel_moehre"], targets: ["Speisezwiebel Hybride", "Lagerfähigkeit"], roAuthorized: "unknown", note: "Beispielhafter Bejo-Zwiebelhybrid; Sorte mit Berater festlegen." }),
 ];

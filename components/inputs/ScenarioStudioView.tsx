@@ -49,7 +49,7 @@ const GROUPS = [G_YLD, G_PRC, G_SUB, G_RISK, G_OPX, G_LOG, G_FIN];
 const DRIVERS: Drv[] = [
   /* -- Ertrag ------------------------------------------------------------- */
   { id: "yield.tomate", label: "Ertrag Industrietomate", group: G_YLD, keys: ["yield.tomate"], mode: "abs", unit: "t/ha", min: 55, max: 115, step: 1, dec: 0, hint: "Basisbereich Kontrakt 75–90 t/ha" },
-  { id: "yield.kartoffel_pommes", label: "Ertrag Kartoffel (Pommes/Markies)", group: G_YLD, keys: ["yield.kartoffel_pommes"], mode: "abs", unit: "t/ha", min: 25, max: 70, step: 1, dec: 0, hint: "Basisbereich 45–50 t/ha" },
+  { id: "yield.kartoffel_pommes", label: "Ertrag Kartoffel (Pommes, Sortenmittel)", group: G_YLD, keys: ["yield.kartoffel_pommes"], mode: "abs", unit: "t/ha", min: 25, max: 70, step: 1, dec: 0, hint: "Basisbereich 45–50 t/ha" },
   { id: "yield.kartoffel_chips", label: "Ertrag Kartoffel (Chips)", group: G_YLD, keys: ["yield.kartoffel_chips"], mode: "abs", unit: "t/ha", min: 25, max: 70, step: 1, dec: 0 },
   { id: "yield.zwiebel_moehre", label: "Ertrag Zwiebel/Möhre", group: G_YLD, keys: ["yield.zwiebel_moehre"], mode: "abs", unit: "t/ha", lo: 0.55, hi: 1.45, step: 1, dec: 0 },
   { id: "lossAll", label: "Verlust / Schwund (alle Kulturen)", group: G_YLD, keys: VAL_CROPS.map((c) => `loss.${c}`), mode: "mult", unit: "×", min: 0, max: 3, step: 0.05, dec: 2 },

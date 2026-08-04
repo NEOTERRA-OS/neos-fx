@@ -184,18 +184,24 @@ export function fachOf(id: string): Fachbereich | null {
 /**
  * ID für eine Katalogzeile aus Op-Code und Beschriftung.
  *
- * Bei der Düngung zählt nur das Präfix vor „ · ": die Zeilen N, P₂O₅, K₂O und S
- * EINER Gabe sind eine einzige Maßnahme (eine Streuer-Überfahrt) und teilen sich
- * deshalb die ID. Genau das macht die Gruppierung in `deriveCropMassnahmen`
- * unabhängig von der Zeilenreihenfolge.
+ * Bei der Düngung zählt seit 04.08.2026 die ganze Beschriftung: eine Gabe ist
+ * ein PRODUKT mit einer Warenmenge, und MAP, Kaliumsulfat und Kieserit werden
+ * nacheinander gestreut, nicht gleichzeitig. Vorher trugen die Nährstoffzeilen
+ * N, P₂O₅ und K₂O einer Gabe eine gemeinsame ID — das war richtig, solange eine
+ * Gabe ein Nährstoffbündel war.
+ *
+ * `variante` trennt Zeilen, die dieselbe Maßnahme mit verschiedenem Betriebsmittel
+ * sind. Sie hängt an den festen Slugs, statt sie zu ersetzen: `SAATGUT` bleibt
+ * stabil gegen Label-Änderungen aus den Stammdaten, `SAATGUT_MARKIES` fügt genau
+ * die eine Unterscheidung hinzu, die eine Planentscheidung ist.
  */
-export function measureIdForLine(cropId: string, opCode: string, label: string): string {
+export function measureIdForLine(cropId: string, opCode: string, label: string, variante?: string): string {
+  const suffix = variante ? "_" + slugify(variante) : "";
   const fach = FACH_JE_OP[opCode];
-  if (!fach) return measureId(cropId, "MATERIAL", slugify(label));
+  if (!fach) return measureId(cropId, "MATERIAL", slugify(label) + suffix);
   const fest = SLUG_JE_OP[opCode];
-  if (fest) return measureId(cropId, fach, fest);
-  const basis = opCode === "OP-DUENG" ? String(label ?? "").split(" · ")[0] : label;
-  return measureId(cropId, fach, slugify(basis));
+  if (fest) return measureId(cropId, fach, fest + suffix);
+  return measureId(cropId, fach, slugify(label) + suffix);
 }
 
 /** ID für einen Maschinen-Arbeitsgang. */

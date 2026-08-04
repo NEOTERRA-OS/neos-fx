@@ -6,7 +6,8 @@ import { fmtMoney, fmtNumber, fmtEditable, parseDe } from "../../design/format";
 import { Feld } from "./Feld";
 import { cropYield, cropLoss, netTonnes, cropColor, cropName } from "./cropCalc";
 import { deriveCropAreasMY, setCropPathHa, rampCropPath, deriveContribution, START_YEAR,
-  sortenAnteileOf, sortenVerteilung, schlaegeOf, type CropPolicy } from "../../store/model";
+  sortenAnteileOf, sortenVerteilung, schlaegeOf, sortenRegisterOf, sortenEintrag,
+  type CropPolicy } from "../../store/model";
 import { t } from "../../lib/i18n";
 import { JahrWahl, JAHR_DEFAULT } from "./JahrWahl";
 import { Droplets, Sun, X, ChevronDown, ChevronRight, Sprout, Plus, TriangleAlert } from "lucide-react";
@@ -381,6 +382,7 @@ function SortenKarte({
   onHinzufuegen: (name: string) => void;
 }) {
   const [neu, setNeu] = React.useState("");
+  const register = sortenRegisterOf(cropId);
   return (
     <div className="rounded-tile border" style={{ borderColor: "var(--nx-border)", background: "var(--nx-app-bg)" }}>
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--nx-border)" }}>
@@ -395,9 +397,27 @@ function SortenKarte({
         {liste.length === 0 && flaeche > 0 && (
           <span className="text-[10.5px] text-nx-text-muted">{t("ohne Sorten — die Schläge tragen dann keine Sortenkennung")}</span>
         )}
+        {/* AUSWAHL STATT FREITEXT. Der Sortenname geht in die Schlag-ID und damit
+            in den Arbeitsauftrag — ein Tippfehler erzeugte bisher still einen
+            neuen Schlag statt einer Warnung. Die Liste kommt aus dem Kompendium
+            (`store/sorten.generated.ts`) und nennt gleich mit, wie belegt die
+            Sorte ist. Eigene Namen bleiben möglich: wer eine Sorte fährt, die
+            das Kompendium nicht kennt, soll das dürfen — er sieht dann nur den
+            Hinweis, dass keine Fakten dahinterstehen. */}
         <span className="ml-auto inline-flex items-center gap-2">
-          <TextFeld wert={neu} onChange={setNeu} onEnter={() => { onHinzufuegen(neu); setNeu(""); }}
-            platzhalter={t("Sorte ergänzen …")} breite={170} dicht />
+          <input list={`sorten-${cropId}`} value={neu} onChange={(e) => setNeu(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { onHinzufuegen(neu); setNeu(""); } }}
+            placeholder={t("Sorte wählen oder eingeben …")}
+            className="rounded-control border px-2 text-[12.5px]"
+            style={{ height: 30, width: 210, background: "var(--nx-app-bg)", borderColor: "var(--nx-border)", color: "var(--nx-text)" }} />
+          <datalist id={`sorten-${cropId}`}>
+            {register.filter((r) => !liste.some((x) => x.sorte === r.sorte)).map((r) => (
+              <option key={r.sorte} value={r.sorte}>
+                {r.rang?.NEDEIA ? `Rang ${r.rang.NEDEIA.rang} Nedeia · ` : ""}
+                {r.faktenBelegt} {t("belegte Fakten")}
+              </option>
+            ))}
+          </datalist>
           <Aktion kind="still" Icon={Plus} dicht disabled={readOnly || !neu.trim()}
             onClick={() => { onHinzufuegen(neu); setNeu(""); }}>{t("Sorte")}</Aktion>
         </span>
@@ -429,6 +449,27 @@ function SortenKarte({
                         <span className="ml-1.5 rounded-pill px-1.5 py-[1px] text-[9px] font-bold"
                           style={{ background: "var(--nx-surface-sunken)", color: "var(--nx-text-muted)" }}>{t("gesetzt")}</span>
                       )}
+                      {/* Der Belegstand aus dem Kompendium. Eine Sorte auf Rang 2 mit
+                          34 % Datenbasis ist eine Hypothese, keine Empfehlung — und das
+                          soll man sehen, wo die Fläche verteilt wird. */}
+                      {(() => {
+                        const reg = sortenEintrag(cropId, s.sorte);
+                        if (!reg) return (
+                          <span className="ml-1.5 inline-flex items-center gap-1 rounded-pill px-1.5 py-[1px] text-[9px] font-bold"
+                            style={{ background: "var(--nx-warning-bg)", color: "var(--nx-warning-text)" }}
+                            title={t("Diese Sorte steht nicht im Sortenregister des Kompendiums — es gibt keine belegte Aussage über sie.")}>
+                            <TriangleAlert size={9} strokeWidth={2.6} aria-hidden />{t("nicht im Register")}
+                          </span>
+                        );
+                        const r = reg.rang?.NEDEIA;
+                        return (
+                          <span className="num ml-1.5 text-[9.5px] text-nx-text-muted"
+                            title={t("Fakten im Kompendium, davon mit Primärquelle belegt · Rang aus dem Punktmodell")}>
+                            {reg.faktenBelegt}/{reg.fakten} {t("belegt")}
+                            {r ? ` · Rang ${r.rang} (${r.datenbasisPct} % Datenbasis)` : ""}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-2 py-1.5 text-[10.5px] text-nx-text-muted">{s.rolle ?? "—"}</td>
                     <td className="px-1 py-1.5 text-right">
