@@ -9,3 +9,4 @@ _shot*.cjs
 /tmp/
 .DS_Store
 __pycache__/
+tsconfig.tsbuildinfo
