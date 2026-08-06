@@ -67,8 +67,21 @@ export function Sidebar({
               <button
                 className={"nsb-item" + (it.view === active ? " is-active" : "")}
                 onClick={() => onSelect(it.view)}
+                /* KEINE DAEMPFUNG MEHR fuer Ausgabe-Ansichten — zurueckgenommen
+                   am 06.08.2026, einen Tag nach der Einfuehrung.
+                   Die Absicht war richtig: wer in GuV oder Bilanz nach
+                   Eingabefeldern sucht, sucht vergeblich. Das Mittel war falsch.
+                   Eine abgedunkelte Menuezeile heisst ueberall auf der Welt
+                   "nicht verfuegbar", nicht "hier wird nichts eingegeben" — und
+                   acht gedaempfte Zeilen zwischen zweiundzwanzig hellen lesen
+                   sich als Darstellungsfehler, nicht als Information. Genau so
+                   ist es gemeldet worden: "warum sind die Farben unterschiedlich".
+                   Dazu kommt die Regel des NEOS-Kontrakts: Farbe ist nie
+                   alleiniger Bedeutungstraeger. Eine Opazitaet ist genau das.
+                   Die Auskunft bleibt — im Titel, wo sie niemanden stoert. Das
+                   Feld `ausgabe` bleibt ebenfalls: es traegt die Reihenfolge
+                   (Eingaben vor Ausgaben je Gruppe, geprueft in ia.test.ts). */
                 title={it.ausgabe ? t("Ausgabe — hier wird nichts eingegeben") : undefined}
-                style={it.ausgabe && it.view !== active ? { opacity: 0.72 } : undefined}
               >
                 <span className="nsb-ic"><Ic view={it.view} /></span>
                 <span>{t(it.label)}</span>
