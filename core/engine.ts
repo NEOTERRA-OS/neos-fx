@@ -151,7 +151,7 @@ function maturityFactor(state: ModelState, plan: CropPlan, period: PeriodIndex, 
 }
 
 const COST_TYPES: import('./types').CostType[] = [
-  'seed', 'fertilizer', 'crop_protection', 'machine', 'labor', 'fuel', 'other',
+  'seed', 'fertilizer', 'crop_protection', 'machine', 'labor', 'fuel', 'insurance', 'other',
 ];
 
 function emptyByType(n: number): Record<import('./types').CostType, number[]> {

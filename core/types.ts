@@ -218,6 +218,7 @@ export type CostType =
   | 'machine'         // Maschine: Std/ha × TCO-Satz
   | 'labor'           // Lohn: Std/ha × Satz
   | 'fuel'            // Diesel: l/ha × Preis
+  | 'insurance'       // Kulturversicherung: Versicherungssumme × Prämiensatz
   | 'other';
 
 /**

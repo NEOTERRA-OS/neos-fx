@@ -1591,6 +1591,62 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
   A("yield.knollensellerie", "yield.knollensellerie", "Ertrag Knollensellerie", "tonne_per_ha", 38, 48, 31),
   A("price.knollensellerie", "price.knollensellerie", "Preis Knollensellerie", "money_per_tonne", 48000, 55200, 40800),
   A("loss.knollensellerie", "loss.knollensellerie", "Verlust Knollensellerie (Putzen/Lager)", "percent", 0.07),
+  /* KULTURVERSICHERUNG — Prämiensatz in Prozent der VERSICHERUNGSSUMME.
+   *
+   * Die Versicherungssumme ist der Wert der Ernte: Netto-Ertrag × Preis. So
+   * rechnen die rumänischen Versicherer, und so steht es in den Bedingungen —
+   * „valoarea recoltei (producție × preț/kg)", höchstens der Produktionswert.
+   * Deshalb ist der Satz ein PROZENTSATZ und keine €/ha-Pauschale: wer den
+   * Ertrag oder den Preis anhebt, versichert mehr und zahlt mehr. Eine
+   * Pauschale würde im Best Case dieselbe Prämie für eine um 20 % wertvollere
+   * Ernte behaupten.
+   *
+   * ABGEDECKT ist die Standard-Mehrgefahrendeckung des rumänischen Marktes:
+   * Hagel, Sturm, Starkregen, Brand, Spät- und Frühfrost, Winterfrost. Die
+   * DÜRREDECKUNG ist der teure Baustein — und für diesen Betrieb der am
+   * wenigsten nötige: 100 % der Wertkulturflächen liegen unter Pivot. Die
+   * Sätze unten sind deshalb OHNE Dürre gerechnet.
+   *
+   * SELBSTBEHALT (franșiză) am Markt typisch 10 % der Versicherungssumme je
+   * betroffener Parzelle. Er steht hier BEWUSST NICHT als Annahme: er ändert
+   * die Prämie (höherer Selbstbehalt → günstiger), aber das Modell hat keinen
+   * Mechanismus dafür. Ein Regler, der nichts bewegt, kostet Vertrauen in alle
+   * anderen — dieselbe Regel wie bei `pers.*.n`.
+   *
+   * DIE SÄTZE SIND KLASSENSCHÄTZUNGEN, KEINE ANGEBOTE. Öffentliche Tarife gibt
+   * es nicht; jeder Versicherer quotiert individuell nach Kultur, Region und
+   * Schadenhistorie. Die Staffelung folgt der Hagelexposition des Erntegutes:
+   *
+   *   Kartoffel 2,0 %   Die Knolle liegt im Boden. Hagel trifft das Kraut und
+   *                     kostet Ertrag, aber selten die ganze Partie.
+   *   Zwiebel/Möhre,    Erntegut im Boden, Laub aber ertragsbestimmend;
+   *   Süßkartoffel,     Knoblauch zusätzlich frostempfindlich im Frühjahr.
+   *   Knoblauch 2,5 %
+   *   Tomate,           Frucht bzw. Knolle oberirdisch oder eng am Laub —
+   *   Sellerie 3,0 %    ein Hagelschlag kann die Partie vernichten.
+   *
+   * Sie gehören mit einem echten Angebot ersetzt; bis dahin stehen sie ohne
+   * Beleg in der Wiedervorlage. */
+  A("ins.rate.kartoffel_pommes", "ins.rate.kartoffel_pommes", "Prämiensatz Kartoffel (Pommes)", "percent", 0.020, 0.016, 0.028),
+  A("ins.rate.kartoffel_chips", "ins.rate.kartoffel_chips", "Prämiensatz Kartoffel (Chips)", "percent", 0.020, 0.016, 0.028),
+  A("ins.rate.tomate", "ins.rate.tomate", "Prämiensatz Industrietomate", "percent", 0.030, 0.024, 0.042),
+  A("ins.rate.zwiebel_moehre", "ins.rate.zwiebel_moehre", "Prämiensatz Zwiebel/Möhre", "percent", 0.025, 0.020, 0.035),
+  A("ins.rate.suesskartoffel", "ins.rate.suesskartoffel", "Prämiensatz Süßkartoffel", "percent", 0.025, 0.020, 0.035),
+  A("ins.rate.knoblauch", "ins.rate.knoblauch", "Prämiensatz Knoblauch", "percent", 0.025, 0.020, 0.035),
+  A("ins.rate.knollensellerie", "ins.rate.knollensellerie", "Prämiensatz Knollensellerie", "percent", 0.030, 0.024, 0.042),
+  /* ZUSCHUSS ZUR PRÄMIE — sM 17.1 / Nachfolgeintervention im Strategieplan:
+   * 70 % der förderfähigen und TATSÄCHLICH GEZAHLTEN Prämie, unabhängig von der
+   * Betriebsgröße. Erstattet wird nachträglich, auf Antrag, in einer Session
+   * mit begrenzter Mittelzuweisung.
+   *
+   * DAS SZENARIOBAND IST HIER DIE EIGENTLICHE AUSSAGE: Base und Best rechnen
+   * mit 70 %, WORST mit null. Nicht weil die Quote strittig wäre — sie steht
+   * im Programm —, sondern weil der Antrag scheitern kann: geschlossenes
+   * Fenster, ausgeschöpfte Zuweisung, Formfehler. Wer die Erstattung als
+   * sicher einplant, hat einen Zuschuss im Basisfall, dessen Ausfall er nirgends
+   * sieht. So sieht er ihn im Worst Case. */
+  A("ins.subsidy", "ins.subsidy", "Zuschuss zur Versicherungsprämie (sM 17.1)", "percent", 0.70, 0.70, 0),
+
   // Rain-fed (Trockenrotation) — eigene, niedrigere Erträge; Preise = beregnet.
   A("yield.weizen_dry", "yield.weizen_dry", "Ertrag Winterweizen (trocken/rain-fed)", "tonne_per_ha", 5.5, 6.2, 4.2),
   A("price.weizen_dry", "price.weizen_dry", "Preis Winterweizen (trocken)", "money_per_tonne", 17000, 19000, 15000),
@@ -4603,6 +4659,52 @@ export function mietAnteilOf(domain: Domain, machineId: string, scenarioId: stri
   return anteil;
 }
 
+/**
+ * KULTURVERSICHERUNG — Prämie je Hektar in CENT.
+ *
+ * Sie hängt an der Ernte, nicht an der Fläche: Versicherungssumme =
+ * Netto-Ertrag × Preis, Prämie = Summe × Satz, davon trägt der Betrieb den
+ * Teil, den der Zuschuss nicht deckt.
+ *
+ * Damit reagiert sie auf ALLES, was den Erntewert bewegt — Ertragsszenario,
+ * Preisszenario, Ernteverlust. Genau das soll sie: eine Versicherung, deren
+ * Prämie im Best Case gleich bliebe, versichert im Best Case zu wenig.
+ *
+ * NETTO-ERTRAG, nicht Bruttoernte. Versichert ist, was vermarktet wird — und
+ * es ist dieselbe Menge, mit der auch der Umsatz rechnet. Zwei verschiedene
+ * Mengenbegriffe für dieselbe Ernte wären genau die Sorte stiller Differenz,
+ * die dieses Modell an anderen Stellen teuer gelernt hat.
+ *
+ * Kulturen ohne Satz (Zwischenfrucht, Trockenrotation) tragen null: die
+ * Zwischenfrucht wird eingearbeitet und hat keinen Erntewert, die
+ * Trockenrotation ist der bewusst unversicherte Teil des Betriebs.
+ */
+export function versicherungPerHaCent(domain: Domain, cropId: string, scenarioId: string): number {
+  const key = `ins.rate.${cropId}`;
+  if (!domain.assumptions[key]) return 0;
+  const satz = resolveScalar(domain, key, scenarioId) || 0;
+  if (satz <= 0) return 0;
+  const cat = domain.catalog.find((c) => c.cropId === cropId);
+  if (!cat) return 0;
+  const ertrag = cat.yieldKey ? resolveScalar(domain, cat.yieldKey, scenarioId) : 0;      // t/ha
+  const preis = cat.priceKey ? resolveScalar(domain, cat.priceKey, scenarioId) : 0;        // CENT/t
+  const verlust = cat.lossKey ? resolveScalar(domain, cat.lossKey, scenarioId) : 0;
+  const summe = ertrag * (1 - verlust) * preis;                                            // CENT/ha
+  const zuschuss = domain.assumptions["ins.subsidy"]
+    ? Math.max(0, Math.min(1, resolveScalar(domain, "ins.subsidy", scenarioId) || 0)) : 0;
+  return Math.round(summe * satz * (1 - zuschuss));
+}
+
+/** Versicherungssumme je Hektar in CENT — der Wert, auf den die Prämie läuft. */
+export function versicherungssummePerHaCent(domain: Domain, cropId: string, scenarioId: string): number {
+  const cat = domain.catalog.find((c) => c.cropId === cropId);
+  if (!cat) return 0;
+  const ertrag = cat.yieldKey ? resolveScalar(domain, cat.yieldKey, scenarioId) : 0;
+  const preis = cat.priceKey ? resolveScalar(domain, cat.priceKey, scenarioId) : 0;
+  const verlust = cat.lossKey ? resolveScalar(domain, cat.lossKey, scenarioId) : 0;
+  return Math.round(ertrag * (1 - verlust) * preis);
+}
+
 export function machineOpCostPerHaCent(domain: Domain, cropId: string, scenarioId: string, y = 0): number {
   const dieselPriceCent = resolveScalar(domain, "price.diesel_l", scenarioId);
   const bf = sprayBoomFactor(domain, scenarioId); // 48-m-Paket: breiteres Gestänge → weniger Spritz-Std/ha
@@ -7193,6 +7295,33 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
         unitCostKey: "price.per_euro",
       }],
     });
+
+    /* KULTURVERSICHERUNG als eigene COGS-Operation.
+     *
+     * Sie steht hier und nicht als Zeile im Kulturkatalog, weil sie sich aus
+     * Ertrag, Preis und Verlust ERRECHNET — eine Katalogzeile trägt eine feste
+     * Menge je Hektar und könnte dem Szenario nicht folgen. Derselbe Weg wie
+     * bei den Maschinen-Betriebskosten und der Lohnarbeit.
+     *
+     * KOSTENZEITPUNKT ist die Pflanzperiode: die Police wird zu Vegetations-
+     * beginn abgeschlossen und die Prämie dann fällig, nicht bei der Ernte.
+     * Über den Feldbestand wird sie wie jede andere Feldmaßnahme aktiviert und
+     * bei der Ernte in die GuV entlassen. */
+    const versEur = versicherungPerHaCent(domain, a.cropId, scenarioId) / 100;
+    if (versEur > 0) {
+      operations.push({
+        id: `${a.id}-OP-VERS`,
+        label: "Kulturversicherung (Prämie)",
+        costPeriods: [clampP(a.plantingPeriod)],
+        lines: [{
+          id: `${a.id}-OP-VERS-0`,
+          label: "Kulturversicherung — Versicherungssumme × Prämiensatz, abzgl. Zuschuss",
+          costType: "insurance",
+          quantityPerHa: versEur,
+          unitCostKey: "price.per_euro",
+        }],
+      });
+    }
 
     // Lohnarbeit (Dienstleistungs-Einkauf) als eigene COGS-Operation — Satz × Überfahrten × ha,
     //  exkl. Diesel. Wird wie jede Feldmaßnahme im Feldbestand aktiviert und bei Ernte aufgelöst.

@@ -323,7 +323,8 @@ describe("Base Case", () => {
      *  nach Produktpreis  15,17 ·  9,43   (ehrlichere Düngung)
      *  nach Pflanzgut     15,78 ·  9,95   (Kompendiumsmenge)
      *  nach Netto-Norm    15,66 ·  9,84   (Beregnung aus dem Kompendium)
-     *  Umsatz durchgehend 46,44 Mio — in ALLEN fünf Ständen
+     *  mit Versicherung   15,34 ·  9,58   (Kulturversicherung, netto Zuschuss)
+     *  Umsatz durchgehend 46,44 Mio — in ALLEN sechs Ständen
      *
      *  DIE UMSTELLUNG DER STUNDENSÄTZE AUF NETTO-EINKAUF (04.08.2026, abends)
      *  bewegt diese Zeile NICHT, und das ist kein Zufall, sondern die
@@ -336,8 +337,8 @@ describe("Base Case", () => {
      *  im EBITDA sucht, hat die Buchung zweimal. */
     const z = letztesJahr(SEED);
     expect(Math.round(z.umsatz / 1e4)).toBe(4644);     // 46,44 Mio — UNVERÄNDERT
-    expect(Math.round(z.ebitda / 1e4)).toBe(1566);     // 15,66 Mio
-    expect(Math.round(z.ergebnis / 1e4)).toBe(984);    // 9,84 Mio
+    expect(Math.round(z.ebitda / 1e4)).toBe(1534);     // 15,34 Mio
+    expect(Math.round(z.ergebnis / 1e4)).toBe(958);    // 9,58 Mio
     /* Die KASSE steht hier bewusst NICHT: sie haengt am Zeitpunkt jeder Zahlung und
      *  bewegt sich damit bei jeder Aenderung an der Saisonalitaet, ohne dass an den
      *  Stundensaetzen etwas falsch waere. Wer sie hier festnagelt, bekommt einen Test,

@@ -2,7 +2,7 @@
 import React from "react";
 import { useModelStore, readAssumption } from "../../store/modelStore";
 import {
-  deriveCropAreasMY, machineOpCostPerHaCent, lohnarbeitPerHaCent, START_YEAR,
+  deriveCropAreasMY, machineOpCostPerHaCent, lohnarbeitPerHaCent, versicherungPerHaCent, START_YEAR,
 } from "../../store/model";
 import { cropYield, cropLoss } from "./cropCalc";
 import { fmtMoney, fmtNumber } from "../../design/format";
@@ -31,6 +31,7 @@ const GRUPPEN: { id: CostType | "machine_op" | "lohn"; label: string }[] = [
   { id: "other", label: "Sonstiges Material" },
   { id: "machine_op", label: "Maschinen-Betrieb" },
   { id: "lohn", label: "Lohnarbeit" },
+  { id: "insurance", label: "Versicherung" },
 ];
 
 export function DirektkostenSummary() {
@@ -55,6 +56,11 @@ export function DirektkostenSummary() {
       }
       byType.machine_op = machineOpCostPerHaCent(domain, cropId, sc, y);
       byType.lohn = lohnarbeitPerHaCent(domain, cropId, sc, y);
+      /* Die Prämie steht NICHT im Kulturkatalog — sie fällt aus Ertrag, Preis
+         und Verlust und muss deshalb wie Maschinen-Betrieb und Lohnarbeit
+         hier gerechnet werden, sonst fehlte sie in dieser Tabelle, obwohl sie
+         in der GuV steht. */
+      byType.insurance = versicherungPerHaCent(domain, cropId, sc);
       const perHa = Object.values(byType).reduce((s, v) => s + v, 0);
 
       const yieldTHa = cropYield(domain, cropId, sc);
@@ -82,7 +88,7 @@ export function DirektkostenSummary() {
         <div>
           <h2 className="text-[14px] font-semibold">{t("Direktkosten je Kultur")}</h2>
           <p className="mt-0.5 text-[11px] text-nx-text-muted">
-            {t("Saat-/Pflanzgut, Dünger, Pflanzenschutz, Material, Handarbeit und Maschinen-Betrieb (inkl. Diesel), dazu aktive Lohnarbeit. OHNE Abschreibung, Zins, Pacht, Personal und Overhead — das sind Strukturkosten. €/t bezieht sich auf die NETTO-Menge nach Ernteverlust, ist also direkt mit dem Kontraktpreis vergleichbar.")}
+            {t("Saat-/Pflanzgut, Dünger, Pflanzenschutz, Material, Handarbeit und Maschinen-Betrieb (inkl. Diesel), dazu aktive Lohnarbeit und die Kulturversicherung. OHNE Abschreibung, Zins, Pacht, Personal und Overhead — das sind Strukturkosten. €/t bezieht sich auf die NETTO-Menge nach Ernteverlust, ist also direkt mit dem Kontraktpreis vergleichbar.")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -165,7 +171,7 @@ export function DirektkostenSummary() {
         </table>
       </div>
       <div className="border-t px-4 py-2 text-[11px] text-nx-text-muted" style={{ borderColor: "var(--nx-border)" }}>
-        {t("Alle Beträge im gewählten Jahr und Szenario. Die Kostenarten stammen Zeile für Zeile aus dem Kulturkatalog (Menge/ha × Stücksatz) — jede Zahl ist bis auf die einzelne Maßnahme rückverfolgbar. Maschinen-Betrieb kommt aus den Arbeitsgängen (Überfahrten ÷ Schlagkraft × €/h), Lohnarbeit nur aus scharfgeschalteten Zeilen.")}
+        {t("Alle Beträge im gewählten Jahr und Szenario. Die Kostenarten stammen Zeile für Zeile aus dem Kulturkatalog (Menge/ha × Stücksatz) — jede Zahl ist bis auf die einzelne Maßnahme rückverfolgbar. Maschinen-Betrieb kommt aus den Arbeitsgängen (Überfahrten ÷ Schlagkraft × €/h), Lohnarbeit nur aus scharfgeschalteten Zeilen. Die Versicherung ist ein Prozentsatz der Versicherungssumme (Netto-Ertrag × Preis), abzüglich des Zuschusses aus sM 17.1 — deshalb steigt sie mit dem Erntewert und fällt im Worst Case NICHT weg, sondern wird teurer, weil dort der Zuschuss auf null steht.")}
       </div>
     </section>
   );
