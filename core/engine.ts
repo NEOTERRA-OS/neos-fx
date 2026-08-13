@@ -316,6 +316,8 @@ function computeWorkingCapital(
   bioAssets: number[],
   receiptTerms: ReceiptTerm[],
   advanceFlows: AdvanceFlow[],
+  /** Subventions-Forderung je Periode (Endstand). Siehe OperatingResult. */
+  subsidyReceivable: number[] = [],
 ): WorkingCapitalResult {
   const wc = state.workingCapital;
   const dso = resolveAssumption(state, wc.dsoAssumptionKey, chain, n, ppy);
@@ -436,7 +438,13 @@ function computeWorkingCapital(
   let payRunning = 0;   // Eröffnungsverbindlichkeiten ebenso
   for (let p = 0; p < n; p++) {
     recRunning += billedNet[p] - collections[p];
-    receivables[p] = recRunning;
+    /* DIE SUBVENTIONSFORDERUNG LAEUFT IN DIESELBE BILANZZEILE wie die
+     *  Kundenforderung — bewusst, und nicht aus Bequemlichkeit: eine eigene
+     *  Aktivposition muesste an drei Stellen nachgezogen werden (Bilanzsumme,
+     *  Working Capital, Cashflow-Ueberleitung), und wer eine davon vergisst,
+     *  bekommt eine Bilanz, die nicht aufgeht. Sachlich ist es dieselbe Art
+     *  Posten: verdient, fakturiert bzw. beschieden, noch nicht bezahlt. */
+    receivables[p] = recRunning + (subsidyReceivable[p] ?? 0);
     payRunning += costIncurred[p] - payments[p];
     payables[p] = payRunning;
     // Fertigerzeugnisse: erst mit einem Lieferplan sinnvoll (wc.inv steht auf 0). Die
@@ -568,7 +576,7 @@ export function computeWorkingCapitalSchedule(
   const op = computeOperating(state, chain, n, ppy);
   return computeWorkingCapital(
     state, chain, n, ppy, op.revenue, op.cogs, op.costIncurred, op.bioAssets,
-    op.receiptTerms, op.advances,
+    op.receiptTerms, op.advances, op.subsidyReceivable,
   );
 }
 
@@ -772,7 +780,28 @@ interface OperatingResult {
   costIncurred: number[];
   /** Feldbestand (wachsende Kultur) zu Herstellungskosten, Periodenendstand. */
   bioAssets: number[];
+  /** Subventions-ERTRAG je Periode — im Kampagnenjahr, unabhaengig vom Zufluss. */
   subsidies: number[];
+  /**
+   * Subventions-FORDERUNG je Periode (Periodenendstand, CENT).
+   *
+   * Der Ertrag entsteht mit dem Anspruch, das Geld kommt bis 30.06. T+1. Die
+   * Differenz ist eine Forderung gegen APIA und steht als solche in der Bilanz.
+   *
+   * WARUM DIESE TRENNUNG SEIN MUSS. Bis zum 12.08.2026 buchte das Modell
+   * Subventionen kassenwirksam: Ertrag und Zufluss in derselben Periode. Solange
+   * das Auszahlungsprofil 70 % Oktober / 30 % Dezember lautete, fiel das nicht
+   * auf — beide Teile lagen im selben Jahr. Mit dem Fenster bis Juni T+1 faellt
+   * es sofort auf: ein Drittel des Ertrags waere in das FOLGEJAHR gewandert,
+   * und das EBITDA des Kampagnenjahres um denselben Betrag gefallen.
+   *
+   * Das waere falsch, und zwar teuer falsch: Net Debt / EBITDA ist ein Covenant.
+   * Eine spaetere Zahlung haette die Kennzahl verschlechtert, obwohl sich am
+   * Betrag nichts aendert — aus einem Timing-Risiko waere im Modell ein
+   * Ergebnisrisiko geworden. Genau das sagt der Befund vom 12.08.2026 aber
+   * NICHT: der Betrag steht, nur sein Zuflussmonat schwankt.
+   */
+  subsidyReceivable: number[];
   inventoryValue: number[]; // Ende-Bestand geernteter, noch nicht verkaufter Ware
   outputVat: number[];      // Ausgangs-USt (TVA colectată) je Periode — 0 bei Reverse-Charge/Export
   /** Fakturierte Erlösströme mit Zahlungsziel — Grundlage des Forderungs-Rollforwards. */
@@ -805,7 +834,9 @@ function computeOperating(
   // Entstandene Direktkosten (nicht die GuV-Zeile!). Die GuV bekommt sie erst bei der
   // Ernte über die Feldbestand-Aktivierung weiter unten.
   const costIncurred = zeros(n);
-  const subsidies = zeros(n);
+  const subsidies = zeros(n);          // ERTRAG je Periode
+  const subsidyCash = zeros(n);        // ZUFLUSS je Periode
+  const subsidyReceivable = zeros(n);  // Forderung gegen APIA, Periodenendstand
   /** Kostenstrom: entstandene Kosten (nach Kohorte getrennt) und Ernteperioden über den
    *  Horizont. Der Strom, nicht die einzelne Planzeile, ist die richtige Einheit — bei
    *  Winterkulturen liegt die Aussaat für die nächste Ernte in derselben Planzeile
@@ -1199,13 +1230,32 @@ function computeOperating(
     const profile = (s.payout && s.payout.length)
       ? s.payout
       : s.receiptPeriods.map((p) => ({ period: p, share: 1 / Math.max(1, s.receiptPeriods.length) }));
+    /* ERTRAGSPERIODE = die frueheste Periode des Profils, also der Beginn der
+     *  Kampagnen-Auszahlung (Vorschuss ab 16.10.). Dort entsteht der Anspruch
+     *  wirtschaftlich; die spaeteren Anteile sind Zahlungsziele, keine spaeteren
+     *  Ertraege. Damit bleibt der GESAMTE Ertrag einer Kampagne in ihrem Jahr —
+     *  auch wenn ein Teil des Geldes erst im Juni darauf kommt. */
+    const ertragsperiode = profile.reduce((min, x) => Math.min(min, x.period), Number.POSITIVE_INFINITY);
     for (const { period, share } of profile) {
-      if (period < 0 || period >= n) continue;
+      const basisPeriode = period < n ? period : n - 1;   // Betrag nur fuer die Bemessung
       const full = s.basis === 'per_ha'
-        ? amount[period] * totalHa
-        : (s.lumpSumCent != null ? s.lumpSumCent : amount[period]);
-      subsidies[period] += round(full * share);
+        ? amount[basisPeriode] * totalHa
+        : (s.lumpSumCent != null ? s.lumpSumCent : amount[basisPeriode]);
+      const teil = round(full * share);
+      /* ERTRAG im Kampagnenjahr — auch fuer Anteile, deren GELD hinter dem
+       *  Horizont liegt. Sonst faellt im letzten Planjahr ein Drittel des
+       *  Ertrags weg, obwohl der Anspruch besteht. */
+      if (ertragsperiode >= 0 && ertragsperiode < n) subsidies[ertragsperiode] += teil;
+      // ZUFLUSS nach Profil; jenseits des Horizonts kommt kein Geld mehr an.
+      if (period >= 0 && period < n) subsidyCash[period] += teil;
     }
+  }
+  /* Forderung = auflaufende Differenz zwischen Ertrag und Zufluss. Am
+   *  Horizontende bleibt der Rest als Forderung STEHEN — richtig so: das Geld
+   *  ist verdient und kommt, nur nach dem Betrachtungszeitraum. */
+  {
+    let lauf = 0;
+    for (let p = 0; p < n; p++) { lauf += subsidies[p] - subsidyCash[p]; subsidyReceivable[p] = lauf; }
   }
 
   // --- Anzahlungsplan: Quote × geplanter Erntewert, Zufluss im Policy-Monat --
@@ -1369,7 +1419,7 @@ function computeOperating(
   }
 
   return {
-    revenue, cogs, costIncurred, bioAssets, subsidies, inventoryValue, outputVat,
+    revenue, cogs, costIncurred, bioAssets, subsidies, subsidyReceivable, inventoryValue, outputVat,
     receiptTerms, advances, coverPurchaseCost,
     storageCost: addArr(addArr(storageEnergyCost, storageHandlingCost), storageLossCost),
     storageEnergyCost, storageHandlingCost, storageLossCost,
@@ -1768,7 +1818,7 @@ export function computeModel(
   // EBITDA bleibt unverändert.
   const workingCapital = computeWorkingCapital(
     state, chain, n, ppy, op.revenue, op.cogs, op.costIncurred, op.bioAssets,
-    op.receiptTerms, op.advances,
+    op.receiptTerms, op.advances, op.subsidyReceivable,
   );
   const wcChange = workingCapital.wcChange;
 
@@ -2245,6 +2295,30 @@ export function computeModel(
     passed: levOffending.length === 0, maxDeviation: levMaxExcess,
     offendingPeriods: levOffending, severity: 'warning',
   });
+
+  /* SUBVENTIONEN JENSEITS DES PLANHORIZONTS.
+   *
+   * Seit dem Zahlungsfenster bis 30.06. T+1 faellt ein Teil jeder Kampagne in
+   * das Folgejahr. Fuer das LETZTE Planjahr gibt es dieses Folgejahr im Modell
+   * nicht mehr — die Anteile werden verworfen. Das ist fuer einen
+   * abgeschnittenen Horizont richtig: das Geld kommt zwar, aber nach dem
+   * Betrachtungszeitraum, und eine Kasse, die es trotzdem zeigte, waere zu hoch.
+   *
+   * Still darf es dennoch nicht bleiben. Ohne diese Zeile liest man das letzte
+   * Planjahr als Einbruch der Foerderung, wo nur der Kalender endet — und
+   * jemand fragt sich, warum die Subventionen 2035 um ein Drittel fallen.
+   * Deshalb eine Hinweiszeile, ausdruecklich als `info`: es ist kein Fehler,
+   * es ist eine Eigenschaft des Horizonts. */
+  const beyond = state.subsidyBeyondHorizonCent ?? 0;
+  if (beyond > 0) {
+    checks.push({
+      id: 'subsidy_beyond_horizon',
+      label: `Subventionen mit Zufluss nach dem Planhorizont: ${(beyond / 100).toLocaleString('de-DE', { maximumFractionDigits: 0 })} € — `
+        + 'Restzahlungen der letzten Kampagne(n) liegen im Fenster bis 30.06. T+1 und damit ausserhalb des Modells. '
+        + 'Kein Fehler: das Geld kommt, nur nach dem Betrachtungszeitraum.',
+      passed: true, maxDeviation: 0, offendingPeriods: [], severity: 'info',
+    });
+  }
 
   // --- LineItems für Output ------------------------------------------------
   return {

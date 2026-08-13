@@ -661,6 +661,17 @@ export interface ModelState {
   /** USt-/TVA-Mechanik (RO). Optional; fehlt/enabled=false → keine USt-Wirkung. */
   vat?: VatPolicy;
   subsidies: Subsidy[];
+  /**
+   * Subventionsbetrag, dessen Zuflussmonat HINTER dem Planhorizont liegt (CENT).
+   *
+   * Seit dem Zahlungsfenster bis 30.06. T+1 fällt ein Teil jeder Kampagne in das
+   * Folgejahr. Für das letzte Planjahr gibt es dieses Folgejahr im Modell nicht
+   * mehr — die Engine verwirft solche Anteile, und das ist für einen
+   * abgeschnittenen Horizont richtig gerechnet. Still darf es trotzdem nicht
+   * bleiben: sonst liest jemand das letzte Planjahr als Einbruch, wo nur der
+   * Kalender endet. Der Composer zählt den Betrag mit, die Prüfliste weist ihn aus.
+   */
+  subsidyBeyondHorizonCent?: number;
   /** Abnahmeverträge je Kultur. Fehlt/leer → Umsatz komplett zum Kulturpreis (Spot). */
   offtake?: OfftakeContract[];
   /** Anzahlungen der Off-taker, bemessen am geplanten Erntewert. Fehlt/inaktiv → keine. */
@@ -1002,7 +1013,11 @@ export interface CheckResult {
   maxDeviation: number;
   /** Periodenindizes, in denen der Check reißt (für Sprung zur Ursache). */
   offendingPeriods: PeriodIndex[];
-  severity: 'error' | 'warning';
+  /* `info` seit 12.08.2026: eine Zeile, die eine EIGENSCHAFT erklaert statt
+   *  einen Fehler zu melden (etwa Subventionen jenseits des Planhorizonts).
+   *  Sie laeuft immer mit `passed: true` — die Pruefliste stellt sie damit
+   *  gruen dar, und genau das ist gemeint: nichts zu tun, nur zu wissen. */
+  severity: 'error' | 'warning' | 'info';
 }
 
 export interface KpiSet {

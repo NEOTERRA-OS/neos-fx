@@ -1647,6 +1647,42 @@ const ASSUMPTIONS: Record<string, Assumption> = asRecord([
    * sieht. So sieht er ihn im Worst Case. */
   A("ins.subsidy", "ins.subsidy", "Zuschuss zur Versicherungsprämie (sM 17.1)", "percent", 0.70, 0.70, 0),
 
+  /* SUBVENTIONS-TIMING — zwei Schalter, beide mit Szenarioband, beide 0/1.
+   *
+   * `cap.payout_konservativ` waehlt das Verteilungsprofil des Direktzahlungs-
+   * stroms: 0 = beobachteter Verlauf K2025 (70/10/10/7/3 ueber Okt bis Jun),
+   * 1 = spaetestmoeglicher zulaessiger Termin (70 % Okt / 30 % Jun T+1).
+   *
+   * WORST STEHT AUF 1, und das ist der Kern der Sache. Der Restbetrag haengt an
+   * einem Ordin des Ministeriums mit historisch schwankendem Termin — bei K2025
+   * kam er erst am 28.04.2026. Wer die Kreditlinie nach dem beobachteten
+   * Verlauf bemisst, hat keinen Puffer fuer ein Jahr, in dem der Ordin spaeter
+   * kommt. Im Worst Case rechnet das Modell deshalb mit dem Fristende. */
+  A("cap.payout_konservativ", "cap.payout_konservativ", "Direktzahlungen zum spätestmöglichen Termin (0/1)", "count", 0, 0, 1),
+
+  /* `vcp.nachweis` ist eine BINAERE BEDINGUNG, keine Quote — und das ist der
+   * Unterschied, auf den es hier ankommt.
+   *
+   * Der Anspruch auf die gekoppelte Gemuesestuetzung entsteht erst mit dem
+   * Nachweis. Er entfaellt VOLLSTAENDIG, wenn eine der drei Bedingungen reisst:
+   *   · Vertrag mit einer nach Ordin ANSVSA 111/2008 registrierten
+   *     Verarbeitungseinheit (Frischmarktverkauf qualifiziert NICHT),
+   *   · Mindestliefermenge Tomate 40 t/ha,
+   *   · Nachweis fristgerecht bis 31.03. T+1 bei APIA.
+   * Eine Fristversaeumnis kostet die ganze Position, auch wenn die Lieferung
+   * tatsaechlich erfolgt ist.
+   *
+   * WARUM KEINE WAHRSCHEINLICHKEIT ALS FAKTOR. Es liegt nahe, eine
+   * Eintrittswahrscheinlichkeit von 90 % als 0,9 in den Betrag zu multiplizieren.
+   * Das waere falsch: 90 % des Betrags werden NIE ausgezahlt. Es gibt genau zwei
+   * moegliche Zuflüsse — voll oder null. Eine gemittelte Zahl ist fuer die
+   * Liquiditaetsplanung das Schlechteste von beidem: zu niedrig, um darauf zu
+   * planen, und zu hoch, um sich darauf zu verlassen. Deshalb ein Schalter mit
+   * Band: Base und Best rechnen mit erfuelltem Nachweis, Worst mit null. Die
+   * Wahrscheinlichkeit selbst gehoert in die Wiedervorlage und in den
+   * operativen Kalender — nicht in den Betrag. */
+  A("vcp.nachweis", "vcp.nachweis", "VCP-Liefernachweis erbracht (Vertrag · 40 t/ha · Frist 31.03.) (0/1)", "count", 1, 1, 0),
+
   // Rain-fed (Trockenrotation) — eigene, niedrigere Erträge; Preise = beregnet.
   A("yield.weizen_dry", "yield.weizen_dry", "Ertrag Winterweizen (trocken/rain-fed)", "tonne_per_ha", 5.5, 6.2, 4.2),
   A("price.weizen_dry", "price.weizen_dry", "Preis Winterweizen (trocken)", "money_per_tonne", 17000, 19000, 15000),
@@ -4082,10 +4118,96 @@ const VAT: VatPolicy = {
   refundLagMonths: 3,                // Vorsteuer-Überhang: Erstattung mit Prüf-Lag (~3 M)
 };
 
-/* EU-CAP 2023–2027 Rumänien — volle Struktur, editierbar. Sätze €/ha als Inline-CENT
- * (belastbare Defaults aus PNS/APIA 2026-Recherche; im Screen anpassbar). Auszahlungsprofil:
- * Vorschuss 70 % ab Oktober (Periode 9) + Rest 30 % Dezember (Periode 11) — reales APIA-Timing. */
-const CAP_PAYOUT: { period: number; share: number }[] = [{ period: 9, share: 0.7 }, { period: 11, share: 0.3 }];
+/* --------------------------------------------------------------------------
+ * EU-CAP 2023–2027 RUMÄNIEN — Sätze €/ha als Inline-CENT, editierbar.
+ *
+ * DAS AUSZAHLUNGSPROFIL WAR FALSCH, und zwar in beiden Hälften. Bis zum
+ * 12.08.2026 stand hier „70 % Oktober / 30 % Dezember" als EIN Strang für
+ * alles. Der Subventions-Tracking-Lauf hat beides widerlegt:
+ *
+ *   DAS RESTZAHLUNGSFENSTER reicht rechtlich bis zum 30.06. des FOLGEJAHRES,
+ *   nicht bis Dezember. In der Kampagne 2025 liefen Nachzahlungen tatsächlich
+ *   bis Ende April 2026.
+ *
+ *   DIE GEKOPPELTE STÜTZUNG FÜR GEMÜSE läuft überhaupt nicht in diesem Strang.
+ *   Sie hängt an einem Liefernachweis und fließt rund zwölf Monate nach dem
+ *   Antragsjahr — sie stand im Modell ein ganzes Jahr zu früh.
+ *
+ * Die Folge war eine Liquidität, die im Dezember zu hoch und im ersten Halbjahr
+ * darauf zu niedrig auswies. Für eine Kasse, die ohnehin am Revolver hängt, ist
+ * das kein Schönheitsfehler: es verschiebt den Spitzenbedarf in einen anderen
+ * Monat und damit die Covenant-Rechnung.
+ *
+ * WARUM DAS TIMING JEDES JAHR NEU ENTSTEHT — die Ursache ist ein Verwaltungsakt,
+ * kein Kalender. APIA kann eine Intervention erst endabrechnen, wenn MADR die
+ * finalen Einheitssätze per Ordin festgelegt hat. Für K2025 war das Ordin
+ * 42/2026, geändert durch Ordin 141/2026 vom 28.04.2026 — deshalb kam die
+ * PD-28-Endabrechnung erst im April. Der Termin schwankt historisch. Das ist
+ * ein TIMING-Risiko mit fester Obergrenze (30.06.), kein Betragsrisiko: der
+ * Betrag steht, nur sein Zuflussmonat nicht.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * STROM A — Direktzahlungen (BISS, CRISS, PD-04, PD-28).
+ *
+ * Periodenindex zählt AB DEM KAMPAGNENJAHR: 9 = Oktober T, 11 = Dezember T,
+ * 13 = Februar T+1, 15 = April T+1, 17 = Juni T+1. Der Composer addiert je
+ * Planjahr `y * 12` — ein Index über 11 landet damit automatisch im Folgejahr.
+ *
+ * Das Profil ist aus EINEM beobachteten Jahr abgeleitet (K2025) und deshalb
+ * eine Annahme, keine Regel. Es steht hier als Konstante und nicht im Quelltext
+ * verstreut, damit es an einer Stelle korrigierbar ist.
+ */
+const CAP_PAYOUT_BEOBACHTET: { period: number; share: number }[] = [
+  { period: 9,  share: 0.70 },   // Okt T   — Vorschussstart 16.10.
+  { period: 11, share: 0.10 },   // Dez T   — Beginn Restzahlungen
+  { period: 13, share: 0.10 },   // Feb T+1 — Nachzahlungen PD-02/PD-03 (Feb 2026 autorisiert)
+  { period: 15, share: 0.07 },   // Apr T+1 — PD-28-Endabrechnung nach Ordin 141/2026
+  { period: 17, share: 0.03 },   // Jun T+1 — Puffer bis Fristende 30.06.
+];
+
+/**
+ * STROM A, KONSERVATIVE VARIANTE — der spätestmögliche zulässige Termin.
+ *
+ * Für Liquiditätsplanung und Covenant-Rechnung ist nicht der beobachtete
+ * Verlauf die richtige Grundlage, sondern der schlechteste zulässige: 70 % im
+ * Oktober, der Rest erst am Fristende. Wer mit dem beobachteten Profil plant
+ * und die Linie danach bemisst, hat keinen Puffer für ein Jahr, in dem der
+ * Ordin später kommt — und der Ordin kam schon einmal erst Ende April.
+ */
+const CAP_PAYOUT_KONSERVATIV: { period: number; share: number }[] = [
+  { period: 9,  share: 0.70 },
+  { period: 17, share: 0.30 },   // Jun T+1 — Fristende 30.06.
+];
+
+/**
+ * STROM B — VCP Gemüse (PD-17 Freiland, PD-18 geschützter Anbau).
+ *
+ * Eigene Zeitachse, weil der Anspruch nicht mit der Ernte entsteht, sondern mit
+ * dem NACHWEIS. Ausschlussfrist ist der 31.03. T+1, ausgezahlt wird im Mai/Juni
+ * T+1. Zwischen dem Vorschuss des Direktzahlungsstrangs und diesem Zufluss
+ * liegen rund acht Monate, gegenüber dem Antragsjahr zwölf.
+ */
+const VCP_PAYOUT: { period: number; share: number }[] = [
+  { period: 16, share: 0.5 },    // Mai T+1
+  { period: 17, share: 0.5 },    // Jun T+1
+];
+
+/**
+ * KEIN WÄHRUNGSRISIKO IM ZAHLUNGSFENSTER — die eine Entwarnung dieses Umbaus.
+ *
+ * Für die RON-Umrechnung gilt der letzte EZB-Kurs VOR dem 1. Oktober des
+ * Antragsjahres, und zwar für die GESAMTE Kampagne einschließlich der
+ * Restzahlungen im Folgejahr (K2025: 5,0806 RON/EUR; K2024: 4,9753). Innerhalb
+ * einer Kampagne gibt es damit keine FX-Drift.
+ *
+ * Praktisch heißt das: die Verlängerung des Zahlungsfensters oben erzeugt ein
+ * Timing-, aber KEIN Währungsrisiko — und das Modell braucht keine Kurskurve je
+ * Kampagnenjahr. Es rechnet ohnehin durchgehend in Euro; RON ist reine Anzeige.
+ * Diese Notiz steht hier, damit niemand aus dem längeren Fenster einen
+ * Kursbedarf ableitet, den es nicht gibt.
+ */
+const CAP_PAYOUT = CAP_PAYOUT_BEOBACHTET;   // Rückwärtskompatibler Name für die Seed-Zeilen
 const SUBSIDIES: Subsidy[] = [
   // — Säule 1: Direktzahlungen —
   // SATZE NACHGEFUEHRT — Subventions-Monitor 01.08.2026 (Projektdoku
@@ -4117,7 +4239,7 @@ const SUBSIDIES: Subsidy[] = [
    *  1.448,10 (AJ 2025), also knapp zehn Prozent in einem Jahr. Angesetzt ist der letzte
    *  belegte Zahlbetrag; er ist konservativer als der Planwert und der einzige mit Beleg. */
   { id: "vcp-tomate", name: "VCP — Industrietomate (PD-17 Freilandgemüse)", basis: "per_ha", ratePerHaCent: 144810,
-    cropIds: ["tomate"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: true },
+    cropIds: ["tomate"], pillar: 1, category: "vcp", receiptPeriods: [17], payout: VCP_PAYOUT, active: true },
   /* GEKOPPELTE STUETZUNG FUER ZWIEBEL/MOEHRE, SELLERIE UND SUESSKARTOFFEL: ABGESCHALTET.
    *
    *  Entscheidungsverlauf, weil er fuer die Bankunterlage nachvollziehbar sein muss:
@@ -4138,9 +4260,9 @@ const SUBSIDIES: Subsidy[] = [
    *  `active: true` an den beiden Zeilen unten.
    */
   { id: "vcp-zwiebel", name: "VCP — Zwiebel / Möhre (nicht in PD-17 gelistet)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+    cropIds: ["zwiebel_moehre"], pillar: 1, category: "vcp", receiptPeriods: [17], payout: VCP_PAYOUT, active: false },
   { id: "vcp-gemuese-neu", name: "VCP — Sellerie / Süßkartoffel (nicht in PD-17 gelistet)", basis: "per_ha", ratePerHaCent: 160700,
-    cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [11], payout: CAP_PAYOUT, active: false },
+    cropIds: ["knollensellerie", "suesskartoffel"], pillar: 1, category: "vcp", receiptPeriods: [17], payout: VCP_PAYOUT, active: false },
   /* KNOBLAUCH: KEINE gekoppelte Stuetzung. Am 01.08.2026 stand hier noch die Vermutung, es
    *  gebe eine eigene Intervention „sprijin cuplat usturoi" neben PD-17. Die Recherche gegen
    *  den Interventionskatalog des Strategieplans widerlegt das: die pflanzlichen Kopplungen
@@ -7845,9 +7967,22 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
   const fullFarmHaOf = (y: number) =>
     Object.values(cropAreasMY.areas).reduce((sum, curve) => sum + (curve[Math.min(y, years - 1)] ?? 0), 0);
   const subsidies: Subsidy[] = [];
+  /* ZWEI SCHALTER, beide 0/1, beide mit Szenarioband (siehe Annahmenblock).
+   *  `konservativ` schiebt den Restbetrag der Direktzahlungen auf das Fristende
+   *  30.06. T+1; `vcpNachweis` schaltet die gekoppelte Gemuesestuetzung ganz aus,
+   *  weil sie eine binaere Bedingung ist und keine Quote. */
+  const konservativ = domain.assumptions["cap.payout_konservativ"]
+    ? resolveScalar(domain, "cap.payout_konservativ", scenarioId) >= 0.5 : false;
+  const vcpNachweis = domain.assumptions["vcp.nachweis"]
+    ? resolveScalar(domain, "vcp.nachweis", scenarioId) >= 0.5 : true;
+  /** Wie viel Geld faellt hinter den Planhorizont? Wird unten als Pruefzeile ausgewiesen. */
+  let abgeschnittenCent = 0;
   for (let y = 0; y < years; y++) {
     for (const { s, baseHa, perHa } of baseSubs) {
       if (s.active === false) continue;
+      /* BINAERE BEDINGUNG, nicht gekuerzter Erwartungswert: ohne Nachweis
+       *  entfaellt die ganze Position, nicht ein Teil davon. */
+      if (s.category === "vcp" && !vcpNachweis) continue;
       // Kulturgebundene Subventionen (VCP etc.) folgen der Politik-Fläche der Kultur(en);
       //  flächenpauschale (BISS/Öko) der gesamten förderfähigen Fläche (beregnet + trocken).
       let elig = (s.cropIds && s.cropIds.length)
@@ -7863,8 +7998,25 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
       //  Obergrenze. Der Cap gilt für die FLÄCHENPAUSCHALEN (Säule 1, ohne VCP), betriebsweit.
       //  Über cap.per_farm_from_2028 abschaltbar (0 = keine Kappung).
       amt = Math.max(0, amt);
-      const prof = (s.payout && s.payout.length ? s.payout : s.receiptPeriods.map((pp) => ({ period: pp, share: 1 / Math.max(1, s.receiptPeriods.length) })));
+      /* PROFILWAHL. Nur der Direktzahlungsstrom kennt eine konservative
+       *  Variante — die VCP-Position hat ohnehin nur einen zulaessigen Termin
+       *  (Mai/Juni T+1 nach Nachweisfrist 31.03.), da gibt es nichts zu
+       *  verschieben. */
+      const eigenes = s.payout && s.payout.length ? s.payout : null;
+      const prof = (s.category === "vcp" || !konservativ)
+        ? (eigenes ?? s.receiptPeriods.map((pp) => ({ period: pp, share: 1 / Math.max(1, s.receiptPeriods.length) })))
+        : CAP_PAYOUT_KONSERVATIV;
       if (amt === 0) continue;
+      /* HORIZONTABSCHNEIDUNG MITZAEHLEN. Ein Anteil, dessen Periode hinter dem
+       *  Planungsende liegt, wird von der Engine stillschweigend verworfen. Mit
+       *  dem T+1-Profil betrifft das im letzten Kampagnenjahr 30 % der
+       *  Direktzahlungen und die gesamte VCP-Position. Das ist fuer einen
+       *  abgeschnittenen Horizont richtig gerechnet — aber es darf nicht still
+       *  passieren, sonst liest jemand das letzte Planjahr als schwaches Jahr. */
+      const letztePeriode = years * 12 - 1;
+      for (const x of prof) {
+        if (x.period + y * 12 > letztePeriode) abgeschnittenCent += Math.round(amt * x.share);
+      }
       subsidies.push({
         id: `${s.id}-y${y}`, name: s.name, basis: "lump_sum", lumpSumCent: amt,
         receiptPeriods: s.receiptPeriods.map((pp) => pp + y * 12),
@@ -8255,6 +8407,7 @@ export function buildModelState(domainIn: Domain, scenarioId: string = domainIn.
     tax: domain.tax,
     vat: domain.vat,
     subsidies,
+    subsidyBeyondHorizonCent: abgeschnittenCent,
     // Abnahmeverträge: nur aktive, und nur solche mit einer Kultur im Katalog.
     offtake: (domain.offtake ?? []).filter((c) => c.active !== false && domain.catalog.some((k) => k.cropId === c.cropId)),
     harvestAdvance: domain.harvestAdvance,
